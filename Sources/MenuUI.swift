@@ -301,12 +301,30 @@ struct SettingsPane: View {
                     .foregroundStyle(Color.primary)
             }
             Divider()
-            HStack {
-                Button("Choose Brave Profile…") { app.chooseBraveProfile() }
-                Text(app.braveProfileStatus)
-                    .font(.footnote)
-                    .foregroundStyle(Color.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text("Brave Profile")
+                        .font(.headline)
+                        .foregroundStyle(Color.primary)
+                    Spacer()
+                    Picker("", selection: Binding(
+                        get: { app.selectedBraveProfileID },
+                        set: { app.selectBraveProfile(id: $0) }
+                    )) {
+                        ForEach(app.availableBraveProfiles) { profile in
+                            Text(profile.displayName).tag(profile.id)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .frame(width: 200)
+                }
+                HStack {
+                    Button("Choose Brave Profile…") { app.chooseBraveProfile() }
+                    Text(app.braveProfileStatus)
+                        .font(.footnote)
+                        .foregroundStyle(Color.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             HStack {
                 Button("Connect All from Brave") { app.connectAll() }

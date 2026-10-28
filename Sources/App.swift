@@ -185,8 +185,26 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         writeDiagnostics()
     }
     @Published var providerStatus: [String:String] = [:]
-    @Published var braveProfileStatus = UserDefaults.standard.data(forKey: BraveSessionImporter.profileBookmarkKey) == nil
-        ? "Choose the profile you use to sign in." : "Saved profile selected. Choose again to change it."
+    @Published var availableBraveProfiles: [BraveProfile] = BraveSessionImporter.availableProfiles()
+    @Published var selectedBraveProfileID: String = {
+        let profiles = BraveSessionImporter.availableProfiles()
+        if let path = UserDefaults.standard.string(forKey: "BraveProfilePath") {
+            let last = URL(fileURLWithPath: path).lastPathComponent
+            if profiles.contains(where: { $0.id == last }) {
+                return last
+            }
+        }
+        return profiles.first?.id ?? "Default"
+    }()
+    @Published var braveProfileStatus: String = {
+        let profiles = BraveSessionImporter.availableProfiles()
+        if let path = UserDefaults.standard.string(forKey: "BraveProfilePath") {
+            let last = URL(fileURLWithPath: path).lastPathComponent
+            let name = profiles.first(where: { $0.id == last })?.displayName ?? last
+            return "Selected \(name). Connect each provider below."
+        }
+        return "Select the profile you use to sign in."
+    }()
     var clients: [String:SessionHTTP] = [:]
     @Published var inFlight = Set<String>()
     var lastRefresh: Date?
@@ -419,21 +437,54 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         updateTitles()
         writeDiagnostics()
     }
-    func chooseBraveProfile() {
-        let panel = NSOpenPanel()
-        panel.title = "Choose Brave Profile"
-        panel.message = "Select Default or a Profile folder for your signed-in Brave account. API Bar reads only the provider sessions needed for these connections."
-        panel.prompt = "Use Profile"
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        panel.canCreateDirectories = false
-        panel.allowsMultipleSelection = false
-        panel.directoryURL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/BraveSoftware/Brave-Browser")
-        guard panel.runModal() == .OK, let url = panel.url else { return }
+    func refreshBraveProfiles() {
+        availableBraveProfiles = BraveSessionImporter.availableProfiles()
+        if let path = UserDefaults.standard.string(forKey: "BraveProfilePath") {
+            let last = URL(fileURLWithPath: path).lastPathComponent
+            if availableBraveProfiles.contains(where: { $0.id == last }) {
+                selectedBraveProfileID = last
+                let name = availableBraveProfiles.first(where: { $0.id == last })?.displayName ?? last
+                braveProfileStatus = "Selected \(name). Connect each provider below."
+                return
+            }
+        }
+        if !availableBraveProfiles.contains(where: { $0.id == selectedBraveProfileID }), let first = availableBraveProfiles.first {
+            selectedBraveProfileID = first.id
+        }
+    }
+
+    func selectBraveProfile(id: String) {
+        refreshBraveProfiles()
+        guard let profile = availableBraveProfiles.first(where: { $0.id == id }) else { return }
+        selectedBraveProfileID = id
         do {
-            try BraveSessionImporter.rememberProfile(url)
-            braveProfileStatus = "Selected \(url.lastPathComponent). Connect each provider below."
+            try BraveSessionImporter.rememberProfile(profile.url)
+            braveProfileStatus = "Selected \(profile.displayName). Connect each provider below."
         } catch { alert("Could not select profile", error.localizedDescription) }
+    }
+
+    func chooseBraveProfile() {
+        refreshBraveProfiles()
+        let alert = NSAlert()
+        alert.icon = NSApp.applicationIconImage ?? BrandMark.appIconImage(size: 128)
+        alert.messageText = "Select Brave Profile"
+        alert.informativeText = "Select the Brave profile you use to sign in. No file navigation is required."
+        let popUp = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 280, height: 26), pullsDown: false)
+        for profile in availableBraveProfiles {
+            popUp.addItem(withTitle: profile.displayName)
+            popUp.lastItem?.representedObject = profile.id
+        }
+        if let idx = availableBraveProfiles.firstIndex(where: { $0.id == selectedBraveProfileID }) {
+            popUp.selectItem(at: idx)
+        }
+        alert.accessoryView = popUp
+        alert.addButton(withTitle: "Use Profile")
+        alert.addButton(withTitle: "Cancel")
+        NSApp.activate(ignoringOtherApps: true)
+        if alert.runModal() == .alertFirstButtonReturn,
+           let chosenID = popUp.selectedItem?.representedObject as? String {
+            selectBraveProfile(id: chosenID)
+        }
     }
     func connect(_ provider: String) {
         guard !inFlight.contains(provider) else { return }

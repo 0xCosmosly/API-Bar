@@ -89,9 +89,76 @@ enum ProfileBookmark {
     }
 }
 
+struct BraveProfile: Identifiable, Hashable, Sendable {
+    let id: String
+    let name: String
+    let url: URL
+
+    var displayName: String {
+        if name != id && !name.isEmpty {
+            return "\(name) (\(id))"
+        }
+        return name
+    }
+}
+
 enum BraveSessionImporter {
     static let profileBookmarkKey = "BraveProfileBookmark"
-    static let accessError = "macOS blocked access to Brave's profile files. Click Choose Brave Profile in Settings, select the Default or Profile folder you use, then connect again."
+    static let accessError = "macOS blocked access to Brave's profile files. Select your profile under Brave Profile in Settings, then connect again."
+
+    static func availableProfiles() -> [BraveProfile] {
+        let root = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/BraveSoftware/Brave-Browser")
+        var profiles: [BraveProfile] = []
+        var foundDirNames = Set<String>()
+
+        var namesByFolder: [String: String] = [:]
+        let localStateURL = root.appendingPathComponent("Local State")
+        if let data = try? Data(contentsOf: localStateURL),
+           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let profileObj = json["profile"] as? [String: Any],
+           let infoCache = profileObj["info_cache"] as? [String: Any] {
+            for (key, val) in infoCache {
+                if let dict = val as? [String: Any], let name = dict["name"] as? String, !name.isEmpty {
+                    namesByFolder[key] = name
+                }
+            }
+        }
+
+        if let entries = try? FileManager.default.contentsOfDirectory(atPath: root.path) {
+            let matches = (["Default"] + entries.filter { $0.hasPrefix("Profile ") }.sorted())
+            for match in matches {
+                let url = root.appendingPathComponent(match)
+                var isDir: ObjCBool = false
+                if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue {
+                    if !foundDirNames.contains(match) {
+                        foundDirNames.insert(match)
+                        let displayName = namesByFolder[match] ?? match
+                        profiles.append(BraveProfile(id: match, name: displayName, url: url))
+                    }
+                }
+            }
+        }
+
+        let candidates = ["Default"] + (1...20).map { "Profile \($0)" }
+        for cand in candidates {
+            if !foundDirNames.contains(cand) {
+                let url = root.appendingPathComponent(cand)
+                var isDir: ObjCBool = false
+                if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue {
+                    foundDirNames.insert(cand)
+                    let displayName = namesByFolder[cand] ?? cand
+                    profiles.append(BraveProfile(id: cand, name: displayName, url: url))
+                }
+            }
+        }
+
+        if profiles.isEmpty {
+            let defaultURL = root.appendingPathComponent("Default")
+            profiles.append(BraveProfile(id: "Default", name: "Default", url: defaultURL))
+        }
+
+        return profiles
+    }
 
     static func rememberProfile(_ url: URL) throws {
         let browserRoot = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/BraveSoftware/Brave-Browser").standardizedFileURL
@@ -110,7 +177,6 @@ enum BraveSessionImporter {
     }
 
     static func read(provider: String, cookieDomain: String? = nil, interactive: Bool = false) throws -> [StoredCookie] {
-        let root = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/BraveSoftware/Brave-Browser")
         let names: Set<String>
         let domains: String
         switch provider {
@@ -162,12 +228,12 @@ enum BraveSessionImporter {
         let profiles: [URL]
         if let selectedProfile { profiles = [selectedProfile] }
         else {
-            do {
-                let entries = try FileManager.default.contentsOfDirectory(atPath: root.path)
-                profiles = (["Default"] + entries.filter { $0.hasPrefix("Profile ") }.sorted()).map { root.appendingPathComponent($0) }
-            } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
-                throw ConnectorError.message("Brave's profile folder was not found. Open Brave once, then try again.")
-            } catch { throw ConnectorError.message(accessError) }
+            let available = availableProfiles()
+            if !available.isEmpty {
+                profiles = available.map(\.url)
+            } else {
+                throw ConnectorError.message(accessError)
+            }
         }
         var encryptedRows: [(String,String,Data,String,Double)] = []
         var version = 0
