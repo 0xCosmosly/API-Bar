@@ -1,0 +1,18 @@
+# Build artifacts & caches
+.build/
+.cache/
+*.app/
+*.zip
+*.dmg
+*.o
+*.dylib
+
+# macOS system files
+.DS_Store
+.localized
+*.swp
+*~
+
+# Local diagnostic dumps
+runtime.json
+diagnostics.json
