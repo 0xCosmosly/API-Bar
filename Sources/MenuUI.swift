@@ -744,7 +744,7 @@ struct SettingsPane: View {
     @ObservedObject var app: APIBarApp
     @State private var login = SMAppService.mainApp.status == .enabled
     @State private var draggedBalance: Balance?
-    @State private var showAFMPanel = false
+    @State private var showAFMPanel = true
     @State private var showManageProvidersSheet = false
     @State private var selectedKnownProviderID: String = "venice"
     @State private var providerNameInput = ""

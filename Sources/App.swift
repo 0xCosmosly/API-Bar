@@ -229,6 +229,10 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
     var mergedMenuView: MergedMenuView?
     let dataURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("APIBar/balances.json")
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !UserDefaults.standard.bool(forKey: "HasCompletedOnboarding") {
+            showOnboarding()
+            return true
+        }
         settings()
         return true
     }
@@ -815,6 +819,10 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
     }
     @objc func refresh() { Task { await refreshAll() } }
     @objc func settings() {
+        if !UserDefaults.standard.bool(forKey: "HasCompletedOnboarding") {
+            showOnboarding()
+            return
+        }
         NSApp.setActivationPolicy(.regular)
         if let settingsWindow {
             settingsWindow.deminiaturize(nil)
@@ -830,6 +838,10 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         writeDiagnostics()
     }
     @objc func showOnboarding() {
+        if let settingsWindow {
+            settingsWindow.close()
+            self.settingsWindow = nil
+        }
         NSApp.setActivationPolicy(.regular)
         if let onboardingWindow {
             onboardingWindow.deminiaturize(nil)
