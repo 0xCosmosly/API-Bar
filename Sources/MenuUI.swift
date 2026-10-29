@@ -422,7 +422,7 @@ struct OnboardingView: View {
                     Button("Back") {
                         withAnimation(.easeInOut(duration: 0.2)) { step -= 1 }
                     }
-                    .controlSize(.large)
+                    .controlSize(.regular)
                 }
                 Spacer()
                 if step < 3 {
@@ -430,20 +430,21 @@ struct OnboardingView: View {
                         withAnimation(.easeInOut(duration: 0.2)) { step += 1 }
                     }
                     .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
+                    .controlSize(.regular)
                 } else {
                     Button("Finish Setup") {
                         onFinish()
                     }
                     .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
+                    .controlSize(.regular)
                 }
             }
             .padding(.horizontal, 24)
-            .padding(.vertical, 14)
+            .padding(.top, 14)
+            .padding(.bottom, 22)
             .background(Color(NSColor.windowBackgroundColor))
         }
-        .frame(width: 540, height: 530)
+        .frame(width: 540, height: 560)
     }
 
     private var welcomeStep: some View {
