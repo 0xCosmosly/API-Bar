@@ -434,6 +434,67 @@ enum BraveSessionImporter {
         }
     }
     private static nonisolated(unsafe) var cachedPassword: Data?
+    static func discoverGoogleBillingAccount() -> String? {
+        let (root, accessingRoot) = resolvedBrowserRoot()
+        defer { if accessingRoot { root.stopAccessingSecurityScopedResource() } }
+
+        var selectedProfile: URL?
+        if let bookmark = UserDefaults.standard.data(forKey: profileBookmarkKey) {
+            var stale = false
+            selectedProfile = try? ProfileBookmark.resolve(bookmark, stale: &stale)
+        }
+        if selectedProfile == nil, let path = UserDefaults.standard.string(forKey: "BraveProfilePath") {
+            let u = URL(fileURLWithPath: path)
+            if FileManager.default.fileExists(atPath: u.path) { selectedProfile = u }
+        }
+        let profiles: [URL]
+        if let selectedProfile { profiles = [selectedProfile] }
+        else { profiles = availableProfiles().map(\.url) }
+
+        let pattern = #"([0-9A-Fa-f]{6}-[0-9A-Fa-f]{6}-[0-9A-Fa-f]{6})"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
+
+        for profile in profiles {
+            let accessing = profile.startAccessingSecurityScopedResource()
+            defer { if accessing { profile.stopAccessingSecurityScopedResource() } }
+
+            let historyFile = profile.appendingPathComponent("History")
+            guard FileManager.default.fileExists(atPath: historyFile.path) else { continue }
+
+            let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("APIBarHistory-" + UUID().uuidString)
+            guard (try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)) != nil else { continue }
+            defer { try? FileManager.default.removeItem(at: tempDir) }
+
+            let tempHistory = tempDir.appendingPathComponent("History")
+            guard (try? FileManager.default.copyItem(at: historyFile, to: tempHistory)) != nil else { continue }
+            let wal = profile.appendingPathComponent("History-wal")
+            if FileManager.default.fileExists(atPath: wal.path) {
+                _ = try? FileManager.default.copyItem(at: wal, to: tempDir.appendingPathComponent("History-wal"))
+            }
+
+            var db: OpaquePointer?
+            guard sqlite3_open_v2(tempHistory.path, &db, SQLITE_OPEN_READONLY | SQLITE_OPEN_NOMUTEX, nil) == SQLITE_OK, let database = db else {
+                continue
+            }
+            defer { sqlite3_close(database) }
+
+            let query = "SELECT url FROM urls WHERE url LIKE '%console.cloud.google.com/billing/%' ORDER BY last_visit_time DESC LIMIT 50;"
+            var stmt: OpaquePointer?
+            if sqlite3_prepare_v2(database, query, -1, &stmt, nil) == SQLITE_OK {
+                defer { sqlite3_finalize(stmt) }
+                while sqlite3_step(stmt) == SQLITE_ROW {
+                    if let cStr = sqlite3_column_text(stmt, 0) {
+                        let urlStr = String(cString: cStr)
+                        if let match = regex.firstMatch(in: urlStr, range: NSRange(urlStr.startIndex..., in: urlStr)),
+                           let r = Range(match.range(at: 1), in: urlStr) {
+                            return String(urlStr[r]).uppercased()
+                        }
+                    }
+                }
+            }
+        }
+        return nil
+    }
     private static func safeStoragePassword(interactive: Bool) throws -> Data {
         if let cachedPassword { return cachedPassword }
         if let stored = try? KeychainVault.load("brave_safe_storage_key"), !stored.isEmpty {

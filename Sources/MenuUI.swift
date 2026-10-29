@@ -248,6 +248,271 @@ struct ProviderDropDelegate: DropDelegate {
     }
 }
 
+struct OnboardingView: View {
+    @ObservedObject var app: APIBarApp
+    let onFinish: () -> Void
+    @State private var step = 0
+    @State private var login = SMAppService.mainApp.status == .enabled
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 12) {
+                Image(nsImage: BrandMark.appIconImage(size: 44))
+                    .resizable()
+                    .frame(width: 44, height: 44)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Welcome to API Bar")
+                        .font(.title2)
+                        .fontWeight(.bold)
+                    Text("Live API credit balances right in your menu bar.")
+                        .font(.subheadline)
+                        .foregroundStyle(Color.secondary)
+                }
+                Spacer()
+            }
+            .padding(.horizontal, 24)
+            .padding(.top, 24)
+            .padding(.bottom, 16)
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: 18) {
+                if step == 0 {
+                    welcomeStep
+                } else if step == 1 {
+                    braveStep
+                } else {
+                    preferencesStep
+                }
+            }
+            .padding(24)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+
+            Divider()
+
+            HStack {
+                if step > 0 {
+                    Button("Back") {
+                        withAnimation(.easeInOut(duration: 0.2)) { step -= 1 }
+                    }
+                    .controlSize(.large)
+                }
+                Spacer()
+                if step < 2 {
+                    Button("Continue") {
+                        withAnimation(.easeInOut(duration: 0.2)) { step += 1 }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                } else {
+                    Button("Finish Setup") {
+                        onFinish()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                }
+            }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 16)
+            .background(Color(NSColor.windowBackgroundColor))
+        }
+        .frame(width: 520, height: 560)
+    }
+
+    private var welcomeStep: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Track Your Usage, Automatically")
+                .font(.headline)
+
+            VStack(alignment: .leading, spacing: 14) {
+                featureRow(icon: "chart.bar.xaxis", title: "Live Credit Gauges", description: "Monitor remaining balance and automatic 100% baseline usage across Vertex AI, Fireworks, Cerebras, Google AI Studio, Refuseless, and Crowbot.")
+                featureRow(icon: "shield.checkered", title: "Zero API Key Hassle", description: "API Bar securely reads authenticated sessions from Brave Browser directly on your device. No credentials ever leave your Mac.")
+                featureRow(icon: "menubar.rectangle", title: "Flexible Menu Bar Display", description: "View all providers in a single compact merged gauge or separate icons for each provider.")
+            }
+            .padding(14)
+            .background(RoundedRectangle(cornerRadius: 10).fill(Color(NSColor.controlBackgroundColor)))
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.primary.opacity(0.08), lineWidth: 1))
+        }
+    }
+
+    private var braveStep: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Connect Your Brave Browser")
+                .font(.headline)
+            Text("Select your Brave profile and connect your active provider sessions in one click.")
+                .font(.subheadline)
+                .foregroundStyle(Color.secondary)
+
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Brave Profile")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        Text(app.braveProfileStatus)
+                            .font(.caption)
+                            .foregroundStyle(app.isBraveAccessBlocked ? Color.orange : Color.secondary)
+                    }
+                    Spacer()
+                    Picker("", selection: Binding(
+                        get: { app.selectedBraveProfileID },
+                        set: { app.selectBraveProfile(id: $0) }
+                    )) {
+                        ForEach(app.availableBraveProfiles) { profile in
+                            Text(profile.displayName).tag(profile.id)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .frame(width: 180)
+                }
+
+                if app.isBraveAccessBlocked {
+                    HStack {
+                        Text("Access is blocked by macOS permission.")
+                            .font(.caption)
+                            .foregroundStyle(Color.orange)
+                        Spacer()
+                        Button("Grant Access…") { app.chooseBraveProfile() }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.small)
+                    }
+                }
+
+                Divider()
+
+                HStack {
+                    Button {
+                        app.connectAll()
+                    } label: {
+                        HStack(spacing: 6) {
+                            if !app.inFlight.isEmpty {
+                                ProgressView().controlSize(.small)
+                            } else {
+                                Image(systemName: "arrow.triangle.2.circlepath")
+                            }
+                            Text("Connect All from Brave")
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.regular)
+                    .disabled(!app.inFlight.isEmpty)
+
+                    Spacer()
+
+                    let connectedCount = app.balances.filter { app.isConnected($0.id) }.count
+                    Text("\(connectedCount) of \(app.balances.count) connected")
+                        .font(.caption)
+                        .foregroundStyle(Color.secondary)
+                }
+            }
+            .padding(14)
+            .background(RoundedRectangle(cornerRadius: 10).fill(Color(NSColor.controlBackgroundColor)))
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.primary.opacity(0.08), lineWidth: 1))
+
+            ScrollView(.vertical) {
+                VStack(spacing: 8) {
+                    ForEach(app.balances, id: \.id) { balance in
+                        HStack(spacing: 10) {
+                            Image(nsImage: ProviderIcon.image(balance.id))
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                                .frame(width: 16, height: 16)
+                            Text(balance.name)
+                                .font(.subheadline)
+                            Spacer()
+                            if app.isConnected(balance.id) {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundStyle(Color.green)
+                                Text(balance.baseline > 0 ? "100%: \(balance.id == "refuseless" ? "\(Int(balance.baseline)) credits" : balance.baseline.formatted(.currency(code: "USD")))" : "Connected")
+                                    .font(.caption)
+                                    .foregroundStyle(Color.secondary)
+                            } else {
+                                Text("Not connected")
+                                    .font(.caption)
+                                    .foregroundStyle(Color.secondary)
+                            }
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.03)))
+                    }
+                }
+            }
+            .frame(maxHeight: 140)
+        }
+    }
+
+    private var preferencesStep: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Configure Preferences")
+                .font(.headline)
+
+            VStack(alignment: .leading, spacing: 14) {
+                Toggle("Start at Login", isOn: Binding(get: { login }, set: { _ in
+                    app.toggleLogin(); login = SMAppService.mainApp.status == .enabled
+                }))
+                .font(.subheadline)
+
+                Divider()
+
+                Toggle("Merge provider icons into a single menu bar item", isOn: Binding(get: { app.mergeIcons }, set: { app.setMergeIcons($0) }))
+                .font(.subheadline)
+                Text("Keeps your menu bar clean by displaying one compact status icon.")
+                    .font(.caption)
+                    .foregroundStyle(Color.secondary)
+
+                Divider()
+
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Text("Sort Providers")
+                            .font(.subheadline)
+                        Spacer()
+                        Picker("", selection: Binding(
+                            get: { app.sortMode },
+                            set: { app.setSortMode($0) }
+                        )) {
+                            ForEach(ProviderSortMode.allCases, id: \.self) { mode in
+                                Text(mode.displayName).tag(mode)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .frame(width: 240)
+                    }
+                    Text("Total Amount is selected by default to highlight your highest-balance providers.")
+                        .font(.caption)
+                        .foregroundStyle(Color.secondary)
+                }
+            }
+            .padding(14)
+            .background(RoundedRectangle(cornerRadius: 10).fill(Color(NSColor.controlBackgroundColor)))
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.primary.opacity(0.08), lineWidth: 1))
+
+            Text("You can change these options anytime from Settings in the menu bar.")
+                .font(.footnote)
+                .foregroundStyle(Color.secondary)
+        }
+    }
+
+    private func featureRow(icon: String, title: String, description: String) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 24, height: 24)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                Text(description)
+                    .font(.caption)
+                    .foregroundStyle(Color.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+}
+
 struct SettingsPane: View {
     @ObservedObject var app: APIBarApp
     @State private var login = SMAppService.mainApp.status == .enabled
@@ -264,44 +529,97 @@ struct SettingsPane: View {
     var body: some View {
         ScrollView(.vertical) {
             VStack(alignment: .leading, spacing: 16) {
-            HStack(spacing: 10) {
-                Image(nsImage: BrandMark.appIconImage(size: 32)).resizable().frame(width: 32, height: 32)
-                Text("API Bar").font(.title2).fontWeight(.semibold).foregroundStyle(Color.primary)
-                Text("v\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "") (\(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""))")
-                    .font(.footnote).foregroundStyle(Color.primary)
+            HStack {
+                HStack(spacing: 10) {
+                    Image(nsImage: BrandMark.appIconImage(size: 32)).resizable().frame(width: 32, height: 32)
+                    Text("API Bar").font(.title2).fontWeight(.semibold).foregroundStyle(Color.primary)
+                    Text("v\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "") (\(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""))")
+                        .font(.footnote).foregroundStyle(Color.secondary)
+                }
+                Spacer()
+                Button {
+                    app.showOnboarding()
+                } label: {
+                    Label("Welcome Tour…", systemImage: "sparkles")
+                }
+                .controlSize(.small)
             }
-            Toggle("Start at Login", isOn: Binding(get: { login }, set: { _ in
-                app.toggleLogin(); login = SMAppService.mainApp.status == .enabled
-            }))
-            .foregroundStyle(Color.primary)
-            Toggle("Merge provider icons", isOn: Binding(get: { app.mergeIcons }, set: { app.setMergeIcons($0) }))
-            .foregroundStyle(Color.primary)
-            Text("Use one menu-bar item and switch providers inside its menu.")
-                .font(.footnote).foregroundStyle(Color.primary)
-            Divider()
-            VStack(alignment: .leading, spacing: 6) {
-                HStack {
-                    Text("Sort Providers")
+
+            // MARK: - Preferences Card
+            VStack(alignment: .leading, spacing: 12) {
+                Toggle("Start at Login", isOn: Binding(get: { login }, set: { _ in
+                    app.toggleLogin(); login = SMAppService.mainApp.status == .enabled
+                }))
+                .foregroundStyle(Color.primary)
+
+                Divider()
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Toggle("Merge provider icons", isOn: Binding(get: { app.mergeIcons }, set: { app.setMergeIcons($0) }))
+                        .foregroundStyle(Color.primary)
+                    Text("Use one menu-bar item and switch providers inside its menu.")
+                        .font(.footnote)
+                        .foregroundStyle(Color.secondary)
+                }
+
+                Divider()
+
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Text("Sort Providers")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                            .foregroundStyle(Color.primary)
+                        Spacer()
+                        Picker("", selection: Binding(
+                            get: { app.sortMode },
+                            set: { app.setSortMode($0) }
+                        )) {
+                            ForEach(ProviderSortMode.allCases, id: \.self) { mode in
+                                Text(mode.displayName).tag(mode)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .frame(width: 260)
+                    }
+                    Text("Rearrange providers manually or sort them automatically across menus and menu-bar items.")
+                        .font(.footnote)
+                        .foregroundStyle(Color.secondary)
+                }
+            }
+            .padding(14)
+            .background(RoundedRectangle(cornerRadius: 10).fill(Color(NSColor.controlBackgroundColor)))
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.primary.opacity(0.08), lineWidth: 1))
+
+            // MARK: - Brave Browser Card
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .center, spacing: 8) {
+                    Image(systemName: "globe")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(Color.accentColor)
+                    Text("Brave Browser Session")
                         .font(.headline)
                         .foregroundStyle(Color.primary)
                     Spacer()
-                    Picker("", selection: Binding(
-                        get: { app.sortMode },
-                        set: { app.setSortMode($0) }
-                    )) {
-                        ForEach(ProviderSortMode.allCases, id: \.self) { mode in
-                            Text(mode.displayName).tag(mode)
-                        }
+                    if app.isBraveAccessBlocked {
+                        Text("Action Required")
+                            .font(.caption2)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(Color.orange)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Capsule().fill(Color.orange.opacity(0.15)))
+                    } else {
+                        Text("Connected")
+                            .font(.caption2)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(Color.green)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Capsule().fill(Color.green.opacity(0.15)))
                     }
-                    .pickerStyle(.segmented)
-                    .frame(width: 260)
                 }
-                Text("Rearrange providers manually or sort them automatically across menus and menu-bar items.")
-                    .font(.footnote)
-                    .foregroundStyle(Color.primary)
-            }
-            Divider()
-            VStack(alignment: .leading, spacing: 6) {
+
                 if app.isBraveAccessBlocked {
                     VStack(alignment: .leading, spacing: 6) {
                         HStack(spacing: 6) {
@@ -311,22 +629,32 @@ struct SettingsPane: View {
                                 .font(.subheadline)
                                 .fontWeight(.semibold)
                         }
-                        Text("Grant folder access or Full Disk Access so API Bar can read your cookies.")
+                        Text("Grant folder access or Full Disk Access so API Bar can read your session cookies.")
                             .font(.caption)
                             .foregroundStyle(Color.secondary)
                         HStack(spacing: 8) {
                             Button("Grant Folder Access…") { app.chooseBraveProfile() }
                                 .buttonStyle(.borderedProminent)
+                                .controlSize(.small)
                             Button("Full Disk Access…") { app.openFullDiskAccessSettings() }
+                                .controlSize(.small)
                         }
                     }
-                    .padding(8)
+                    .padding(10)
                     .background(RoundedRectangle(cornerRadius: 8).fill(Color.orange.opacity(0.12)))
                 }
-                HStack {
-                    Text("Brave Profile")
-                        .font(.headline)
-                        .foregroundStyle(Color.primary)
+
+                HStack(alignment: .center) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Active Profile")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                            .foregroundStyle(Color.primary)
+                        Text(app.braveProfileStatus)
+                            .font(.caption)
+                            .foregroundStyle(app.isBraveAccessBlocked ? Color.orange : Color.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                     Spacer()
                     Picker("", selection: Binding(
                         get: { app.selectedBraveProfileID },
@@ -337,21 +665,36 @@ struct SettingsPane: View {
                         }
                     }
                     .pickerStyle(.menu)
-                    .frame(width: 200)
+                    .frame(width: 180)
                 }
+
+                Divider()
+
                 HStack {
                     Button("Choose Brave Profile…") { app.chooseBraveProfile() }
-                    Text(app.braveProfileStatus)
-                        .font(.footnote)
-                        .foregroundStyle(app.isBraveAccessBlocked ? Color.orange : Color.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                        .controlSize(.small)
+                    Spacer()
+                    Button {
+                        app.connectAll()
+                    } label: {
+                        HStack(spacing: 6) {
+                            if !app.inFlight.isEmpty {
+                                ProgressView().controlSize(.small)
+                            } else {
+                                Image(systemName: "arrow.triangle.2.circlepath")
+                            }
+                            Text("Connect All from Brave")
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.regular)
+                    .disabled(!app.inFlight.isEmpty || app.balances.allSatisfy { app.isConnected($0.id) })
                 }
             }
-            HStack {
-                Button("Connect All from Brave") { app.connectAll() }
-                    .disabled(!app.inFlight.isEmpty || app.balances.allSatisfy { app.isConnected($0.id) })
-                Spacer()
-            }
+            .padding(14)
+            .background(RoundedRectangle(cornerRadius: 10).fill(Color(NSColor.controlBackgroundColor)))
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.primary.opacity(0.08), lineWidth: 1))
+
             Divider()
             VStack(alignment: .leading, spacing: 12) {
                 ForEach(Array(app.balances.enumerated()), id: \.element.id) { index, balance in

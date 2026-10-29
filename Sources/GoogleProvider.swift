@@ -46,6 +46,9 @@ struct GoogleProvider: BalanceProvider {
 
     func discoverAccount() async throws -> String {
         if !account.isEmpty { return account }
+        if let fromBrave = BraveSessionImporter.discoverGoogleBillingAccount(), !fromBrave.isEmpty {
+            return fromBrave
+        }
         let page = URL(string: "https://console.cloud.google.com/billing")!
         let (htmlData, pageResponse) = try await http.request(url: page, headers: ["Accept": "text/html,application/xhtml+xml"])
         if let redirectedURL = pageResponse.url?.absoluteString {

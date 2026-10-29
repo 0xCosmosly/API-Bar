@@ -19,14 +19,19 @@ enum ProviderSortMode: String, CaseIterable, Codable {
 @MainActor
 final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowDelegate, ObservableObject {
     @Published var balances = Balance.initial
-    @Published var mergeIcons = UserDefaults.standard.bool(forKey: "MergeProviderIcons")
+    @Published var mergeIcons: Bool = {
+        if UserDefaults.standard.object(forKey: "MergeProviderIcons") != nil {
+            return UserDefaults.standard.bool(forKey: "MergeProviderIcons")
+        }
+        return true
+    }()
     @Published var mergedProvider = UserDefaults.standard.string(forKey: "MergedProvider") ?? "overview"
     @Published var sortMode: ProviderSortMode = {
         if let saved = UserDefaults.standard.string(forKey: "ProviderSortMode"),
            let mode = ProviderSortMode(rawValue: saved) {
             return mode
         }
-        return .manual
+        return .balance
     }()
 
     func setSortMode(_ mode: ProviderSortMode) {
@@ -220,6 +225,7 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
     var timer: Timer?
     var appError: String?
     var settingsWindow: NSWindow?
+    var onboardingWindow: NSWindow?
     var mergedMenuView: MergedMenuView?
     let dataURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("APIBar/balances.json")
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -276,30 +282,8 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
             var changed = ordered.map(\.id) != saved.map(\.id)
             balances = ordered
             for i in balances.indices {
-                if balances[i].id == "fireworks" && (balances[i].baseline < 10.07 || balances[i].baseline == 10.0) {
-                    balances[i].baseline = 10.07
-                    changed = true
-                }
-                if balances[i].id == "crowbot" && balances[i].baseline < 5.0 {
-                    balances[i].baseline = PaymentReference.inferTier(for: balances[i].remaining)
-                    changed = true
-                }
-                if balances[i].id == "aistudio" {
-                    if balances[i].name != "Google AI Studio" { balances[i].name = "Google AI Studio"; changed = true }
-                    if balances[i].baseline < 5.0 {
-                        balances[i].baseline = 5.0
-                        balances[i].remaining = 5.0
-                        changed = true
-                    }
-                }
-                if balances[i].id == "cerebras" && balances[i].baseline < 5.0 {
-                    balances[i].baseline = 5.0
-                    balances[i].remaining = 5.0
-                    changed = true
-                }
-                if balances[i].id == "refuseless" && balances[i].baseline < 100.0 {
-                    balances[i].baseline = 100.0
-                    balances[i].remaining = 100.0
+                if balances[i].id == "aistudio" && balances[i].name != "Google AI Studio" {
+                    balances[i].name = "Google AI Studio"
                     changed = true
                 }
             }
@@ -345,6 +329,11 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
             if self.lastRefresh.map({ Date().timeIntervalSince($0) >= 300 }) != false { await self.refreshAll() }
         } }
         Task { await refreshAll() }
+        if !UserDefaults.standard.bool(forKey: "HasCompletedOnboarding") {
+            DispatchQueue.main.async { [weak self] in
+                self?.showOnboarding()
+            }
+        }
     }
     func configureStatusItems() {
         for item in items { NSStatusBar.system.removeStatusItem(item) }
@@ -839,9 +828,38 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         window.center(); window.makeKeyAndOrderFront(nil); settingsWindow = window; NSApp.activate(ignoringOtherApps: true)
         writeDiagnostics()
     }
+    @objc func showOnboarding() {
+        NSApp.setActivationPolicy(.regular)
+        if let onboardingWindow {
+            onboardingWindow.deminiaturize(nil)
+            onboardingWindow.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 540, height: 600), styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
+        window.title = "Welcome to API Bar"
+        window.isReleasedWhenClosed = false
+        window.delegate = self
+        window.contentView = NSHostingView(rootView: OnboardingView(app: self, onFinish: { [weak self, weak window] in
+            UserDefaults.standard.set(true, forKey: "HasCompletedOnboarding")
+            window?.close()
+            self?.onboardingWindow = nil
+            if self?.settingsWindow == nil {
+                NSApp.setActivationPolicy(.accessory)
+            }
+        }))
+        window.center()
+        window.makeKeyAndOrderFront(nil)
+        onboardingWindow = window
+        NSApp.activate(ignoringOtherApps: true)
+    }
     func windowWillClose(_ notification: Notification) {
-        guard let window = notification.object as? NSWindow, window === settingsWindow else { return }
-        NSApp.setActivationPolicy(.accessory)
+        guard let window = notification.object as? NSWindow else { return }
+        if window === settingsWindow { settingsWindow = nil }
+        if window === onboardingWindow { onboardingWindow = nil }
+        if settingsWindow == nil && onboardingWindow == nil {
+            NSApp.setActivationPolicy(.accessory)
+        }
         writeDiagnostics()
     }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
