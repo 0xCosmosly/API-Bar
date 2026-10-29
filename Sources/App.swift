@@ -915,7 +915,7 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         case "fireworks": return URL(string: "https://app.fireworks.ai/account/home")!
         case "aistudio": return URL(string: "https://aistudio.google.com/app/plan_and_billing")!
         case "cerebras": return URL(string: "https://cloud.cerebras.ai/platform/")!
-        case "refuseless": return URL(string: "https://refuseless.com/dashboard")!
+        case "refuseless": return URL(string: "https://refuseless.com/console")!
         default: return URL(string: "https://console.cloud.google.com/billing/\(b.account)/credits/all")!
         }
     }

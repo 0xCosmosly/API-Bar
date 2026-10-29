@@ -3,9 +3,13 @@ set -euo pipefail
 cd "$(dirname "$0")"
 export DEVELOPER_DIR="${DEVELOPER_DIR:-/Library/Developer/CommandLineTools}"
 if [ -z "${SDK:-}" ]; then
-    SDK="$(xcrun --show-sdk-path 2>/dev/null || true)"
-    if [ -z "$SDK" ] || [ ! -d "$SDK" ]; then
-        SDK="$DEVELOPER_DIR/SDKs/MacOSX.sdk"
+    if [ -d "$DEVELOPER_DIR/SDKs/MacOSX26.5.sdk" ]; then
+        SDK="$DEVELOPER_DIR/SDKs/MacOSX26.5.sdk"
+    else
+        SDK="$(xcrun --show-sdk-path 2>/dev/null || true)"
+        if [ -z "$SDK" ] || [ ! -d "$SDK" ]; then
+            SDK="$DEVELOPER_DIR/SDKs/MacOSX.sdk"
+        fi
     fi
 fi
 mkdir -p .cache/modules

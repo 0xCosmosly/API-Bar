@@ -283,8 +283,8 @@ enum BraveSessionImporter {
             names = []
             domains = "('.cerebras.ai','cerebras.ai','cloud.cerebras.ai','.cloud.cerebras.ai','auth.cerebras.ai','.auth.cerebras.ai','api.cerebras.ai','.api.cerebras.ai')"
         case "refuseless":
-            names = ["cf_clearance", "session", "token", "auth_token", "refuseless_token", "refuseless_key"]
-            domains = "('.refuseless.com','refuseless.com','api.refuseless.com','.api.refuseless.com')"
+            names = []
+            domains = "('.refuseless.com','refuseless.com','api.refuseless.com','.api.refuseless.com','console.refuseless.com','.console.refuseless.com')"
         default:
             if let domain = cookieDomain, !domain.isEmpty {
                 let clean = domain.trimmingCharacters(in: CharacterSet(charactersIn: "."))
@@ -371,9 +371,14 @@ enum BraveSessionImporter {
                 var q: OpaquePointer?
                 if sqlite3_prepare_v2(db, "SELECT value FROM meta WHERE key='version'", -1, &q, nil) == SQLITE_OK, sqlite3_step(q) == SQLITE_ROW, let text = sqlite3_column_text(q, 0) { version = Int(String(cString: text)) ?? 0 }
                 sqlite3_finalize(q); q = nil
-                let sql = provider == "cerebras"
-                    ? "SELECT host_key,name,encrypted_value,value,expires_utc FROM cookies WHERE host_key LIKE '%cerebras.ai'"
-                    : "SELECT host_key,name,encrypted_value,value,expires_utc FROM cookies WHERE host_key IN \(domains)"
+                let sql: String
+                if provider == "cerebras" {
+                    sql = "SELECT host_key,name,encrypted_value,value,expires_utc FROM cookies WHERE host_key LIKE '%cerebras.ai'"
+                } else if provider == "refuseless" {
+                    sql = "SELECT host_key,name,encrypted_value,value,expires_utc FROM cookies WHERE host_key LIKE '%refuseless.com'"
+                } else {
+                    sql = "SELECT host_key,name,encrypted_value,value,expires_utc FROM cookies WHERE host_key IN \(domains)"
+                }
                 guard sqlite3_prepare_v2(db, sql, -1, &q, nil) == SQLITE_OK else {
                     sqlite3_finalize(q)
                     throw ConnectorError.message("Brave's cookie database could not be read. Close Brave and retry, or choose the correct profile in Settings.")
@@ -402,35 +407,63 @@ enum BraveSessionImporter {
             throw ConnectorError.message("No signed-in \(name) session was found in Brave. Sign in there, then connect again.")
         }
         // Keychain is queried only after confirming this provider has stored cookies.
-        let password = try safeStoragePassword(interactive:interactive)
+        let password = try safeStoragePassword(interactive: interactive)
+        guard let key = deriveSafeStorageKey(from: password) else { throw ConnectorError.message("Could not unlock Brave's saved session.") }
+        do {
+            return try decryptCookieRows(encryptedRows, version: version, key: key)
+        } catch {
+            cachedPassword = nil
+            KeychainVault.clear("brave_safe_storage_key")
+            if interactive {
+                if let freshPassword = try? safeStoragePassword(interactive: true, forceFresh: true),
+                   let freshKey = deriveSafeStorageKey(from: freshPassword),
+                   let cookies = try? decryptCookieRows(encryptedRows, version: version, key: freshKey) {
+                    return cookies
+                }
+            }
+            throw error
+        }
+    }
+
+    private static func deriveSafeStorageKey(from password: Data) -> [UInt8]? {
         let salt = Array("saltysalt".utf8)
-        var key = [UInt8](repeating:0,count:16)
+        var key = [UInt8](repeating: 0, count: 16)
         let result = password.withUnsafeBytes { raw in salt.withUnsafeBytes { s in
-            CCKeyDerivationPBKDF(CCPBKDFAlgorithm(kCCPBKDF2), raw.bindMemory(to:CChar.self).baseAddress, password.count, s.bindMemory(to:UInt8.self).baseAddress, salt.count, CCPseudoRandomAlgorithm(kCCPRFHmacAlgSHA1), 1003, &key, key.count)
+            CCKeyDerivationPBKDF(CCPBKDFAlgorithm(kCCPBKDF2), raw.bindMemory(to: CChar.self).baseAddress, password.count, s.bindMemory(to: UInt8.self).baseAddress, salt.count, CCPseudoRandomAlgorithm(kCCPRFHmacAlgSHA1), 1003, &key, key.count)
         }}
-        guard result == kCCSuccess else { throw ConnectorError.message("Could not unlock Brave's saved session.") }
-        return try encryptedRows.map { host,name,blob,plain,expiry in
+        return result == kCCSuccess ? key : nil
+    }
+
+    private static func decryptCookieRows(_ rows: [(String, String, Data, String, Double)], version: Int, key: [UInt8]) throws -> [StoredCookie] {
+        return try rows.map { host, name, blob, plain, expiry in
             let value: String
             if !plain.isEmpty { value = plain }
             else {
-                guard blob.starts(with:Data("v10".utf8)) else { throw ConnectorError.message("This Brave cookie encryption format is not supported.") }
-                let input = Data(blob.dropFirst(3)), iv = [UInt8](repeating:32,count:16)
-                var output = [UInt8](repeating:0,count:input.count+16), moved = 0
+                guard blob.starts(with: Data("v10".utf8)) else { throw ConnectorError.message("This Brave cookie encryption format is not supported.") }
+                let input = Data(blob.dropFirst(3)), iv = [UInt8](repeating: 32, count: 16)
+                var output = [UInt8](repeating: 0, count: input.count + 16), moved = 0
                 let capacity = output.count
                 let status = key.withUnsafeBytes { k in iv.withUnsafeBytes { v in input.withUnsafeBytes { raw in
                     CCCrypt(CCOperation(kCCDecrypt), CCAlgorithm(kCCAlgorithmAES), CCOptions(kCCOptionPKCS7Padding), k.baseAddress, key.count, v.baseAddress, raw.baseAddress, input.count, &output, capacity, &moved)
                 }}}
                 guard status == kCCSuccess else { throw ConnectorError.message("Brave session decryption failed. No credentials were imported.") }
                 var decrypted = Data(output.prefix(moved))
-                if version >= 24 {
-                    let digest = Data(SHA256.hash(data:Data(host.utf8)))
-                    guard decrypted.starts(with:digest) else { throw ConnectorError.message("The saved cookie did not match its provider domain.") }
-                    decrypted = decrypted.dropFirst(32)
+                if version >= 24 && decrypted.count > 32 {
+                    let digestHost = Data(SHA256.hash(data: Data(host.utf8)))
+                    let cleanHost = host.trimmingCharacters(in: CharacterSet(charactersIn: "."))
+                    let digestClean = Data(SHA256.hash(data: Data(cleanHost.utf8)))
+                    let digestDotted = Data(SHA256.hash(data: Data(("." + cleanHost).utf8)))
+
+                    if decrypted.starts(with: digestHost) || decrypted.starts(with: digestClean) || decrypted.starts(with: digestDotted) {
+                        decrypted = decrypted.dropFirst(32)
+                    } else if String(data: decrypted, encoding: .utf8) == nil {
+                        throw ConnectorError.message("The saved cookie did not match its provider domain.")
+                    }
                 }
-                guard let string = String(data:decrypted,encoding:.utf8), !string.isEmpty else { throw ConnectorError.message("The saved session could not be decoded.") }
+                guard let string = String(data: decrypted, encoding: .utf8), !string.isEmpty else { throw ConnectorError.message("The saved session could not be decoded.") }
                 value = string
             }
-            return StoredCookie(name:name,value:value,domain:host,expires:expiry > 0 ? Date(timeIntervalSince1970:expiry/1_000_000-11_644_473_600) : nil)
+            return StoredCookie(name: name, value: value, domain: host, expires: expiry > 0 ? Date(timeIntervalSince1970: expiry / 1_000_000 - 11_644_473_600) : nil)
         }
     }
     private static nonisolated(unsafe) var cachedPassword: Data?
@@ -495,11 +528,13 @@ enum BraveSessionImporter {
         }
         return nil
     }
-    private static func safeStoragePassword(interactive: Bool) throws -> Data {
-        if let cachedPassword { return cachedPassword }
-        if let stored = try? KeychainVault.load("brave_safe_storage_key"), !stored.isEmpty {
-            cachedPassword = stored
-            return stored
+    private static func safeStoragePassword(interactive: Bool, forceFresh: Bool = false) throws -> Data {
+        if !forceFresh {
+            if let cachedPassword { return cachedPassword }
+            if let stored = try? KeychainVault.load("brave_safe_storage_key"), !stored.isEmpty {
+                cachedPassword = stored
+                return stored
+            }
         }
         let context = LAContext(); context.interactionNotAllowed = !interactive
         let query: [String:Any] = [kSecClass as String:kSecClassGenericPassword,kSecAttrService as String:"Brave Safe Storage",kSecReturnData as String:true,kSecMatchLimit as String:kSecMatchLimitOne,kSecUseAuthenticationContext as String:context]

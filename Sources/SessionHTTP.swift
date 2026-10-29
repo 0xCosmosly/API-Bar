@@ -156,7 +156,7 @@ actor SessionHTTP {
         case "vertex": allowed = ["cloudconsole-pa.clients6.google.com","console.cloud.google.com"].contains(host)
         case "aistudio": allowed = ["aistudio.google.com", "appsgenaiserver-pa.clients6.google.com", "generativelanguage.googleapis.com"].contains(host)
         case "cerebras": allowed = ["cloud.cerebras.ai", "api.cerebras.ai"].contains(host)
-        case "refuseless": allowed = ["refuseless.com", "api.refuseless.com"].contains(host)
+        case "refuseless": allowed = ["refuseless.com", "api.refuseless.com", "console.refuseless.com"].contains(host)
         default: allowed = (dynamicHost != nil && host == dynamicHost)
         }
         guard url.scheme == "https", allowed else { throw ConnectorError.message("Refused to send the saved session to an unexpected host.") }
@@ -364,12 +364,15 @@ struct RefuselessProvider: BalanceProvider {
             _ = try? await http.reloadCookiesFromBrave(interactive: false)
             cookies = await http.cookies
         }
-        if !cookies.isEmpty {
-            try? await http.persist()
+        guard !cookies.isEmpty, cookies.contains(where: {
+            $0.name == "abl_session" || $0.name.lowercased().contains("session") || $0.name.lowercased().contains("token") || $0.name.lowercased().contains("auth")
+        }) else {
+            throw ConnectorError.message("No signed-in Refuseless session was found in Brave. Sign in there, then connect again.")
         }
+        try? await http.persist()
         let balance: Double = 100.0
         let ref = PaymentReference.inferTier(for: balance)
         let acct = account.isEmpty ? "DeepSeek Credits" : account
-        return Reading(provider: providerID, remaining: balance, currency: "USD", account: acct, url: "https://refuseless.com/dashboard", expires: nil, reference: ref)
+        return Reading(provider: providerID, remaining: balance, currency: "USD", account: acct, url: "https://refuseless.com/console", expires: nil, reference: ref)
     }
 }

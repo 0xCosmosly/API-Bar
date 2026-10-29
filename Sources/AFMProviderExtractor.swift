@@ -104,7 +104,7 @@ public enum AFMProviderExtractor {
             id: "refuseless",
             name: "Refuseless",
             domain: "refuseless.com",
-            dashboardURL: "https://refuseless.com",
+            dashboardURL: "https://refuseless.com/console",
             endpoint: "https://api.refuseless.com/v1/billing",
             jsonPath: "balance",
             defaultBaseline: 100.0,
