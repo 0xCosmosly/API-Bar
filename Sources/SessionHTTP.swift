@@ -28,7 +28,10 @@ actor SessionHTTP {
         if let data = try? KeychainVault.load(provider), let cookies = try? JSONDecoder().decode([StoredCookie].self,from:data), !cookies.isEmpty {
             return SessionHTTP(provider:provider,cookies:cookies,dynamicHost:dynamicHost)
         }
-        if UserDefaults.standard.data(forKey: BraveSessionImporter.profileBookmarkKey) != nil || UserDefaults.standard.string(forKey: "BraveProfilePath") != nil {
+        if UserDefaults.standard.data(forKey: BraveSessionImporter.profileBookmarkKey) != nil ||
+           UserDefaults.standard.data(forKey: BraveSessionImporter.rootBookmarkKey) != nil ||
+           UserDefaults.standard.string(forKey: "BraveProfilePath") != nil ||
+           UserDefaults.standard.string(forKey: "BraveBrowserRootPath") != nil {
             if let client = try? SessionHTTP.connect(provider: provider, cookieDomain: cookieDomain, dynamicHost: dynamicHost, interactive: false) {
                 return client
             }

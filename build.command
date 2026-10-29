@@ -1,8 +1,13 @@
 #!/bin/bash
 set -euo pipefail
 cd "$(dirname "$0")"
-export DEVELOPER_DIR=/Library/Developer/CommandLineTools
-SDK="$DEVELOPER_DIR/SDKs/MacOSX26.5.sdk"
+export DEVELOPER_DIR="${DEVELOPER_DIR:-/Library/Developer/CommandLineTools}"
+if [ -z "${SDK:-}" ]; then
+    SDK="$(xcrun --show-sdk-path 2>/dev/null || true)"
+    if [ -z "$SDK" ] || [ ! -d "$SDK" ]; then
+        SDK="$DEVELOPER_DIR/SDKs/MacOSX.sdk"
+    fi
+fi
 mkdir -p .cache/modules
 "$DEVELOPER_DIR/usr/bin/swiftc" -sdk "$SDK" -target "$(uname -m)-apple-macosx13.0" -parse-as-library -module-cache-path "$PWD/.cache/modules" Sources/BrandMark.swift Tools/MakeIcon.swift -o .cache/MakeIcon
 .cache/MakeIcon .cache/AppIcon.iconset Resources/AppIcon.icns

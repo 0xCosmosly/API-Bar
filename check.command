@@ -1,8 +1,13 @@
 #!/bin/bash
 set -euo pipefail
 cd "$(dirname "$0")"
-export DEVELOPER_DIR=/Library/Developer/CommandLineTools
-SDK="$DEVELOPER_DIR/SDKs/MacOSX26.5.sdk"
+export DEVELOPER_DIR="${DEVELOPER_DIR:-/Library/Developer/CommandLineTools}"
+if [ -z "${SDK:-}" ]; then
+    SDK="$(xcrun --show-sdk-path 2>/dev/null || true)"
+    if [ -z "$SDK" ] || [ ! -d "$SDK" ]; then
+        SDK="$DEVELOPER_DIR/SDKs/MacOSX.sdk"
+    fi
+fi
 mkdir -p .cache/checks
 swiftc -sdk "$SDK" -parse-as-library -module-cache-path "$PWD/.cache/modules" Sources/Balance.swift Sources/Provider.swift Sources/Credentials.swift Sources/SessionHTTP.swift Sources/GoogleProvider.swift Sources/CrowbotProvider.swift Tests/Checks.swift -o .cache/checks/APIBarChecks
 .cache/checks/APIBarChecks

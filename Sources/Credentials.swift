@@ -4,6 +4,7 @@ import SQLite3
 import CommonCrypto
 import CryptoKit
 import LocalAuthentication
+import AppKit
 
 enum ConnectorError: LocalizedError {
     case message(String)
@@ -103,11 +104,66 @@ struct BraveProfile: Identifiable, Hashable, Sendable {
 }
 
 enum BraveSessionImporter {
+    static let rootBookmarkKey = "BraveRootBookmark"
     static let profileBookmarkKey = "BraveProfileBookmark"
-    static let accessError = "macOS blocked access to Brave's profile files. Select your profile under Brave Profile in Settings, then connect again."
+    static let defaultBrowserRoot = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/BraveSoftware/Brave-Browser")
+    static let accessError = "macOS blocked access to Brave's profile files. In Settings, click 'Choose Brave Profile…' to grant folder access (or grant Full Disk Access in macOS System Settings)."
+
+    static func resolvedBrowserRoot() -> (url: URL, accessing: Bool) {
+        if let bookmark = UserDefaults.standard.data(forKey: rootBookmarkKey) {
+            var stale = false
+            if let url = try? ProfileBookmark.resolve(bookmark, stale: &stale) {
+                let accessing = url.startAccessingSecurityScopedResource()
+                return (url, accessing)
+            }
+        }
+        if let path = UserDefaults.standard.string(forKey: "BraveBrowserRootPath") {
+            let url = URL(fileURLWithPath: path)
+            var isDir: ObjCBool = false
+            if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue {
+                return (url, false)
+            }
+        }
+        return (defaultBrowserRoot, false)
+    }
+
+    static func isBraveInstalled() -> Bool {
+        if FileManager.default.fileExists(atPath: "/Applications/Brave Browser.app") {
+            return true
+        }
+        let userApp = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Applications/Brave Browser.app")
+        if FileManager.default.fileExists(atPath: userApp.path) {
+            return true
+        }
+        if NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.brave.Browser") != nil {
+            return true
+        }
+        var isDir: ObjCBool = false
+        if FileManager.default.fileExists(atPath: defaultBrowserRoot.path, isDirectory: &isDir) && isDir.boolValue {
+            return true
+        }
+        return false
+    }
+
+    static func isAccessBlocked() -> Bool {
+        let (root, accessing) = resolvedBrowserRoot()
+        defer { if accessing { root.stopAccessingSecurityScopedResource() } }
+        var isDir: ObjCBool = false
+        if !FileManager.default.fileExists(atPath: root.path, isDirectory: &isDir) || !isDir.boolValue {
+            return false
+        }
+        do {
+            _ = try FileManager.default.contentsOfDirectory(atPath: root.path)
+            return false
+        } catch {
+            return true
+        }
+    }
 
     static func availableProfiles() -> [BraveProfile] {
-        let root = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/BraveSoftware/Brave-Browser")
+        let (root, accessing) = resolvedBrowserRoot()
+        defer { if accessing { root.stopAccessingSecurityScopedResource() } }
+
         var profiles: [BraveProfile] = []
         var foundDirNames = Set<String>()
 
@@ -139,6 +195,18 @@ enum BraveSessionImporter {
             }
         }
 
+        if let bookmark = UserDefaults.standard.data(forKey: profileBookmarkKey) {
+            var stale = false
+            if let profileURL = try? ProfileBookmark.resolve(bookmark, stale: &stale) {
+                let match = profileURL.lastPathComponent
+                if !foundDirNames.contains(match) {
+                    foundDirNames.insert(match)
+                    let displayName = namesByFolder[match] ?? match
+                    profiles.append(BraveProfile(id: match, name: displayName, url: profileURL))
+                }
+            }
+        }
+
         let candidates = ["Default"] + (1...20).map { "Profile \($0)" }
         for cand in candidates {
             if !foundDirNames.contains(cand) {
@@ -161,19 +229,41 @@ enum BraveSessionImporter {
     }
 
     static func rememberProfile(_ url: URL) throws {
-        let browserRoot = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/BraveSoftware/Brave-Browser").standardizedFileURL
-        let profile = url.standardizedFileURL
-        guard profile.deletingLastPathComponent().path == browserRoot.path,
-              profile.lastPathComponent == "Default" || profile.lastPathComponent.hasPrefix("Profile ") else {
-            throw ConnectorError.message("Choose Default or a Profile folder inside Brave-Browser, rather than the Brave-Browser folder itself.")
+        let chosen = url.standardizedFileURL
+
+        // 1. If user selected Brave-Browser folder or any folder containing Local State:
+        if chosen.lastPathComponent == "Brave-Browser" || FileManager.default.fileExists(atPath: chosen.appendingPathComponent("Local State").path) {
+            let rootBookmark = try ProfileBookmark.create(chosen)
+            UserDefaults.standard.set(rootBookmark, forKey: rootBookmarkKey)
+            UserDefaults.standard.set(chosen.path, forKey: "BraveBrowserRootPath")
+
+            let defaultProfile = chosen.appendingPathComponent("Default")
+            if let profBm = try? ProfileBookmark.create(defaultProfile) {
+                UserDefaults.standard.set(profBm, forKey: profileBookmarkKey)
+            }
+            UserDefaults.standard.set(defaultProfile.path, forKey: "BraveProfilePath")
+            return
         }
-        // This local build does not adopt App Sandbox. Explicit security-scoped
-        // bookmarks require its entitlements and fail for this app. Preserve the
-        // folder picker's implicit scope in a regular bookmark instead; actual
-        // profile access still goes through macOS privacy checks and read-only SQL.
-        let bookmark = try ProfileBookmark.create(profile)
-        UserDefaults.standard.set(bookmark, forKey: profileBookmarkKey)
-        UserDefaults.standard.set(profile.path, forKey: "BraveProfilePath")
+
+        // 2. If user selected Default or Profile folder:
+        if chosen.lastPathComponent == "Default" || chosen.lastPathComponent.hasPrefix("Profile ") ||
+           FileManager.default.fileExists(atPath: chosen.appendingPathComponent("Network/Cookies").path) ||
+           FileManager.default.fileExists(atPath: chosen.appendingPathComponent("Cookies").path) {
+            let bookmark = try ProfileBookmark.create(chosen)
+            UserDefaults.standard.set(bookmark, forKey: profileBookmarkKey)
+            UserDefaults.standard.set(chosen.path, forKey: "BraveProfilePath")
+
+            let parent = chosen.deletingLastPathComponent()
+            if parent.lastPathComponent == "Brave-Browser" || FileManager.default.fileExists(atPath: parent.appendingPathComponent("Local State").path) {
+                if let rootBm = try? ProfileBookmark.create(parent) {
+                    UserDefaults.standard.set(rootBm, forKey: rootBookmarkKey)
+                    UserDefaults.standard.set(parent.path, forKey: "BraveBrowserRootPath")
+                }
+            }
+            return
+        }
+
+        throw ConnectorError.message("Please select the 'Brave-Browser' folder or a profile folder (e.g. 'Default').")
     }
 
     static func read(provider: String, cookieDomain: String? = nil, interactive: Bool = false) throws -> [StoredCookie] {
@@ -204,6 +294,9 @@ enum BraveSessionImporter {
                 throw ConnectorError.message("Unknown provider.")
             }
         }
+        let (rootURL, rootAccessing) = resolvedBrowserRoot()
+        defer { if rootAccessing { rootURL.stopAccessingSecurityScopedResource() } }
+
         var selectedProfile: URL?
         if let bookmark = UserDefaults.standard.data(forKey: profileBookmarkKey) {
             var stale = false

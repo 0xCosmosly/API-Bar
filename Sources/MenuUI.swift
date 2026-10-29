@@ -302,6 +302,27 @@ struct SettingsPane: View {
             }
             Divider()
             VStack(alignment: .leading, spacing: 6) {
+                if app.isBraveAccessBlocked {
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundStyle(Color.orange)
+                            Text("Brave profile access is blocked by macOS.")
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                        }
+                        Text("Grant folder access or Full Disk Access so API Bar can read your cookies.")
+                            .font(.caption)
+                            .foregroundStyle(Color.secondary)
+                        HStack(spacing: 8) {
+                            Button("Grant Folder Access…") { app.chooseBraveProfile() }
+                                .buttonStyle(.borderedProminent)
+                            Button("Full Disk Access…") { app.openFullDiskAccessSettings() }
+                        }
+                    }
+                    .padding(8)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(Color.orange.opacity(0.12)))
+                }
                 HStack {
                     Text("Brave Profile")
                         .font(.headline)
@@ -322,7 +343,7 @@ struct SettingsPane: View {
                     Button("Choose Brave Profile…") { app.chooseBraveProfile() }
                     Text(app.braveProfileStatus)
                         .font(.footnote)
-                        .foregroundStyle(Color.secondary)
+                        .foregroundStyle(app.isBraveAccessBlocked ? Color.orange : Color.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }

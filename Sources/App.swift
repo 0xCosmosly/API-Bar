@@ -185,6 +185,8 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         writeDiagnostics()
     }
     @Published var providerStatus: [String:String] = [:]
+    @Published var isBraveInstalled: Bool = BraveSessionImporter.isBraveInstalled()
+    @Published var isBraveAccessBlocked: Bool = BraveSessionImporter.isAccessBlocked()
     @Published var availableBraveProfiles: [BraveProfile] = BraveSessionImporter.availableProfiles()
     @Published var selectedBraveProfileID: String = {
         let profiles = BraveSessionImporter.availableProfiles()
@@ -197,6 +199,12 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         return profiles.first?.id ?? "Default"
     }()
     @Published var braveProfileStatus: String = {
+        if !BraveSessionImporter.isBraveInstalled() {
+            return "Brave Browser was not found in Applications."
+        }
+        if BraveSessionImporter.isAccessBlocked() {
+            return "macOS blocked access to Brave. Click 'Choose Brave Profile…' to grant access."
+        }
         let profiles = BraveSessionImporter.availableProfiles()
         if let path = UserDefaults.standard.string(forKey: "BraveProfilePath") {
             let last = URL(fileURLWithPath: path).lastPathComponent
@@ -438,7 +446,17 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         writeDiagnostics()
     }
     func refreshBraveProfiles() {
+        isBraveInstalled = BraveSessionImporter.isBraveInstalled()
+        isBraveAccessBlocked = BraveSessionImporter.isAccessBlocked()
         availableBraveProfiles = BraveSessionImporter.availableProfiles()
+        if !isBraveInstalled {
+            braveProfileStatus = "Brave Browser was not found in Applications."
+            return
+        }
+        if isBraveAccessBlocked {
+            braveProfileStatus = "macOS blocked access to Brave. Click 'Choose Brave Profile…' to grant access."
+            return
+        }
         if let path = UserDefaults.standard.string(forKey: "BraveProfilePath") {
             let last = URL(fileURLWithPath: path).lastPathComponent
             if availableBraveProfiles.contains(where: { $0.id == last }) {
@@ -451,6 +469,8 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         if !availableBraveProfiles.contains(where: { $0.id == selectedBraveProfileID }), let first = availableBraveProfiles.first {
             selectedBraveProfileID = first.id
         }
+        let currentName = availableBraveProfiles.first(where: { $0.id == selectedBraveProfileID })?.displayName ?? selectedBraveProfileID
+        braveProfileStatus = "Selected \(currentName). Connect each provider below."
     }
 
     func selectBraveProfile(id: String) {
@@ -459,33 +479,49 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         selectedBraveProfileID = id
         do {
             try BraveSessionImporter.rememberProfile(profile.url)
-            braveProfileStatus = "Selected \(profile.displayName). Connect each provider below."
+            refreshBraveProfiles()
+            if !isBraveAccessBlocked {
+                braveProfileStatus = "Selected \(profile.displayName). Connect each provider below."
+            }
         } catch { alert("Could not select profile", error.localizedDescription) }
     }
 
     func chooseBraveProfile() {
-        refreshBraveProfiles()
-        let alert = NSAlert()
-        alert.icon = NSApp.applicationIconImage ?? BrandMark.appIconImage(size: 128)
-        alert.messageText = "Select Brave Profile"
-        alert.informativeText = "Select the Brave profile you use to sign in. No file navigation is required."
-        let popUp = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 280, height: 26), pullsDown: false)
-        for profile in availableBraveProfiles {
-            popUp.addItem(withTitle: profile.displayName)
-            popUp.lastItem?.representedObject = profile.id
+        let panel = NSOpenPanel()
+        panel.title = "Grant Access to Brave Browser"
+        panel.message = "Select your 'Brave-Browser' folder (or a profile folder like 'Default') to allow API Bar to import your sessions."
+        panel.prompt = "Grant Access"
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.showsHiddenFiles = true
+
+        let (root, _) = BraveSessionImporter.resolvedBrowserRoot()
+        if FileManager.default.fileExists(atPath: root.path) {
+            panel.directoryURL = root
+        } else {
+            panel.directoryURL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/BraveSoftware")
         }
-        if let idx = availableBraveProfiles.firstIndex(where: { $0.id == selectedBraveProfileID }) {
-            popUp.selectItem(at: idx)
-        }
-        alert.accessoryView = popUp
-        alert.addButton(withTitle: "Use Profile")
-        alert.addButton(withTitle: "Cancel")
+
         NSApp.activate(ignoringOtherApps: true)
-        if alert.runModal() == .alertFirstButtonReturn,
-           let chosenID = popUp.selectedItem?.representedObject as? String {
-            selectBraveProfile(id: chosenID)
+        if panel.runModal() == .OK, let url = panel.url {
+            do {
+                try BraveSessionImporter.rememberProfile(url)
+                refreshBraveProfiles()
+                braveProfileStatus = "Access granted to Brave. Connect each provider below."
+            } catch {
+                alert("Could not select Brave folder", error.localizedDescription)
+            }
         }
     }
+
+    func openFullDiskAccessSettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
     func connect(_ provider: String) {
         guard !inFlight.contains(provider) else { return }
         inFlight.insert(provider); providerStatus[provider] = "Connecting…"
@@ -507,10 +543,28 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
                 clients[provider] = client; apply(reading)
             } catch {
                 providerStatus[provider] = error.localizedDescription
+                refreshBraveProfiles()
                 if let b = balances.first(where: { $0.id == provider }) {
                     openDashboard(b)
                 }
-                alert("Could not connect", error.localizedDescription)
+                if isBraveAccessBlocked || error.localizedDescription.contains("blocked access to Brave") {
+                    let alert = NSAlert()
+                    alert.icon = NSApp.applicationIconImage ?? BrandMark.appIconImage(size: 128)
+                    alert.messageText = "Brave Access Blocked by macOS"
+                    alert.informativeText = error.localizedDescription
+                    alert.addButton(withTitle: "Grant Folder Access…")
+                    alert.addButton(withTitle: "Full Disk Access Settings…")
+                    alert.addButton(withTitle: "Cancel")
+                    NSApp.activate(ignoringOtherApps: true)
+                    let response = alert.runModal()
+                    if response == .alertFirstButtonReturn {
+                        chooseBraveProfile()
+                    } else if response == .alertSecondButtonReturn {
+                        openFullDiskAccessSettings()
+                    }
+                } else {
+                    alert("Could not connect", error.localizedDescription)
+                }
             }
             inFlight.remove(provider); updateTitles()
         }
@@ -543,7 +597,25 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
                 inFlight.remove(balance.id); updateTitles()
             }
             if !errors.isEmpty {
-                alert("Connect All", errors.joined(separator: "\n\n"))
+                refreshBraveProfiles()
+                if isBraveAccessBlocked || errors.contains(where: { $0.contains("blocked access to Brave") }) {
+                    let alert = NSAlert()
+                    alert.icon = NSApp.applicationIconImage ?? BrandMark.appIconImage(size: 128)
+                    alert.messageText = "Brave Access Blocked by macOS"
+                    alert.informativeText = errors.joined(separator: "\n\n")
+                    alert.addButton(withTitle: "Grant Folder Access…")
+                    alert.addButton(withTitle: "Full Disk Access Settings…")
+                    alert.addButton(withTitle: "Cancel")
+                    NSApp.activate(ignoringOtherApps: true)
+                    let response = alert.runModal()
+                    if response == .alertFirstButtonReturn {
+                        chooseBraveProfile()
+                    } else if response == .alertSecondButtonReturn {
+                        openFullDiskAccessSettings()
+                    }
+                } else {
+                    alert("Connect All", errors.joined(separator: "\n\n"))
+                }
             }
         }
     }
