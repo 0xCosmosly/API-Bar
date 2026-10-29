@@ -257,13 +257,13 @@ struct ManageProvidersSheet: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 14) {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Select Providers to Add")
                         .font(.headline)
                     Text("Choose which natively supported providers to monitor in API Bar.")
-                        .font(.caption)
+                        .font(.subheadline)
                         .foregroundStyle(Color.secondary)
                 }
                 Spacer()
@@ -275,8 +275,8 @@ struct ManageProvidersSheet: View {
 
             Divider()
 
-            ScrollView(.vertical) {
-                VStack(spacing: 8) {
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(spacing: 6) {
                     ForEach(Balance.initial, id: \.id) { provider in
                         let isSelected = app.balances.contains(where: { $0.id == provider.id })
                         Button {
@@ -313,16 +313,15 @@ struct ManageProvidersSheet: View {
                                         .foregroundStyle(Color.accentColor)
                                 }
                             }
-                            .padding(10)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 7)
                             .background(RoundedRectangle(cornerRadius: 8).fill(isSelected ? Color.accentColor.opacity(0.08) : Color(NSColor.controlBackgroundColor)))
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
                     }
                 }
-                .padding(2)
             }
-            .frame(height: 270)
 
             Divider()
 
@@ -339,7 +338,7 @@ struct ManageProvidersSheet: View {
             }
         }
         .padding(20)
-        .frame(width: 440, height: 420)
+        .frame(width: 460, height: 420)
     }
 
     private func toggleSelectAll() {
@@ -990,34 +989,47 @@ struct SettingsPane: View {
                         .padding(.vertical, 28)
                     } else {
                         ForEach(Array(app.balances.enumerated()), id: \.element.id) { index, balance in
-                            VStack(alignment: .leading, spacing: 4) {
-                                HStack(alignment: .center, spacing: 8) {
+                            VStack(alignment: .leading, spacing: 6) {
+                                HStack(alignment: .center, spacing: 10) {
                                     // Draggable three lines handle
                                     Image(systemName: "line.3.horizontal")
                                         .font(.system(size: 13, weight: .semibold))
                                         .foregroundStyle(Color.secondary)
-                                        .frame(width: 22, height: 22)
+                                        .frame(width: 18, height: 18)
                                         .contentShape(Rectangle())
                                         .help("Drag to reorder \(balance.name)")
 
                                     Image(nsImage: ProviderIcon.image(balance.id))
                                         .resizable()
                                         .aspectRatio(contentMode: .fit)
-                                        .frame(width: 18, height: 18)
-                                    Text(balance.name)
-                                        .font(.headline)
-                                        .foregroundStyle(Color.primary)
+                                        .frame(width: 20, height: 20)
+
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(balance.name)
+                                            .font(.subheadline)
+                                            .fontWeight(.medium)
+                                            .foregroundStyle(Color.primary)
+                                        Text(app.providerStatus[balance.id] ?? "Not connected")
+                                            .font(.caption2)
+                                            .foregroundStyle(Color.secondary)
+                                    }
+
                                     Spacer()
+
                                     Button("100%: \(balance.id == "refuseless" ? "\(Int(balance.baseline)) credits" : (balance.baseline > 0 ? balance.baseline.formatted(.currency(code: "USD")) : "—"))") {
                                         app.setBaseline(for: index)
                                     }
+                                    .controlSize(.small)
                                     .fixedSize(horizontal: true, vertical: false)
                                     .help("Click to edit the 100% baseline reference for \(balance.name)")
 
                                     Button("Connect") { app.connect(balance.id) }
+                                        .controlSize(.small)
                                         .disabled(app.inFlight.contains(balance.id) || app.isConnected(balance.id))
                                         .fixedSize(horizontal: true, vertical: false)
+
                                     Button("Disconnect") { app.disconnect(balance.id) }
+                                        .controlSize(.small)
                                         .disabled(app.inFlight.contains(balance.id) || !app.isConnected(balance.id))
                                         .fixedSize(horizontal: true, vertical: false)
 
@@ -1025,19 +1037,14 @@ struct SettingsPane: View {
                                         app.removeProvider(id: balance.id)
                                     } label: {
                                         Image(systemName: "trash")
-                                            .font(.system(size: 12))
+                                            .font(.system(size: 11))
                                             .foregroundStyle(Color.secondary)
-                                            .frame(width: 20, height: 20)
+                                            .frame(width: 18, height: 18)
                                             .contentShape(Rectangle())
                                     }
                                     .buttonStyle(.plain)
                                     .help("Remove \(balance.name)")
                                 }
-                                Text(app.providerStatus[balance.id] ?? "Not connected")
-                                    .font(.footnote)
-                                    .foregroundStyle(Color.secondary)
-                                    .padding(.leading, 30)
-                                    .fixedSize(horizontal: false, vertical: true)
 
                                 if balance.dynamicEndpoint != nil {
                                     HStack(spacing: 8) {
@@ -1058,11 +1065,12 @@ struct SettingsPane: View {
                                         }
                                         .controlSize(.small)
                                     }
-                                    .padding(.leading, 30)
+                                    .padding(.leading, 38)
                                     .padding(.top, 2)
                                 }
                             }
-                            .padding(8)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 7)
                             .background(RoundedRectangle(cornerRadius: 8).fill(Color(NSColor.controlBackgroundColor).opacity(0.6)))
                             .contentShape(Rectangle())
                             .onDrag {
@@ -1249,7 +1257,10 @@ struct SettingsPane: View {
                             .font(.footnote)
                             .foregroundStyle(Color.primary)
                         }
-                        .padding(.top, 6)
+                        .padding(12)
+                        .background(RoundedRectangle(cornerRadius: 10).fill(Color(NSColor.controlBackgroundColor)))
+                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.primary.opacity(0.08), lineWidth: 1))
+                        .padding(.top, 4)
                     } label: {
                         HStack(spacing: 6) {
                             Image(systemName: "plus.circle")
@@ -1264,13 +1275,20 @@ struct SettingsPane: View {
                 .padding(.horizontal, 2)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            Divider()
+
+            HStack {
+                Text("100% reference is automatic from your last payment or grant. Click reference to customize.")
+                    .font(.caption)
+                    .foregroundStyle(Color.secondary)
+                Spacer()
+            }
         }
         .padding(20)
         .frame(minWidth: 560, maxWidth: .infinity, minHeight: 620, maxHeight: .infinity, alignment: .topLeading)
         .sheet(isPresented: $showManageProvidersSheet) {
             ManageProvidersSheet(app: app)
-                .frame(width: 480, height: 420)
-                .padding(20)
         }
     }
 
