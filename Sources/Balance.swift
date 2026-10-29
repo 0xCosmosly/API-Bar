@@ -32,7 +32,7 @@ struct Balance: Codable, Equatable {
     }
     var percent: Double { baseline > 0 ? max(0, remaining / baseline * 100) : 0 }
     var percentageLabel: String {
-        if id == "crowbot" && account.isEmpty { return "—" }
+        if (!live && baseline == 0) || (id == "crowbot" && account.isEmpty) { return "—" }
         // Do not round a partly used balance back up to 100%.
         if percent > 0 && percent < 1 { return "<1%" }
         return "\(Int(floor(percent)))%"
@@ -43,12 +43,12 @@ struct Balance: Codable, Equatable {
         return remaining.formatted(.currency(code: "USD"))
     }
     static let initial: [Balance] = [
-        Balance(id: "vertex", name: "Vertex AI", baseline: 300, remaining: 300, updated: Date(timeIntervalSince1970: 1792721680), account: "000000-AAAAAA-BBBBBB", expires: "December 25, 2026"),
-        Balance(id: "fireworks", name: "Fireworks", baseline: 10.07, remaining: 10.07, updated: Date(timeIntervalSince1970: 1792721600), account: "testuser"),
+        Balance(id: "vertex", name: "Vertex AI", baseline: 0, remaining: 0, updated: .distantPast, account: ""),
+        Balance(id: "fireworks", name: "Fireworks", baseline: 0, remaining: 0, updated: .distantPast, account: ""),
         Balance(id: "crowbot", name: "Crowbot", baseline: 0, remaining: 0, updated: .distantPast, account: ""),
-        Balance(id: "aistudio", name: "Google AI Studio", baseline: 5, remaining: 5, updated: Date(timeIntervalSince1970: 1792721680), account: "Prepaid / Free Tier"),
-        Balance(id: "cerebras", name: "Cerebras", baseline: 5, remaining: 5, updated: Date(timeIntervalSince1970: 1792721680), account: "Free Trial / Dev Tier"),
-        Balance(id: "refuseless", name: "Refuseless", baseline: 100, remaining: 100, updated: Date(timeIntervalSince1970: 1792721680), account: "DeepSeek Credits")
+        Balance(id: "aistudio", name: "Google AI Studio", baseline: 0, remaining: 0, updated: .distantPast, account: ""),
+        Balance(id: "cerebras", name: "Cerebras", baseline: 0, remaining: 0, updated: .distantPast, account: ""),
+        Balance(id: "refuseless", name: "Refuseless", baseline: 0, remaining: 0, updated: .distantPast, account: "")
     ]
 }
 
@@ -58,11 +58,10 @@ enum PaymentReference {
     /// Infers the paid top-up tier from a balance or top-up delta.
     /// For example:
     /// Crowbot paid $5 -> remaining $4.85 -> tier is $5.00.
-    /// Fireworks paid $10 -> remaining $10.07 -> tier is $10.00.
+    /// Fireworks paid $10 -> remaining $10.00 -> tier is $10.00.
     /// Google Cloud grant $300 -> remaining $299.99 -> tier is $300.00.
     static func inferTier(for amount: Double) -> Double {
         guard amount > 0 else { return 0 }
-        if abs(amount - 10.07) < 0.05 || (amount >= 10.0 && amount <= 10.08) { return 10.07 }
         for tier in standardTiers {
             if amount <= tier { return tier }
             if amount <= tier + max(0.10, tier * 0.015) {
@@ -99,15 +98,15 @@ enum ReadingValidation {
               (r.currency == "USD" || r.currency == "CREDITS"), let url = URL(string: r.url), url.scheme == "https",
               let balance = balances.first(where: { $0.id == r.provider }) else { return false }
         if r.provider == "vertex" {
-            let web = url.host == "console.cloud.google.com" && url.path.hasPrefix("/billing/\(balance.account)/credits")
+            let web = url.host == "console.cloud.google.com" && (balance.account.isEmpty || url.path.hasPrefix("/billing/\(balance.account)/credits"))
             let api = url.host == "cloudconsole-pa.clients6.google.com" && url.path == "/v3/entityServices/BillingpricefactorsEntityService/schemas/BILLINGPRICEFACTORS_GRAPHQL:batchGraphql"
-            return (web || api) && r.account == balance.account
+            return (web || api) && (balance.account.isEmpty || r.account == balance.account)
         }
         if r.provider == "crowbot" {
             return url.absoluteString == CrowbotProvider.endpoint && CrowbotProvider.validAccount(r.account) && (balance.account.isEmpty || r.account == balance.account)
         }
         if r.provider == "fireworks" {
-            return url.host == "app.fireworks.ai" && r.account == balance.account
+            return url.host == "app.fireworks.ai" && (balance.account.isEmpty || r.account == balance.account)
         }
         if r.provider == "aistudio" {
             return (url.host == "aistudio.google.com" || url.host == "appsgenaiserver-pa.clients6.google.com") && (balance.account.isEmpty || r.account == balance.account)

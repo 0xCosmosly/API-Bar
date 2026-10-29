@@ -641,30 +641,22 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
     }
     func apply(_ r: Reading) {
         guard ReadingValidation.valid(r,balances:balances), let i = balances.firstIndex(where:{$0.id == r.provider}) else { providerStatus[r.provider] = "A balance from a different account or source was rejected."; return }
-        if r.provider == "crowbot" && balances[i].account.isEmpty { balances[i].account = r.account }
+        if balances[i].account.isEmpty { balances[i].account = r.account }
         let oldRemaining = balances[i].remaining
         balances[i].remaining = r.remaining; balances[i].updated = Date(); balances[i].live = true; balances[i].expires = r.expires
         // Automatic 100% reference calculation:
         // When remaining balance increases while previous remaining > 0,
         // infer the paid tier from the delta and add it to the previous remaining.
         // e.g. remaining was $3.00, user paid $5.00 -> new recognized total is $8.00.
-        if r.provider == "vertex", let ref = r.reference, ref > balances[i].baseline {
+        if balances[i].baseline <= 0 {
+            let ref = r.reference ?? PaymentReference.inferTier(for: r.remaining)
+            balances[i].baseline = max(ref, r.remaining)
+        } else if let ref = r.reference, ref > balances[i].baseline {
             balances[i].baseline = ref
-        } else if r.provider == "fireworks", (abs(r.remaining - 10.07) < 0.05 || (r.remaining <= 10.071 && r.remaining >= 10.0)) {
-            balances[i].baseline = 10.07
         } else if r.remaining > oldRemaining && oldRemaining > 0 {
             let delta = r.remaining - oldRemaining
             let paidAmount = PaymentReference.inferTier(for: delta)
             balances[i].baseline = max(oldRemaining + paidAmount, r.remaining)
-        } else if balances[i].baseline <= 0 || (balances[i].id == "crowbot" && balances[i].baseline < 5.0 && balances[i].remaining > 0) {
-            if r.remaining > 0 {
-                let ref = r.reference ?? PaymentReference.inferTier(for: r.remaining)
-                balances[i].baseline = max(ref, PaymentReference.inferTier(for: r.remaining))
-            } else {
-                balances[i].baseline = r.reference ?? 0.0
-            }
-        } else if let ref = r.reference, ref > balances[i].baseline {
-            balances[i].baseline = ref
         }
         providerStatus[r.provider] = "Connected · refreshes every 5 minutes"
         if sortMode != .manual {

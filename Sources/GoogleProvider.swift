@@ -28,8 +28,9 @@ struct GoogleProvider: BalanceProvider {
         UserDefaults.standard.string(forKey: consumerKeyDefaultsKey) ?? defaultConsumerKey
     }
 
-    func discoverConsumerKey() async throws -> String {
-        let page = URL(string:"https://console.cloud.google.com/billing/\(account)/credits/all")!
+    func discoverConsumerKey(account: String = "") async throws -> String {
+        let accountPath = account.isEmpty ? "" : "/\(account)/credits/all"
+        let page = URL(string:"https://console.cloud.google.com/billing\(accountPath)")!
         do {
             let (htmlData, pageResponse) = try await http.request(url:page, headers: ["Accept":"text/html,application/xhtml+xml"])
             if pageResponse.statusCode == 200, let html = String(data:htmlData, encoding:.utf8),
@@ -43,7 +44,30 @@ struct GoogleProvider: BalanceProvider {
         return Self.defaultConsumerKey
     }
 
-    private func executeGraphQL(consumerKey: String) async throws -> (Data, HTTPURLResponse) {
+    func discoverAccount() async throws -> String {
+        if !account.isEmpty { return account }
+        let page = URL(string: "https://console.cloud.google.com/billing")!
+        let (htmlData, pageResponse) = try await http.request(url: page, headers: ["Accept": "text/html,application/xhtml+xml"])
+        if let redirectedURL = pageResponse.url?.absoluteString {
+            let pattern = #"billing/([0-9A-Fa-f]{6}-[0-9A-Fa-f]{6}-[0-9A-Fa-f]{6})"#
+            if let regex = try? NSRegularExpression(pattern: pattern),
+               let match = regex.firstMatch(in: redirectedURL, range: NSRange(redirectedURL.startIndex..., in: redirectedURL)),
+               let range = Range(match.range(at: 1), in: redirectedURL) {
+                return String(redirectedURL[range]).uppercased()
+            }
+        }
+        if let html = String(data: htmlData, encoding: .utf8) {
+            let pattern = #"\b([0-9A-Fa-f]{6}-[0-9A-Fa-f]{6}-[0-9A-Fa-f]{6})\b"#
+            if let regex = try? NSRegularExpression(pattern: pattern),
+               let match = regex.firstMatch(in: html, range: NSRange(html.startIndex..., in: html)),
+               let range = Range(match.range(at: 1), in: html) {
+                return String(html[range]).uppercased()
+            }
+        }
+        return account
+    }
+
+    private func executeGraphQL(consumerKey: String, account: String = "") async throws -> (Data, HTTPURLResponse) {
         let primary = await http.cookie("SAPISID")
         let fallback3P = await http.cookie("__Secure-3PAPISID")
         let fallback1P = await http.cookie("__Secure-1PAPISID")
@@ -54,7 +78,8 @@ struct GoogleProvider: BalanceProvider {
         let origin = "https://console.cloud.google.com"
         let digest = Insecure.SHA1.hash(data: Data("\(timestamp) \(sapisid) \(origin)".utf8)).map { String(format:"%02x",$0) }.joined()
         let auth = "SAPISIDHASH \(timestamp)_\(digest)"
-        let body: [String:Any] = ["operationName":"ListCreditsDetail", "querySignature":Self.signature, "variables":["name":"billingAccounts/\(account)"], "requestContext":[:]]
+        let varName = account.isEmpty ? "billingAccounts" : "billingAccounts/\(account)"
+        let body: [String:Any] = ["operationName":"ListCreditsDetail", "querySignature":Self.signature, "variables":["name":varName], "requestContext":[:]]
         // Native requests use Google's X-Origin signing context, not a browser CORS Origin.
         return try await http.request(url:URL(string:Self.endpoint)!,body:JSONSerialization.data(withJSONObject:body),headers:["Authorization":auth,"X-Origin":origin,"X-Goog-AuthUser":"0","X-Goog-Api-Key":consumerKey])
     }
@@ -80,14 +105,15 @@ struct GoogleProvider: BalanceProvider {
         return false
     }
 
-    func response() async throws -> (Data, HTTPURLResponse) {
+    func response(for acct: String? = nil) async throws -> (Data, HTTPURLResponse) {
+        let targetAccount = acct ?? account
         var key = Self.resolvedConsumerKey()
         do {
-            let (data, res) = try await executeGraphQL(consumerKey: key)
+            let (data, res) = try await executeGraphQL(consumerKey: key, account: targetAccount)
             if res.statusCode == 200 {
                 if let json = try? ProviderJSON.object(data), Self.isAuthError(json) {
                     if (try? await http.reloadCookiesFromBrave(interactive: false)) != nil {
-                        let (retryData, retryRes) = try await executeGraphQL(consumerKey: key)
+                        let (retryData, retryRes) = try await executeGraphQL(consumerKey: key, account: targetAccount)
                         if retryRes.statusCode == 200, !Self.isAuthError((try? ProviderJSON.object(retryData)) ?? [:]) {
                             return (retryData, retryRes)
                         }
@@ -97,31 +123,35 @@ struct GoogleProvider: BalanceProvider {
             }
             if [401, 403].contains(res.statusCode) {
                 if (try? await http.reloadCookiesFromBrave(interactive: false)) != nil {
-                    let (retryData, retryRes) = try await executeGraphQL(consumerKey: key)
+                    let (retryData, retryRes) = try await executeGraphQL(consumerKey: key, account: targetAccount)
                     if retryRes.statusCode == 200 { return (retryData, retryRes) }
                 }
             }
             if res.statusCode == 400 {
-                if let discovered = try? await discoverConsumerKey() {
+                if let discovered = try? await discoverConsumerKey(account: targetAccount) {
                     key = discovered
-                    let (retryData, retryRes) = try await executeGraphQL(consumerKey: key)
+                    let (retryData, retryRes) = try await executeGraphQL(consumerKey: key, account: targetAccount)
                     if retryRes.statusCode == 200 { return (retryData, retryRes) }
                 }
             }
             return (data, res)
         } catch {
             if (try? await http.reloadCookiesFromBrave(interactive: false)) != nil {
-                return try await executeGraphQL(consumerKey: key)
+                return try await executeGraphQL(consumerKey: key, account: targetAccount)
             }
             throw error
         }
     }
     func fetchBalance() async throws -> Reading {
-        let (data,response) = try await response()
+        var activeAccount = account
+        if activeAccount.isEmpty {
+            activeAccount = (try? await discoverAccount()) ?? ""
+        }
+        let (data,response) = try await response(for: activeAccount)
         guard response.statusCode == 200 else { throw ConnectorError.message("Google credit request failed (HTTP \(response.statusCode)). Reconnect if the session expired.") }
         let json = try ProviderJSON.object(data)
         let result: Reading
-        do { result = try Self.parse(json, account: account) }
+        do { result = try Self.parse(json, account: activeAccount) }
         catch {
             UserDefaults.standard.set(Self.responseFields(json), forKey: "GoogleResponseFields")
             throw error
@@ -173,8 +203,12 @@ struct GoogleProvider: BalanceProvider {
         var grantTotal = 0.0
         var ends: [Date] = []
         var seen = Set<String>()
+        var resolvedAccount = account
         for row in rows {
-            guard row["billingAccountName"] as? String == "billingAccounts/\(account)", let name = row["name"] as? String, !name.isEmpty else { throw ConnectorError.message("Google returned a credit from a different or unknown billing account.") }
+            if resolvedAccount.isEmpty, let bName = row["billingAccountName"] as? String, bName.hasPrefix("billingAccounts/") {
+                resolvedAccount = String(bName.dropFirst("billingAccounts/".count))
+            }
+            guard row["billingAccountName"] as? String == "billingAccounts/\(resolvedAccount)", let name = row["name"] as? String, !name.isEmpty else { throw ConnectorError.message("Google returned a credit from a different or unknown billing account.") }
             guard seen.insert(name).inserted else { throw ConnectorError.message("Google returned a duplicate credit grant; a double-counted balance was not accepted.") }
             guard let end = date(row["endTime"]) else { throw ConnectorError.message("A Google credit is missing its expiration; a partial balance was not accepted.") }
             if end <= now { continue }
@@ -191,7 +225,7 @@ struct GoogleProvider: BalanceProvider {
         }
         let expiry = ends.min().map { $0.formatted(date:.abbreviated,time:.omitted) }
         let reference = grantTotal > 0 ? grantTotal : PaymentReference.inferTier(for: total)
-        return Reading(provider:"vertex",remaining:total,currency:"USD",account:account,url:Self.endpoint,expires:expiry,reference:reference)
+        return Reading(provider:"vertex",remaining:total,currency:"USD",account:resolvedAccount,url:Self.endpoint,expires:expiry,reference:reference)
     }
 }
 
@@ -210,7 +244,10 @@ enum ProviderProbe {
                     }
                 }
             } else if provider == "fireworks" {
-                let url = URL(string:"https://app.fireworks.ai/api/v2/auth/refresh?targetAccountId=testuser")!
+                let fw = FireworksProvider(http: client, account: "")
+                let fwAccount = await fw.discoverAccount()
+                let targetQuery = fwAccount.isEmpty ? "" : "?targetAccountId=\(fwAccount)"
+                let url = URL(string:"https://app.fireworks.ai/api/v2/auth/refresh\(targetQuery)")!
                 let (data,response) = try await client.request(url:url)
                 result["refreshHTTP"] = response.statusCode
                 let json = try ProviderJSON.object(data)
@@ -224,7 +261,7 @@ enum ProviderProbe {
                     result["remainingUSD"] = try ProviderJSON.money(object["balance"])
                 }
             } else {
-                let google = GoogleProvider(http:client,account:"000000-AAAAAA-BBBBBB")
+                let google = GoogleProvider(http:client,account:"")
                 let (data,response) = try await google.response()
                 result["http"] = response.statusCode
                 if let object = try? ProviderJSON.object(data) {
@@ -239,7 +276,7 @@ enum ProviderProbe {
                         }
                     }
                     if let error = object["error"] as? [String:Any] { result["serverMessage"] = error["message"] }
-                    if response.statusCode == 200, let reading = try? GoogleProvider.parse(object,account:"000000-AAAAAA-BBBBBB") { result["remainingUSD"] = reading.remaining }
+                    if response.statusCode == 200, let reading = try? GoogleProvider.parse(object,account:"") { result["remainingUSD"] = reading.remaining }
                 } else {
                     result["responseType"] = response.mimeType ?? "unknown"
                     if response.statusCode == 400 { result["requestError"] = String(data:data.prefix(1600),encoding:.utf8) }

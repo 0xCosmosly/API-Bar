@@ -64,7 +64,9 @@ actor SessionHTTP {
         if json["session"] == nil || json["session"] is NSNull {
             throw ConnectorError.message("Fireworks session expired. Sign in at app.fireworks.ai in Brave, then reconnect.")
         }
-        guard let session = json["session"] as? [String:Any], session["accountID"] as? String == account, session["hasAccount"] as? Bool == true else { throw ConnectorError.message("Fireworks returned a different or unknown account. The balance was not accepted.") }
+        guard let session = json["session"] as? [String:Any],
+              (account.isEmpty || session["accountID"] as? String == account),
+              session["hasAccount"] as? Bool == true else { throw ConnectorError.message("Fireworks returned a different or unknown account. The balance was not accepted.") }
         let mapping = ["accessToken":"auth_v2_access_token","idToken":"auth_v2_id_token","refreshToken":"auth_v2_refresh_token"]
         for (key,name) in mapping {
             guard let value = session[key] as? String, !value.isEmpty else { throw ConnectorError.message("Fireworks did not return a complete renewed session.") }
@@ -240,12 +242,33 @@ struct FireworksProvider: BalanceProvider {
     let http: SessionHTTP
     let account: String
 
+    func discoverAccount() async -> String {
+        if !account.isEmpty { return account }
+        for tokenName in ["auth_v2_id_token", "auth_v2_access_token"] {
+            if let token = await http.cookie(tokenName) {
+                let parts = token.split(separator: ".")
+                if parts.count == 3 {
+                    var enc = String(parts[1]).replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
+                    enc += String(repeating: "=", count: (4 - enc.count % 4) % 4)
+                    if let d = Data(base64Encoded: enc), let json = try? JSONSerialization.jsonObject(with: d) as? [String: Any] {
+                        if let user = (json["cognito:username"] as? String) ?? (json["username"] as? String) ?? (json["email"] as? String) {
+                            return user
+                        }
+                    }
+                }
+            }
+        }
+        return ""
+    }
+
     private func tryRefresh() async throws -> (Data, HTTPURLResponse, Bool) {
-        let refreshURL = URL(string: "https://app.fireworks.ai/api/v2/auth/refresh?targetAccountId=\(account)")!
+        let activeAccount = account.isEmpty ? await discoverAccount() : account
+        let targetQuery = activeAccount.isEmpty ? "" : "?targetAccountId=\(activeAccount)"
+        let refreshURL = URL(string: "https://app.fireworks.ai/api/v2/auth/refresh\(targetQuery)")!
         let (data, res) = try await http.request(url: refreshURL)
         guard res.statusCode == 200 else { return (data, res, false) }
         do {
-            try await http.acceptFireworksRefresh(data, account: account)
+            try await http.acceptFireworksRefresh(data, account: activeAccount)
             return (data, res, true)
         } catch {
             return (data, res, false)
@@ -281,13 +304,10 @@ struct FireworksProvider: BalanceProvider {
         let json = try ProviderJSON.object(data)
         let balance = try ProviderJSON.money(json["balance"])
         try await http.persist()
-        let reference: Double
-        if abs(balance - 10.07) < 0.05 || (balance <= 10.071 && balance >= 10.0) {
-            reference = 10.07
-        } else {
-            reference = PaymentReference.inferTier(for: balance)
-        }
-        return Reading(provider:providerID,remaining:balance,currency:"USD",account:account,url:"https://app.fireworks.ai/api/billing/balance",expires:nil,reference:reference)
+        let reference = PaymentReference.inferTier(for: balance)
+        let discovered = await discoverAccount()
+        let activeAccount = account.isEmpty ? discovered : account
+        return Reading(provider:providerID,remaining:balance,currency:"USD",account:activeAccount,url:"https://app.fireworks.ai/api/billing/balance",expires:nil,reference:reference)
     }
 }
 

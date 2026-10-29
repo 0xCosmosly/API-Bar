@@ -78,18 +78,20 @@ import Security
         precondition(SecKeychainGetUserInteractionAllowed(&restored) == errSecSuccess)
         precondition(restored.boolValue == original.boolValue, "Keychain interaction policy leaked")
         print("Passed: background Keychain UI disabled and policy restored after failure; no credentials accessed.")
-        var b = Balance.initial[1]
+        var b = Balance(id: "fireworks", name: "Fireworks", baseline: 10.07, remaining: 10.07, updated: Date(), account: "test", live: true)
         precondition(b.percentageLabel == "100%")
         b.remaining = 10.06; precondition(b.percentageLabel == "99%")
         b.remaining = 0.01; precondition(b.percentageLabel == "<1%")
         b.remaining = 0; precondition(b.percentageLabel == "0%")
         b.remaining = 20.14; precondition(b.percentageLabel == "200%")
-        let id = Balance.initial[0].account
+        precondition(Balance.initial[1].percentageLabel == "—")
+        let id = "000000-AAAAAA-BBBBBB"
+        let testBalances = [Balance(id: "vertex", name: "Vertex AI", baseline: 300, remaining: 300, updated: Date(), account: id, live: true)]
         func reading(_ account: String, _ url: String, _ value: Double = 299) -> Reading { Reading(provider: "vertex", remaining: value, currency: "USD", account: account, url: url, expires: nil) }
-        precondition(ReadingValidation.valid(reading(id, "https://console.cloud.google.com/billing/\(id)/credits/all"), balances: Balance.initial))
-        precondition(!ReadingValidation.valid(reading("other", "https://console.cloud.google.com/billing/other/credits/all"), balances: Balance.initial))
-        precondition(!ReadingValidation.valid(reading(id, "https://example.com/billing/\(id)/credits"), balances: Balance.initial))
-        precondition(!ReadingValidation.valid(reading(id, "https://console.cloud.google.com/billing/\(id)/credits", -.infinity), balances: Balance.initial))
+        precondition(ReadingValidation.valid(reading(id, "https://console.cloud.google.com/billing/\(id)/credits/all"), balances: testBalances))
+        precondition(!ReadingValidation.valid(reading("other", "https://console.cloud.google.com/billing/other/credits/all"), balances: testBalances))
+        precondition(!ReadingValidation.valid(reading(id, "https://example.com/billing/\(id)/credits"), balances: testBalances))
+        precondition(!ReadingValidation.valid(reading(id, "https://console.cloud.google.com/billing/\(id)/credits", -.infinity), balances: testBalances))
         do {
             _ = try await UnconnectedProvider(providerID: "fireworks").fetchBalance()
             preconditionFailure("Unconnected adapter fabricated a balance")
@@ -124,7 +126,7 @@ import Security
         try require(PaymentReference.inferTier(for: 4.85) == 5.0)
         try require(PaymentReference.inferTier(for: 4.996991) == 5.0)
         try require(PaymentReference.inferTier(for: 5.0) == 5.0)
-        try require(PaymentReference.inferTier(for: 10.070595489) == 10.07)
+        try require(PaymentReference.inferTier(for: 10.070595489) == 10.0)
         try require(PaymentReference.inferTier(for: 299.996487) == 300.0)
         try require(PaymentReference.inferTier(for: 18.5) == 20.0)
         try require(PaymentReference.inferTier(for: 48.0) == 50.0)
