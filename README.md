@@ -1,8 +1,8 @@
 # ⚡️ API Bar
 
-> **Keep an eye on your AI API credits and balances right from your Mac menu bar.** No more surprise cutoffs mid-prompt or dashboard tab gymnastics.
+> **A native macOS companion to [CodexBar](https://github.com/steipete/CodexBar)** built to track the AI APIs it doesn't cover yet — right from your menu bar with zero API key hassle.
 
-API Bar is a lightweight, privacy-first macOS menu bar app that tracks your remaining API credits and billing quotas across your favorite AI platforms — including **Google Cloud Vertex AI**, **Fireworks AI**, **Cerebras**, **Google AI Studio**, **Refuseless**, **Crowbot**, and custom providers like **Venice AI**, **OpenRouter**, or your own endpoints.
+I built API Bar because some of the AI providers I use every day (like Google Cloud Vertex AI, Fireworks, Cerebras, and Google AI Studio) weren't tracked by CodexBar. API Bar lives alongside it in your menu bar, automatically pulling balances from your signed-in browser sessions and keeping an eye on your remaining credits so you never hit an unexpected quota cutoff mid-prompt.
 
 ---
 
