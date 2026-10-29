@@ -849,7 +849,7 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
             NSApp.activate(ignoringOtherApps: true)
             return
         }
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 540, height: 620), styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 540, height: 530), styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
         window.title = "Welcome to API Bar"
         window.isReleasedWhenClosed = false
         window.delegate = self

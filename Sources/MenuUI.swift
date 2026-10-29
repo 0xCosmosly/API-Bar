@@ -396,12 +396,12 @@ struct OnboardingView: View {
                 Spacer()
             }
             .padding(.horizontal, 24)
-            .padding(.top, 24)
-            .padding(.bottom, 16)
+            .padding(.top, 18)
+            .padding(.bottom, 12)
 
             Divider()
 
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 16) {
                 if step == 0 {
                     welcomeStep
                 } else if step == 1 {
@@ -412,7 +412,8 @@ struct OnboardingView: View {
                     preferencesStep
                 }
             }
-            .padding(24)
+            .padding(.horizontal, 24)
+            .padding(.vertical, 16)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
 
             Divider()
@@ -440,14 +441,14 @@ struct OnboardingView: View {
                 }
             }
             .padding(.horizontal, 24)
-            .padding(.vertical, 16)
+            .padding(.vertical, 14)
             .background(Color(NSColor.windowBackgroundColor))
         }
-        .frame(width: 540, height: 600)
+        .frame(width: 540, height: 530)
     }
 
     private var welcomeStep: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 14) {
             Text("Track Your Usage, Automatically")
                 .font(.headline)
 
@@ -455,15 +456,20 @@ struct OnboardingView: View {
                 featureRow(icon: "chart.bar.xaxis", title: "Live Credit Gauges", description: "Monitor remaining balance and automatic 100% baseline usage across Vertex AI, Fireworks, Cerebras, Google AI Studio, Refuseless, and Crowbot.")
                 featureRow(icon: "shield.checkered", title: "Zero API Key Hassle", description: "API Bar securely reads authenticated sessions from Brave Browser directly on your device. No credentials ever leave your Mac.")
                 featureRow(icon: "menubar.rectangle", title: "Flexible Menu Bar Display", description: "View all providers in a single compact merged gauge or separate icons for each provider.")
+                featureRow(icon: "lock.shield", title: "100% Private & Local", description: "Zero telemetry or external servers. All credentials stay strictly in your local macOS Keychain.")
             }
             .padding(14)
             .background(RoundedRectangle(cornerRadius: 10).fill(Color(NSColor.controlBackgroundColor)))
             .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.primary.opacity(0.08), lineWidth: 1))
+
+            Text("Setup takes under a minute. Next, choose which providers you want to monitor.")
+                .font(.footnote)
+                .foregroundStyle(Color.secondary)
         }
     }
 
     private var providersStep: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 12) {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Select Providers to Monitor")
@@ -479,72 +485,73 @@ struct OnboardingView: View {
                 .controlSize(.small)
             }
 
-            ScrollView(.vertical) {
-                VStack(spacing: 8) {
-                    ForEach(Balance.initial, id: \.id) { provider in
-                        let isSelected = app.balances.contains(where: { $0.id == provider.id })
-                        Button {
-                            if isSelected {
-                                app.removeProvider(id: provider.id)
-                            } else {
-                                app.addProvider(provider)
-                            }
-                        } label: {
-                            HStack(spacing: 12) {
-                                Image(systemName: isSelected ? "checkmark.square.fill" : "square")
-                                    .font(.system(size: 16))
-                                    .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
-
-                                Image(nsImage: ProviderIcon.image(provider.id))
-                                    .resizable()
-                                    .aspectRatio(contentMode: .fit)
-                                    .frame(width: 20, height: 20)
-
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(provider.name)
-                                        .font(.subheadline)
-                                        .fontWeight(.medium)
-                                        .foregroundStyle(Color.primary)
-                                    Text(providerSubtitle(for: provider.id))
-                                        .font(.caption2)
-                                        .foregroundStyle(Color.secondary)
-                                }
-                                Spacer()
-
-                                if isSelected {
-                                    Image(systemName: "checkmark")
-                                        .font(.caption.bold())
-                                        .foregroundStyle(Color.accentColor)
-                                }
-                            }
-                            .padding(10)
-                            .background(RoundedRectangle(cornerRadius: 8).fill(isSelected ? Color.accentColor.opacity(0.08) : Color(NSColor.controlBackgroundColor)))
-                            .contentShape(Rectangle())
+            VStack(spacing: 6) {
+                ForEach(Balance.initial, id: \.id) { provider in
+                    let isSelected = app.balances.contains(where: { $0.id == provider.id })
+                    Button {
+                        if isSelected {
+                            app.removeProvider(id: provider.id)
+                        } else {
+                            app.addProvider(provider)
                         }
-                        .buttonStyle(.plain)
+                    } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: isSelected ? "checkmark.square.fill" : "square")
+                                .font(.system(size: 16))
+                                .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+
+                            Image(nsImage: ProviderIcon.image(provider.id))
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                                .frame(width: 20, height: 20)
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(provider.name)
+                                    .font(.subheadline)
+                                    .fontWeight(.medium)
+                                    .foregroundStyle(Color.primary)
+                                Text(providerSubtitle(for: provider.id))
+                                    .font(.caption2)
+                                    .foregroundStyle(Color.secondary)
+                            }
+                            Spacer()
+
+                            if isSelected {
+                                Image(systemName: "checkmark")
+                                    .font(.caption.bold())
+                                    .foregroundStyle(Color.accentColor)
+                            }
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 7)
+                        .background(RoundedRectangle(cornerRadius: 8).fill(isSelected ? Color.accentColor.opacity(0.08) : Color(NSColor.controlBackgroundColor)))
+                        .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
                 }
             }
-            .frame(maxHeight: 280)
 
             HStack {
                 Text("\(app.balances.filter { b in Balance.initial.contains(where: { $0.id == b.id }) }.count) of \(Balance.initial.count) native providers selected")
                     .font(.caption)
                     .foregroundStyle(Color.secondary)
                 Spacer()
+                Text("Custom endpoints can be added in Settings")
+                    .font(.caption)
+                    .foregroundStyle(Color.secondary)
             }
         }
     }
 
     private var braveStep: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 12) {
             Text("Connect Your Brave Browser")
                 .font(.headline)
             Text("Select your Brave profile and connect your active provider sessions in one click.")
                 .font(.subheadline)
                 .foregroundStyle(Color.secondary)
 
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 10) {
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Brave Profile")
@@ -606,49 +613,46 @@ struct OnboardingView: View {
                         .foregroundStyle(Color.secondary)
                 }
             }
-            .padding(14)
+            .padding(12)
             .background(RoundedRectangle(cornerRadius: 10).fill(Color(NSColor.controlBackgroundColor)))
             .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.primary.opacity(0.08), lineWidth: 1))
 
-            ScrollView(.vertical) {
-                VStack(spacing: 8) {
-                    ForEach(app.balances, id: \.id) { balance in
-                        HStack(spacing: 10) {
-                            Image(nsImage: ProviderIcon.image(balance.id))
-                                .resizable()
-                                .aspectRatio(contentMode: .fit)
-                                .frame(width: 16, height: 16)
-                            Text(balance.name)
-                                .font(.subheadline)
-                            Spacer()
-                            if app.isConnected(balance.id) {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .foregroundStyle(Color.green)
-                                Text(balance.baseline > 0 ? "100%: \(balance.id == "refuseless" ? "\(Int(balance.baseline)) credits" : balance.baseline.formatted(.currency(code: "USD")))" : "Connected")
-                                    .font(.caption)
-                                    .foregroundStyle(Color.secondary)
-                            } else {
-                                Text("Not connected")
-                                    .font(.caption)
-                                    .foregroundStyle(Color.secondary)
-                            }
+            VStack(spacing: 6) {
+                ForEach(app.balances, id: \.id) { balance in
+                    HStack(spacing: 10) {
+                        Image(nsImage: ProviderIcon.image(balance.id))
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(width: 16, height: 16)
+                        Text(balance.name)
+                            .font(.subheadline)
+                        Spacer()
+                        if app.isConnected(balance.id) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(Color.green)
+                            Text(balance.baseline > 0 ? "100%: \(balance.id == "refuseless" ? "\(Int(balance.baseline)) credits" : balance.baseline.formatted(.currency(code: "USD")))" : "Connected")
+                                .font(.caption)
+                                .foregroundStyle(Color.secondary)
+                        } else {
+                            Text("Not connected")
+                                .font(.caption)
+                                .foregroundStyle(Color.secondary)
                         }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.03)))
                     }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.03)))
                 }
             }
-            .frame(maxHeight: 140)
         }
     }
 
     private var preferencesStep: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 14) {
             Text("Configure Preferences")
                 .font(.headline)
 
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 12) {
                 Toggle("Start at Login", isOn: Binding(get: { login }, set: { _ in
                     app.toggleLogin(); login = SMAppService.mainApp.status == .enabled
                 }))
@@ -656,11 +660,13 @@ struct OnboardingView: View {
 
                 Divider()
 
-                Toggle("Merge provider icons into a single menu bar item", isOn: Binding(get: { app.mergeIcons }, set: { app.setMergeIcons($0) }))
-                .font(.subheadline)
-                Text("Keeps your menu bar clean by displaying one compact status icon.")
-                    .font(.caption)
-                    .foregroundStyle(Color.secondary)
+                VStack(alignment: .leading, spacing: 4) {
+                    Toggle("Merge provider icons into a single menu bar item", isOn: Binding(get: { app.mergeIcons }, set: { app.setMergeIcons($0) }))
+                        .font(.subheadline)
+                    Text("Keeps your menu bar clean by displaying one compact status icon.")
+                        .font(.caption)
+                        .foregroundStyle(Color.secondary)
+                }
 
                 Divider()
 
