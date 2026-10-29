@@ -248,11 +248,136 @@ struct ProviderDropDelegate: DropDelegate {
     }
 }
 
+struct ManageProvidersSheet: View {
+    @ObservedObject var app: APIBarApp
+    @Environment(\.dismiss) private var dismiss
+
+    var allSelected: Bool {
+        Balance.initial.allSatisfy { initB in app.balances.contains(where: { $0.id == initB.id }) }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Select Providers to Add")
+                        .font(.headline)
+                    Text("Choose which natively supported providers to monitor in API Bar.")
+                        .font(.caption)
+                        .foregroundStyle(Color.secondary)
+                }
+                Spacer()
+                Button(allSelected ? "Deselect All" : "Select All") {
+                    toggleSelectAll()
+                }
+                .controlSize(.small)
+            }
+
+            Divider()
+
+            ScrollView(.vertical) {
+                VStack(spacing: 8) {
+                    ForEach(Balance.initial, id: \.id) { provider in
+                        let isSelected = app.balances.contains(where: { $0.id == provider.id })
+                        Button {
+                            if isSelected {
+                                app.removeProvider(id: provider.id)
+                            } else {
+                                app.addProvider(provider)
+                            }
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: isSelected ? "checkmark.square.fill" : "square")
+                                    .font(.system(size: 16))
+                                    .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+
+                                Image(nsImage: ProviderIcon.image(provider.id))
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fit)
+                                    .frame(width: 20, height: 20)
+
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(provider.name)
+                                        .font(.subheadline)
+                                        .fontWeight(.medium)
+                                        .foregroundStyle(Color.primary)
+                                    Text(providerSubtitle(for: provider.id))
+                                        .font(.caption2)
+                                        .foregroundStyle(Color.secondary)
+                                }
+                                Spacer()
+
+                                if isSelected {
+                                    Image(systemName: "checkmark")
+                                        .font(.caption.bold())
+                                        .foregroundStyle(Color.accentColor)
+                                }
+                            }
+                            .padding(10)
+                            .background(RoundedRectangle(cornerRadius: 8).fill(isSelected ? Color.accentColor.opacity(0.08) : Color(NSColor.controlBackgroundColor)))
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(2)
+            }
+            .frame(height: 270)
+
+            Divider()
+
+            HStack {
+                Text("\(app.balances.filter { b in Balance.initial.contains(where: { $0.id == b.id }) }.count) of \(Balance.initial.count) native providers selected")
+                    .font(.caption)
+                    .foregroundStyle(Color.secondary)
+                Spacer()
+                Button("Done") {
+                    dismiss()
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.regular)
+            }
+        }
+        .padding(20)
+        .frame(width: 440, height: 420)
+    }
+
+    private func toggleSelectAll() {
+        if allSelected {
+            for provider in Balance.initial {
+                app.removeProvider(id: provider.id)
+            }
+        } else {
+            for provider in Balance.initial {
+                if !app.balances.contains(where: { $0.id == provider.id }) {
+                    app.addProvider(provider)
+                }
+            }
+        }
+    }
+
+    private func providerSubtitle(for id: String) -> String {
+        switch id {
+        case "vertex": return "Google Cloud Vertex AI & Billing Credits"
+        case "fireworks": return "Fireworks AI Serverless Inference Balance"
+        case "cerebras": return "Cerebras Inference Platform Credits"
+        case "aistudio": return "Google AI Studio Developer Quota"
+        case "crowbot": return "Crowbot Chat & API Credits"
+        case "refuseless": return "Refuseless DeepSeek Credits"
+        default: return "API Balance & Credit Monitor"
+        }
+    }
+}
+
 struct OnboardingView: View {
     @ObservedObject var app: APIBarApp
     let onFinish: () -> Void
     @State private var step = 0
     @State private var login = SMAppService.mainApp.status == .enabled
+
+    var allSelected: Bool {
+        Balance.initial.allSatisfy { initB in app.balances.contains(where: { $0.id == initB.id }) }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -280,6 +405,8 @@ struct OnboardingView: View {
                 if step == 0 {
                     welcomeStep
                 } else if step == 1 {
+                    providersStep
+                } else if step == 2 {
                     braveStep
                 } else {
                     preferencesStep
@@ -298,7 +425,7 @@ struct OnboardingView: View {
                     .controlSize(.large)
                 }
                 Spacer()
-                if step < 2 {
+                if step < 3 {
                     Button("Continue") {
                         withAnimation(.easeInOut(duration: 0.2)) { step += 1 }
                     }
@@ -316,7 +443,7 @@ struct OnboardingView: View {
             .padding(.vertical, 16)
             .background(Color(NSColor.windowBackgroundColor))
         }
-        .frame(width: 520, height: 560)
+        .frame(width: 540, height: 600)
     }
 
     private var welcomeStep: some View {
@@ -332,6 +459,80 @@ struct OnboardingView: View {
             .padding(14)
             .background(RoundedRectangle(cornerRadius: 10).fill(Color(NSColor.controlBackgroundColor)))
             .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.primary.opacity(0.08), lineWidth: 1))
+        }
+    }
+
+    private var providersStep: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Select Providers to Monitor")
+                        .font(.headline)
+                    Text("Choose which natively supported providers to track in API Bar.")
+                        .font(.subheadline)
+                        .foregroundStyle(Color.secondary)
+                }
+                Spacer()
+                Button(allSelected ? "Deselect All" : "Select All") {
+                    toggleSelectAll()
+                }
+                .controlSize(.small)
+            }
+
+            ScrollView(.vertical) {
+                VStack(spacing: 8) {
+                    ForEach(Balance.initial, id: \.id) { provider in
+                        let isSelected = app.balances.contains(where: { $0.id == provider.id })
+                        Button {
+                            if isSelected {
+                                app.removeProvider(id: provider.id)
+                            } else {
+                                app.addProvider(provider)
+                            }
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: isSelected ? "checkmark.square.fill" : "square")
+                                    .font(.system(size: 16))
+                                    .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+
+                                Image(nsImage: ProviderIcon.image(provider.id))
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fit)
+                                    .frame(width: 20, height: 20)
+
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(provider.name)
+                                        .font(.subheadline)
+                                        .fontWeight(.medium)
+                                        .foregroundStyle(Color.primary)
+                                    Text(providerSubtitle(for: provider.id))
+                                        .font(.caption2)
+                                        .foregroundStyle(Color.secondary)
+                                }
+                                Spacer()
+
+                                if isSelected {
+                                    Image(systemName: "checkmark")
+                                        .font(.caption.bold())
+                                        .foregroundStyle(Color.accentColor)
+                                }
+                            }
+                            .padding(10)
+                            .background(RoundedRectangle(cornerRadius: 8).fill(isSelected ? Color.accentColor.opacity(0.08) : Color(NSColor.controlBackgroundColor)))
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            .frame(maxHeight: 280)
+
+            HStack {
+                Text("\(app.balances.filter { b in Balance.initial.contains(where: { $0.id == b.id }) }.count) of \(Balance.initial.count) native providers selected")
+                    .font(.caption)
+                    .foregroundStyle(Color.secondary)
+                Spacer()
+            }
         }
     }
 
@@ -494,6 +695,32 @@ struct OnboardingView: View {
         }
     }
 
+    private func toggleSelectAll() {
+        if allSelected {
+            for provider in Balance.initial {
+                app.removeProvider(id: provider.id)
+            }
+        } else {
+            for provider in Balance.initial {
+                if !app.balances.contains(where: { $0.id == provider.id }) {
+                    app.addProvider(provider)
+                }
+            }
+        }
+    }
+
+    private func providerSubtitle(for id: String) -> String {
+        switch id {
+        case "vertex": return "Google Cloud Vertex AI & Billing Credits"
+        case "fireworks": return "Fireworks AI Serverless Inference Balance"
+        case "cerebras": return "Cerebras Inference Platform Credits"
+        case "aistudio": return "Google AI Studio Developer Quota"
+        case "crowbot": return "Crowbot Chat & API Credits"
+        case "refuseless": return "Refuseless DeepSeek Credits"
+        default: return "API Balance & Credit Monitor"
+        }
+    }
+
     private func featureRow(icon: String, title: String, description: String) -> some View {
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: icon)
@@ -518,6 +745,7 @@ struct SettingsPane: View {
     @State private var login = SMAppService.mainApp.status == .enabled
     @State private var draggedBalance: Balance?
     @State private var showAFMPanel = false
+    @State private var showManageProvidersSheet = false
     @State private var selectedKnownProviderID: String = "venice"
     @State private var providerNameInput = ""
     @State private var afmSuccessMessage: String? = nil
@@ -526,9 +754,14 @@ struct SettingsPane: View {
     @State private var afmError: String? = nil
     @State private var afmDraft: AFMDetectedDraft? = nil
     @State private var showRawInput = false
+
+    var allNativeSelected: Bool {
+        Balance.initial.allSatisfy { initB in app.balances.contains(where: { $0.id == initB.id }) }
+    }
+
     var body: some View {
-        ScrollView(.vertical) {
-            VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 14) {
+            // MARK: - Header
             HStack {
                 HStack(spacing: 10) {
                     Image(nsImage: BrandMark.appIconImage(size: 32)).resizable().frame(width: 32, height: 32)
@@ -696,285 +929,342 @@ struct SettingsPane: View {
             .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.primary.opacity(0.08), lineWidth: 1))
 
             Divider()
-            VStack(alignment: .leading, spacing: 12) {
-                ForEach(Array(app.balances.enumerated()), id: \.element.id) { index, balance in
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack(alignment: .center, spacing: 8) {
-                            // Draggable three lines handle
-                            Image(systemName: "line.3.horizontal")
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundStyle(Color.secondary)
-                                .frame(width: 22, height: 22)
-                                .contentShape(Rectangle())
-                                .help("Drag to reorder \(balance.name)")
 
-                            Image(nsImage: ProviderIcon.image(balance.id))
-                                .resizable()
-                                .aspectRatio(contentMode: .fit)
-                                .frame(width: 18, height: 18)
-                            Text(balance.name)
-                                .font(.headline)
-                                .foregroundStyle(Color.primary)
-                            Spacer()
-                            Button("100%: \(balance.id == "refuseless" ? "\(Int(balance.baseline)) credits" : (balance.baseline > 0 ? balance.baseline.formatted(.currency(code: "USD")) : "—"))") {
-                                app.setBaseline(for: index)
-                            }
-                            .fixedSize(horizontal: true, vertical: false)
-                            .help("Click to edit the 100% baseline reference for \(balance.name)")
-
-                            Button("Connect") { app.connect(balance.id) }
-                                .disabled(app.inFlight.contains(balance.id) || app.isConnected(balance.id))
-                                .fixedSize(horizontal: true, vertical: false)
-                            Button("Disconnect") { app.disconnect(balance.id) }
-                                .disabled(app.inFlight.contains(balance.id) || !app.isConnected(balance.id))
-                                .fixedSize(horizontal: true, vertical: false)
-
-                            Button {
-                                app.removeProvider(id: balance.id)
-                            } label: {
-                                Image(systemName: "trash")
-                                    .font(.system(size: 12))
-                                    .foregroundStyle(Color.secondary)
-                                    .frame(width: 20, height: 20)
-                                    .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                            .help("Remove \(balance.name)")
-                        }
-                        Text(app.providerStatus[balance.id] ?? "Not connected")
-                            .font(.footnote)
-                            .foregroundStyle(Color.secondary)
-                            .padding(.leading, 30)
-                            .fixedSize(horizontal: false, vertical: true)
-
-                        if balance.dynamicEndpoint != nil {
-                            HStack(spacing: 8) {
-                                Image(systemName: "key.fill")
-                                    .font(.caption2)
-                                    .foregroundStyle(Color.secondary)
-                                TextField("Admin API Key (Bearer token)", text: Binding(
-                                    get: { balance.dynamicAuthHeader ?? "" },
-                                    set: { app.setAuthHeader($0, for: balance.id) }
-                                ))
-                                .textFieldStyle(.roundedBorder)
-                                .font(.system(.caption, design: .monospaced))
-
-                                Button("Paste Key") {
-                                    if let clip = NSPasteboard.general.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines), !clip.isEmpty {
-                                        app.setAuthHeader(clip, for: balance.id)
-                                    }
-                                }
-                                .controlSize(.small)
-                            }
-                            .padding(.leading, 30)
-                            .padding(.top, 2)
-                        }
-                    }
-                    .padding(.vertical, 2)
-                    .contentShape(Rectangle())
-                    .onDrag {
-                        self.draggedBalance = balance
-                        return NSItemProvider(object: balance.id as NSString)
-                    }
-                    .onDrop(of: [UTType.text], delegate: ProviderDropDelegate(item: balance, app: app, draggedItem: $draggedBalance))
-                }
-
-                let availableToAdd = Balance.initial.filter { initB in !app.balances.contains(where: { $0.id == initB.id }) }
-                if !availableToAdd.isEmpty {
-                    Menu {
-                        ForEach(availableToAdd, id: \.id) { provider in
-                            Button(provider.name) {
-                                app.addProvider(provider)
-                            }
-                        }
-                    } label: {
-                        Label("Add Built-in Provider", systemImage: "plus")
-                    }
-                    .fixedSize()
-                }
-
-                Text("100% reference is automatic from your last payment or grant. Click reference to customize.")
-                    .font(.footnote)
-                    .foregroundStyle(Color.primary)
-            }
-            Divider()
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Add Provider")
-                    .font(.headline)
-                    .foregroundStyle(Color.primary)
-
-                HStack(spacing: 8) {
-                    Picker("", selection: $selectedKnownProviderID) {
-                        ForEach(AFMProviderExtractor.verifiedProviders) { meta in
-                            Text(meta.name).tag(meta.id)
-                        }
-                    }
-                    .labelsHidden()
-                    .frame(maxWidth: 220)
-
-                    Button("Add") {
-                        if let meta = AFMProviderExtractor.verifiedProviders.first(where: { $0.id == selectedKnownProviderID }) {
-                            runAddKnownProvider(meta)
-                        }
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(app.balances.contains(where: { $0.id == selectedKnownProviderID }) || isAnalyzingAFM)
-                }
-
-                HStack(alignment: .center, spacing: 6) {
-                    Text("Use Apple's local AI model to add an unsupported provider.")
-                        .font(.footnote)
+            // MARK: - Providers Header (Pinned)
+            HStack(alignment: .center) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Monitored Providers (\(app.balances.count))")
+                        .font(.headline)
                         .foregroundStyle(Color.primary)
-
-                    Text("alpha")
-                        .font(.caption2)
-                        .fontWeight(.semibold)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Color.blue.opacity(0.18))
-                        .foregroundStyle(Color.blue)
-                        .clipShape(Capsule())
+                    Text("Drag ≡ to reorder. 100% baseline updates automatically from payments.")
+                        .font(.caption)
+                        .foregroundStyle(Color.secondary)
                 }
-                .padding(.top, 4)
+                Spacer()
 
-                HStack(spacing: 8) {
-                    TextField("Provider name (e.g. Venice, Groq, OpenRouter…)", text: $providerNameInput)
-                        .textFieldStyle(.roundedBorder)
-                        .onSubmit {
-                            runAutoAdd()
-                        }
-
-                    Button {
-                        runAutoAdd()
-                    } label: {
-                        if isAnalyzingAFM {
-                            ProgressView().controlSize(.small)
-                            Text("Detecting…")
-                        } else {
-                            Label("Add and open", systemImage: "arrow.up.right.square")
+                Button(allNativeSelected ? "Deselect All" : "Select All") {
+                    if allNativeSelected {
+                        for b in Balance.initial { app.removeProvider(id: b.id) }
+                    } else {
+                        for b in Balance.initial {
+                            if !app.balances.contains(where: { $0.id == b.id }) {
+                                app.addProvider(b)
+                            }
                         }
                     }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(providerNameInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isAnalyzingAFM)
                 }
+                .controlSize(.small)
 
-                if let success = afmSuccessMessage {
-                    HStack(spacing: 6) {
-                        Image(systemName: "checkmark.circle.fill").foregroundStyle(Color.green)
-                        Text(success).font(.footnote).foregroundStyle(Color.primary)
-                    }
-                    .padding(8)
-                    .background(Color.green.opacity(0.12))
-                    .cornerRadius(6)
+                Button {
+                    showManageProvidersSheet = true
+                } label: {
+                    Label("Select Providers…", systemImage: "checklist")
                 }
+                .controlSize(.small)
+            }
 
-                if let error = afmError {
-                    HStack(spacing: 6) {
-                        Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Color.red)
-                        Text(error).font(.footnote).foregroundStyle(Color.red)
-                    }
-                    .padding(6)
-                }
-
-                DisclosureGroup("Advanced: Paste cURL or JSON response directly", isExpanded: $showRawInput) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        TextEditor(text: $afmInput)
-                            .font(.system(.footnote, design: .monospaced))
-                            .frame(height: 50)
-                            .padding(4)
-                            .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.25), lineWidth: 1))
-
-                        Button("Analyze with AFM") {
-                            runRawInputAdd()
+            // MARK: - Scrollable Provider List
+            ScrollView(.vertical, showsIndicators: true) {
+                VStack(alignment: .leading, spacing: 8) {
+                    if app.balances.isEmpty {
+                        VStack(spacing: 12) {
+                            Image(systemName: "tray")
+                                .font(.system(size: 32))
+                                .foregroundStyle(Color.secondary)
+                            Text("No providers added yet.")
+                                .font(.subheadline)
+                                .foregroundStyle(Color.secondary)
+                            Button("Select Providers to Add…") {
+                                showManageProvidersSheet = true
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.regular)
                         }
-                        .disabled(afmInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isAnalyzingAFM)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 28)
+                    } else {
+                        ForEach(Array(app.balances.enumerated()), id: \.element.id) { index, balance in
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack(alignment: .center, spacing: 8) {
+                                    // Draggable three lines handle
+                                    Image(systemName: "line.3.horizontal")
+                                        .font(.system(size: 13, weight: .semibold))
+                                        .foregroundStyle(Color.secondary)
+                                        .frame(width: 22, height: 22)
+                                        .contentShape(Rectangle())
+                                        .help("Drag to reorder \(balance.name)")
 
-                        if afmDraft != nil {
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text("Detected Configuration")
-                                    .font(.subheadline)
-                                    .fontWeight(.semibold)
-                                    .foregroundStyle(Color.primary)
+                                    Image(nsImage: ProviderIcon.image(balance.id))
+                                        .resizable()
+                                        .aspectRatio(contentMode: .fit)
+                                        .frame(width: 18, height: 18)
+                                    Text(balance.name)
+                                        .font(.headline)
+                                        .foregroundStyle(Color.primary)
+                                    Spacer()
+                                    Button("100%: \(balance.id == "refuseless" ? "\(Int(balance.baseline)) credits" : (balance.baseline > 0 ? balance.baseline.formatted(.currency(code: "USD")) : "—"))") {
+                                        app.setBaseline(for: index)
+                                    }
+                                    .fixedSize(horizontal: true, vertical: false)
+                                    .help("Click to edit the 100% baseline reference for \(balance.name)")
 
-                                Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 6) {
-                                    GridRow {
-                                        Text("Name:").font(.footnote).foregroundStyle(Color.primary)
-                                        TextField("Provider Name", text: Binding(
-                                            get: { afmDraft?.name ?? "" },
-                                            set: { afmDraft?.name = $0 }
-                                        ))
-                                        .textFieldStyle(.roundedBorder)
+                                    Button("Connect") { app.connect(balance.id) }
+                                        .disabled(app.inFlight.contains(balance.id) || app.isConnected(balance.id))
+                                        .fixedSize(horizontal: true, vertical: false)
+                                    Button("Disconnect") { app.disconnect(balance.id) }
+                                        .disabled(app.inFlight.contains(balance.id) || !app.isConnected(balance.id))
+                                        .fixedSize(horizontal: true, vertical: false)
+
+                                    Button {
+                                        app.removeProvider(id: balance.id)
+                                    } label: {
+                                        Image(systemName: "trash")
+                                            .font(.system(size: 12))
+                                            .foregroundStyle(Color.secondary)
+                                            .frame(width: 20, height: 20)
+                                            .contentShape(Rectangle())
                                     }
-                                    GridRow {
-                                        Text("Endpoint:").font(.footnote).foregroundStyle(Color.primary)
-                                        TextField("Endpoint URL", text: Binding(
-                                            get: { afmDraft?.endpoint ?? "" },
-                                            set: { afmDraft?.endpoint = $0 }
-                                        ))
-                                        .textFieldStyle(.roundedBorder)
-                                    }
-                                    GridRow {
-                                        Text("JSON Key:").font(.footnote).foregroundStyle(Color.primary)
-                                        TextField("JSON Path", text: Binding(
-                                            get: { afmDraft?.jsonPath ?? "" },
-                                            set: { afmDraft?.jsonPath = $0 }
-                                        ))
-                                        .textFieldStyle(.roundedBorder)
-                                    }
-                                    GridRow {
-                                        Text("Balance:").font(.footnote).foregroundStyle(Color.primary)
-                                        HStack {
-                                            TextField("Detected Balance", value: Binding(
-                                                get: { afmDraft?.detectedBalance ?? 0 },
-                                                set: { afmDraft?.detectedBalance = $0 }
-                                            ), format: .number)
-                                            .textFieldStyle(.roundedBorder)
-                                            .frame(width: 80)
-                                            Text("100% Baseline:").font(.footnote).foregroundStyle(Color.primary)
-                                            TextField("100% Baseline", value: Binding(
-                                                get: { afmDraft?.baseline ?? 0 },
-                                                set: { afmDraft?.baseline = $0 }
-                                            ), format: .number)
-                                            .textFieldStyle(.roundedBorder)
-                                            .frame(width: 80)
-                                        }
-                                    }
-                                    GridRow {
-                                        Text("API Key:").font(.footnote).foregroundStyle(Color.primary)
-                                        TextField("Bearer Token / Key (optional)", text: Binding(
-                                            get: { afmDraft?.authHeader ?? "" },
-                                            set: { afmDraft?.authHeader = $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
-                                        ))
-                                        .textFieldStyle(.roundedBorder)
-                                    }
+                                    .buttonStyle(.plain)
+                                    .help("Remove \(balance.name)")
                                 }
+                                Text(app.providerStatus[balance.id] ?? "Not connected")
+                                    .font(.footnote)
+                                    .foregroundStyle(Color.secondary)
+                                    .padding(.leading, 30)
+                                    .fixedSize(horizontal: false, vertical: true)
 
-                                HStack {
-                                    Button("Save & Add to API Bar") {
-                                        if let finalDraft = afmDraft {
-                                            app.addCustomProvider(finalDraft)
-                                            withAnimation {
-                                                showRawInput = false
-                                                afmInput = ""
-                                                afmDraft = nil
+                                if balance.dynamicEndpoint != nil {
+                                    HStack(spacing: 8) {
+                                        Image(systemName: "key.fill")
+                                            .font(.caption2)
+                                            .foregroundStyle(Color.secondary)
+                                        TextField("Admin API Key (Bearer token)", text: Binding(
+                                            get: { balance.dynamicAuthHeader ?? "" },
+                                            set: { app.setAuthHeader($0, for: balance.id) }
+                                        ))
+                                        .textFieldStyle(.roundedBorder)
+                                        .font(.system(.caption, design: .monospaced))
+
+                                        Button("Paste Key") {
+                                            if let clip = NSPasteboard.general.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines), !clip.isEmpty {
+                                                app.setAuthHeader(clip, for: balance.id)
                                             }
                                         }
+                                        .controlSize(.small)
                                     }
-                                    .buttonStyle(.borderedProminent)
+                                    .padding(.leading, 30)
+                                    .padding(.top, 2)
+                                }
+                            }
+                            .padding(8)
+                            .background(RoundedRectangle(cornerRadius: 8).fill(Color(NSColor.controlBackgroundColor).opacity(0.6)))
+                            .contentShape(Rectangle())
+                            .onDrag {
+                                self.draggedBalance = balance
+                                return NSItemProvider(object: balance.id as NSString)
+                            }
+                            .onDrop(of: [UTType.text], delegate: ProviderDropDelegate(item: balance, app: app, draggedItem: $draggedBalance))
+                        }
+                    }
+
+                    // AFM / Custom Provider Section
+                    Divider().padding(.vertical, 4)
+
+                    DisclosureGroup(isExpanded: $showAFMPanel) {
+                        VStack(alignment: .leading, spacing: 10) {
+                            HStack(spacing: 8) {
+                                Picker("", selection: $selectedKnownProviderID) {
+                                    ForEach(AFMProviderExtractor.verifiedProviders) { meta in
+                                        Text(meta.name).tag(meta.id)
+                                    }
+                                }
+                                .labelsHidden()
+                                .frame(maxWidth: 220)
+
+                                Button("Add") {
+                                    if let meta = AFMProviderExtractor.verifiedProviders.first(where: { $0.id == selectedKnownProviderID }) {
+                                        runAddKnownProvider(meta)
+                                    }
+                                }
+                                .buttonStyle(.bordered)
+                                .disabled(app.balances.contains(where: { $0.id == selectedKnownProviderID }) || isAnalyzingAFM)
+                            }
+
+                            HStack(alignment: .center, spacing: 6) {
+                                Text("Use Apple's local AI model to add an unsupported provider.")
+                                    .font(.footnote)
+                                    .foregroundStyle(Color.primary)
+
+                                Text("alpha")
+                                    .font(.caption2)
+                                    .fontWeight(.semibold)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(Color.blue.opacity(0.18))
+                                    .foregroundStyle(Color.blue)
+                                    .clipShape(Capsule())
+                            }
+                            .padding(.top, 2)
+
+                            HStack(spacing: 8) {
+                                TextField("Provider name (e.g. Venice, Groq, OpenRouter…)", text: $providerNameInput)
+                                    .textFieldStyle(.roundedBorder)
+                                    .onSubmit {
+                                        runAutoAdd()
+                                    }
+
+                                Button {
+                                    runAutoAdd()
+                                } label: {
+                                    if isAnalyzingAFM {
+                                        ProgressView().controlSize(.small)
+                                        Text("Detecting…")
+                                    } else {
+                                        Label("Add and open", systemImage: "arrow.up.right.square")
+                                    }
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .disabled(providerNameInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isAnalyzingAFM)
+                            }
+
+                            if let success = afmSuccessMessage {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "checkmark.circle.fill").foregroundStyle(Color.green)
+                                    Text(success).font(.footnote).foregroundStyle(Color.primary)
+                                }
+                                .padding(8)
+                                .background(Color.green.opacity(0.12))
+                                .cornerRadius(6)
+                            }
+
+                            if let error = afmError {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Color.red)
+                                    Text(error).font(.footnote).foregroundStyle(Color.red)
+                                }
+                                .padding(6)
+                            }
+
+                            DisclosureGroup("Advanced: Paste cURL or JSON response directly", isExpanded: $showRawInput) {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    TextEditor(text: $afmInput)
+                                        .font(.system(.footnote, design: .monospaced))
+                                        .frame(height: 50)
+                                        .padding(4)
+                                        .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.25), lineWidth: 1))
+
+                                    Button("Analyze with AFM") {
+                                        runRawInputAdd()
+                                    }
+                                    .disabled(afmInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isAnalyzingAFM)
+
+                                    if afmDraft != nil {
+                                        VStack(alignment: .leading, spacing: 8) {
+                                            Text("Detected Configuration")
+                                                .font(.subheadline)
+                                                .fontWeight(.semibold)
+                                                .foregroundStyle(Color.primary)
+
+                                            Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 6) {
+                                                GridRow {
+                                                    Text("Name:").font(.footnote).foregroundStyle(Color.primary)
+                                                    TextField("Provider Name", text: Binding(
+                                                        get: { afmDraft?.name ?? "" },
+                                                        set: { afmDraft?.name = $0 }
+                                                    ))
+                                                    .textFieldStyle(.roundedBorder)
+                                                }
+                                                GridRow {
+                                                    Text("Endpoint:").font(.footnote).foregroundStyle(Color.primary)
+                                                    TextField("Endpoint URL", text: Binding(
+                                                        get: { afmDraft?.endpoint ?? "" },
+                                                        set: { afmDraft?.endpoint = $0 }
+                                                    ))
+                                                    .textFieldStyle(.roundedBorder)
+                                                }
+                                                GridRow {
+                                                    Text("JSON Key:").font(.footnote).foregroundStyle(Color.primary)
+                                                    TextField("JSON Path", text: Binding(
+                                                        get: { afmDraft?.jsonPath ?? "" },
+                                                        set: { afmDraft?.jsonPath = $0 }
+                                                    ))
+                                                    .textFieldStyle(.roundedBorder)
+                                                }
+                                                GridRow {
+                                                    Text("Balance:").font(.footnote).foregroundStyle(Color.primary)
+                                                    HStack {
+                                                        TextField("Detected Balance", value: Binding(
+                                                            get: { afmDraft?.detectedBalance ?? 0 },
+                                                            set: { afmDraft?.detectedBalance = $0 }
+                                                        ), format: .number)
+                                                        .textFieldStyle(.roundedBorder)
+                                                        .frame(width: 80)
+                                                        Text("100% Baseline:").font(.footnote).foregroundStyle(Color.primary)
+                                                        TextField("100% Baseline", value: Binding(
+                                                            get: { afmDraft?.baseline ?? 0 },
+                                                            set: { afmDraft?.baseline = $0 }
+                                                        ), format: .number)
+                                                        .textFieldStyle(.roundedBorder)
+                                                        .frame(width: 80)
+                                                    }
+                                                }
+                                                GridRow {
+                                                    Text("API Key:").font(.footnote).foregroundStyle(Color.primary)
+                                                    TextField("Bearer Token / Key (optional)", text: Binding(
+                                                        get: { afmDraft?.authHeader ?? "" },
+                                                        set: { afmDraft?.authHeader = $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
+                                                    ))
+                                                    .textFieldStyle(.roundedBorder)
+                                                }
+                                            }
+
+                                            HStack {
+                                                Button("Save & Add to API Bar") {
+                                                    if let finalDraft = afmDraft {
+                                                        app.addCustomProvider(finalDraft)
+                                                        withAnimation {
+                                                            showRawInput = false
+                                                            afmInput = ""
+                                                            afmDraft = nil
+                                                        }
+                                                    }
+                                                }
+                                                .buttonStyle(.borderedProminent)
+                                            }
+                                            .padding(.top, 4)
+                                        }
+                                        .padding(10)
+                                        .background(Color.primary.opacity(0.04))
+                                        .cornerRadius(8)
+                                    }
                                 }
                                 .padding(.top, 4)
                             }
-                            .padding(10)
-                            .background(Color.primary.opacity(0.04))
-                            .cornerRadius(8)
+                            .font(.footnote)
+                            .foregroundStyle(Color.primary)
                         }
+                        .padding(.top, 6)
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "plus.circle")
+                                .font(.subheadline)
+                            Text("Add Custom / Unsupported Provider (Apple Local AI)")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                        }
+                        .foregroundStyle(Color.secondary)
                     }
-                    .padding(.top, 4)
                 }
-                .font(.footnote)
-                .foregroundStyle(Color.primary)
+                .padding(.horizontal, 2)
             }
-            }.padding(24).frame(width: 540, alignment: .leading)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .padding(20)
+        .frame(minWidth: 560, maxWidth: .infinity, minHeight: 620, maxHeight: .infinity, alignment: .topLeading)
+        .sheet(isPresented: $showManageProvidersSheet) {
+            ManageProvidersSheet(app: app)
+                .frame(width: 480, height: 420)
+                .padding(20)
         }
     }
 

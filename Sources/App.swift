@@ -821,7 +821,8 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
             settingsWindow.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
             writeDiagnostics(); return
         }
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 550, height: 620), styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 620, height: 720), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
+        window.minSize = NSSize(width: 560, height: 600)
         window.title = "API Bar Settings"; window.isReleasedWhenClosed = false
         window.delegate = self
         window.contentView = NSHostingView(rootView: SettingsPane(app: self))
@@ -836,7 +837,7 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
             NSApp.activate(ignoringOtherApps: true)
             return
         }
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 540, height: 600), styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 540, height: 620), styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
         window.title = "Welcome to API Bar"
         window.isReleasedWhenClosed = false
         window.delegate = self
