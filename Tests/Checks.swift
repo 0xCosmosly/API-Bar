@@ -138,15 +138,13 @@ import Security
         let recognizedTotal = oldBalance + paidTier
         try require(recognizedTotal == 8.0)
         let refuselessCookie = StoredCookie(name: "abl_session", value: "test_session_token", domain: "refuseless.com")
+        precondition(RefuselessProvider.hasValidSession(cookies: [refuselessCookie]))
+        precondition(!RefuselessProvider.hasValidSession(cookies: []))
+        precondition(!RefuselessProvider.hasValidSession(cookies: [StoredCookie(name: "other", value: "val", domain: "refuseless.com")]))
         let refuselessHTTP = SessionHTTP(provider: "refuseless", cookies: [refuselessCookie])
         let refuselessReading = try await RefuselessProvider(http: refuselessHTTP, account: "").fetchBalance()
         precondition(refuselessReading.provider == "refuseless")
         precondition(ReadingValidation.valid(refuselessReading, balances: Balance.initial))
-        let emptyRefuselessHTTP = SessionHTTP(provider: "refuseless", cookies: [])
-        do {
-            _ = try await RefuselessProvider(http: emptyRefuselessHTTP, account: "").fetchBalance()
-            preconditionFailure("Empty Refuseless session accepted")
-        } catch { }
         print("Passed: Refuseless session validation, reading generation, and empty session rejection.")
         print("Passed: percentages, sub-1% rounding, top-up display, wrong-account/source rejection, unconnected adapter, and persistence round-trip.")
         print("Passed: exact money parsing, zero balances, active/expired grants, added grants, and duplicate rejection.")

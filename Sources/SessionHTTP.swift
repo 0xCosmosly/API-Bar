@@ -358,15 +358,19 @@ struct RefuselessProvider: BalanceProvider {
     let http: SessionHTTP
     let account: String
 
+    static func hasValidSession(cookies: [StoredCookie]) -> Bool {
+        return !cookies.isEmpty && cookies.contains(where: {
+            $0.name == "abl_session" || $0.name.lowercased().contains("session") || $0.name.lowercased().contains("token") || $0.name.lowercased().contains("auth")
+        })
+    }
+
     func fetchBalance() async throws -> Reading {
         var cookies = await http.cookies
         if cookies.isEmpty {
             _ = try? await http.reloadCookiesFromBrave(interactive: false)
             cookies = await http.cookies
         }
-        guard !cookies.isEmpty, cookies.contains(where: {
-            $0.name == "abl_session" || $0.name.lowercased().contains("session") || $0.name.lowercased().contains("token") || $0.name.lowercased().contains("auth")
-        }) else {
+        guard Self.hasValidSession(cookies: cookies) else {
             throw ConnectorError.message("No signed-in Refuseless session was found in Brave. Sign in there, then connect again.")
         }
         try? await http.persist()
