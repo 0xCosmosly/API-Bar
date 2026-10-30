@@ -141,11 +141,37 @@ import Security
         precondition(RefuselessProvider.hasValidSession(cookies: [refuselessCookie]))
         precondition(!RefuselessProvider.hasValidSession(cookies: []))
         precondition(!RefuselessProvider.hasValidSession(cookies: [StoredCookie(name: "other", value: "val", domain: "refuseless.com")]))
-        let refuselessHTTP = SessionHTTP(provider: "refuseless", cookies: [refuselessCookie])
+        final class MockRefuselessProtocol: URLProtocol, @unchecked Sendable {
+            override class func canInit(with request: URLRequest) -> Bool { true }
+            override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+            override func startLoading() {
+                let html = "<div class=\"console-balance\"><span>Balance</span><strong>$0.00</strong></div><dl class=\"hm-balance-rows\"><div><dt>Top-ups</dt><dd>$0.00</dd></div></dl><script>\"email\":\"user@refuseless.com\",\"balance\":0</script>"
+                let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "text/html"])!
+                client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+                client?.urlProtocol(self, didLoad: Data(html.utf8))
+                client?.urlProtocolDidFinishLoading(self)
+            }
+            override func stopLoading() {}
+        }
+        let refuselessConfig = URLSessionConfiguration.ephemeral
+        refuselessConfig.protocolClasses = [MockRefuselessProtocol.self]
+        let refuselessHTTP = SessionHTTP(provider: "refuseless", cookies: [refuselessCookie], configuration: refuselessConfig)
         let refuselessReading = try await RefuselessProvider(http: refuselessHTTP, account: "").fetchBalance()
         precondition(refuselessReading.provider == "refuseless")
+        precondition(refuselessReading.remaining == 0.0, "Live Refuseless balance must accurately reference 0.0")
+        precondition(refuselessReading.account == "user@refuseless.com")
         precondition(ReadingValidation.valid(refuselessReading, balances: Balance.initial))
-        print("Passed: Refuseless session validation, reading generation, and empty session rejection.")
+        let (zeroBal, zeroBase, zeroAcct) = try RefuselessProvider.parse(html: "<p class=\"hm-balance-figure\">$0.00<span>USD</span></p><dl class=\"hm-balance-rows\"><div><dt>Top-ups</dt><dd>$0.00</dd></div></dl><script>\"email\":\"user@refuseless.com\",\"balance\":0</script>")
+        precondition(zeroBal == 0.0 && zeroBase == 0.0 && zeroAcct == "user@refuseless.com")
+        let (paidBal, paidBase, paidAcct) = try RefuselessProvider.parse(html: "<p class=\"hm-balance-figure\">$15.50<span>USD</span></p><dl class=\"hm-balance-rows\"><div><dt>Top-ups</dt><dd>$20.00</dd></div></dl><script>\"email\":\"paid@refuseless.com\",\"balance\":15.5,\"depositedCents\":2000</script>")
+        precondition(paidBal == 15.50 && paidBase == 20.0 && paidAcct == "paid@refuseless.com")
+        let testRefuseless = Balance(id: "refuseless", name: "Refuseless", baseline: 100, remaining: 75.50, updated: Date(), account: "Test")
+        precondition(testRefuseless.money == 75.50.formatted(.currency(code: "USD")), "Refuseless must format in USD dollars, not credits")
+        precondition(!testRefuseless.money.contains("credits"), "Refuseless money must not contain 'credits'")
+        precondition(testRefuseless.percent == 75.5, "Percent must accurately track remaining/baseline")
+        let lowerRefuseless = Balance(id: "refuseless", name: "Refuseless", baseline: 100, remaining: 25.0, updated: Date(), account: "Test")
+        precondition(lowerRefuseless.percent < testRefuseless.percent, "Percent must get smaller with less tokens")
+        print("Passed: Refuseless USD balance formatting, baseline calculations, and smaller-gauge token tracking.")
         print("Passed: percentages, sub-1% rounding, top-up display, wrong-account/source rejection, unconnected adapter, and persistence round-trip.")
         print("Passed: exact money parsing, zero balances, active/expired grants, added grants, and duplicate rejection.")
     }

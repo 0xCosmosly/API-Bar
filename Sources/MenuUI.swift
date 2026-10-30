@@ -55,7 +55,7 @@ struct BalanceCardContent: View {
             }
             .padding(.horizontal, 20).padding(.top, 7).padding(.bottom, 6)
             VStack(alignment: .leading, spacing: 6) {
-                Text("Credits")
+                Text(balance.id == "refuseless" ? "Balance" : "Credits")
                     .font(.body)
                     .fontWeight(.medium)
                     .foregroundStyle(Color.primary)
@@ -73,12 +73,9 @@ struct BalanceCardContent: View {
                     Spacer()
                     Text(balance.id == "crowbot" && balance.account.isEmpty
                         ? "Connect to read"
-                        : (balance.id == "refuseless"
-                            ? "\(Int(balance.remaining)) / \(Int(balance.baseline)) credits"
-                            : (balance.baseline > 0
-                                ? "\(balance.money) / \(balance.baseline.formatted(.currency(code: "USD")))"
-                                : "\(balance.money)")
-                          ))
+                        : (balance.baseline > 0
+                            ? "\(balance.money) / \(balance.baseline.formatted(.currency(code: "USD")))"
+                            : "\(balance.money)"))
                         .font(.footnote)
                         .foregroundStyle(Color.primary)
                 }
@@ -99,19 +96,11 @@ struct OverviewCardContent: View {
     }
 
     var totalUsdRemaining: Double {
-        app.balances.filter { $0.id != "refuseless" }.reduce(0.0) { $0 + $1.remaining }
-    }
-
-    var totalCreditsRemaining: Double {
-        app.balances.filter { $0.id == "refuseless" }.reduce(0.0) { $0 + $1.remaining }
+        app.balances.reduce(0.0) { $0 + $1.remaining }
     }
 
     var totalSummaryText: String {
-        let usd = totalUsdRemaining.formatted(.currency(code: "USD"))
-        if totalCreditsRemaining > 0 {
-            return "\(usd) + \(Int(totalCreditsRemaining)) credits"
-        }
-        return usd
+        totalUsdRemaining.formatted(.currency(code: "USD"))
     }
 
     var body: some View {
@@ -169,7 +158,7 @@ struct OverviewCardContent: View {
                                 Capsule().fill(balance.percent < 10 ? Color.red : providerAccentColor(balance.id))
                                     .frame(width: proxy.size.width * min(max(balance.percent / 100, 0), 1))
                             }
-                        }.frame(height: 5)
+                        }.frame(height: 6)
                     }
                 }
 
@@ -362,7 +351,7 @@ struct ManageProvidersSheet: View {
         case "cerebras": return "Cerebras Inference Platform Credits"
         case "aistudio": return "Google AI Studio Developer Quota"
         case "crowbot": return "Crowbot Chat & API Credits"
-        case "refuseless": return "Refuseless DeepSeek Credits"
+        case "refuseless": return "Refuseless Balance"
         default: return "API Balance & Credit Monitor"
         }
     }
@@ -630,7 +619,7 @@ struct OnboardingView: View {
                         if app.isConnected(balance.id) {
                             Image(systemName: "checkmark.circle.fill")
                                 .foregroundStyle(Color.green)
-                            Text(balance.baseline > 0 ? "100%: \(balance.id == "refuseless" ? "\(Int(balance.baseline)) credits" : balance.baseline.formatted(.currency(code: "USD")))" : "Connected")
+                            Text(balance.baseline > 0 ? "100%: \(balance.baseline.formatted(.currency(code: "USD")))" : "Connected")
                                 .font(.caption)
                                 .foregroundStyle(Color.secondary)
                         } else {
@@ -722,7 +711,7 @@ struct OnboardingView: View {
         case "cerebras": return "Cerebras Inference Platform Credits"
         case "aistudio": return "Google AI Studio Developer Quota"
         case "crowbot": return "Crowbot Chat & API Credits"
-        case "refuseless": return "Refuseless DeepSeek Credits"
+        case "refuseless": return "Refuseless Balance"
         default: return "API Balance & Credit Monitor"
         }
     }
@@ -1017,7 +1006,7 @@ struct SettingsPane: View {
 
                                     Spacer()
 
-                                    Button("100%: \(balance.id == "refuseless" ? "\(Int(balance.baseline)) credits" : (balance.baseline > 0 ? balance.baseline.formatted(.currency(code: "USD")) : "—"))") {
+                                    Button("100%: \(balance.baseline > 0 ? balance.baseline.formatted(.currency(code: "USD")) : "—")") {
                                         app.setBaseline(for: index)
                                     }
                                     .controlSize(.small)

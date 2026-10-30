@@ -108,7 +108,7 @@ public enum AFMProviderExtractor {
             endpoint: "https://api.refuseless.com/v1/billing",
             jsonPath: "balance",
             defaultBaseline: 100.0,
-            aliases: ["refuseless", "deepseek credits"]
+            aliases: ["refuseless", "refuseless balance", "deepseek credits"]
         ),
         KnownProviderMeta(
             id: "crowbot",

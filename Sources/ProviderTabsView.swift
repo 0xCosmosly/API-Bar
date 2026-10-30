@@ -21,14 +21,22 @@ func providerAccentNSColor(_ id: String) -> NSColor {
     }
 }
 
-struct ProviderTabItem {
+struct ProviderTabItem: Equatable {
     let id: String
     let name: String
     let accentColor: NSColor?
+    var percent: Double = 100.0
+    var isLive: Bool = false
 }
 
 @MainActor final class ProviderTabButton: NSButton {
-    let tabItem: ProviderTabItem
+    var tabItem: ProviderTabItem {
+        didSet {
+            title = tabItem.name
+            setAccessibilityLabel("Show " + tabItem.name)
+            needsDisplay = true
+        }
+    }
     override var isFlipped: Bool { true }
 
     init(tab: ProviderTabItem, index: Int, target: AnyObject?, action: Selector) {
@@ -103,19 +111,44 @@ struct ProviderTabItem {
         )
         titleString.draw(in: textRect)
 
-        // 4. Colored brand indicator bar underneath the label (if accentColor is set)
+        // 4. Indicator bar underneath the label matching provider view gauge
         if let accentColor = tabItem.accentColor {
-            let barWidth: CGFloat = round(min(textSize.width, bounds.width - 12))
-            let barHeight: CGFloat = 2.0
-            let barRect = NSRect(
-                x: round((bounds.width - barWidth) / 2),
-                y: round(textRect.origin.y + textSize.height + 2),
-                width: barWidth,
+            let totalBarWidth: CGFloat = round(min(max(textSize.width, 24), bounds.width - 12))
+            let barHeight: CGFloat = 2.5
+            let barY: CGFloat = round(textRect.origin.y + textSize.height + 2)
+            let trackRect = NSRect(
+                x: round((bounds.width - totalBarWidth) / 2),
+                y: barY,
+                width: totalBarWidth,
                 height: barHeight
             )
-            let barPath = NSBezierPath(roundedRect: barRect, xRadius: 1.0, yRadius: 1.0)
-            accentColor.setFill()
-            barPath.fill()
+            let trackPath = NSBezierPath(roundedRect: trackRect, xRadius: barHeight / 2, yRadius: barHeight / 2)
+            let trackColor = isSelected ? NSColor.white.withAlphaComponent(0.25) : NSColor.labelColor.withAlphaComponent(0.12)
+            trackColor.setFill()
+            trackPath.fill()
+
+            let fillFraction = max(0.0, min(1.0, tabItem.percent / 100.0))
+            var fillWidth = round(totalBarWidth * CGFloat(fillFraction))
+            if fillFraction > 0 && fillWidth < barHeight {
+                fillWidth = barHeight
+            }
+            if fillWidth > 0 {
+                let fillRect = NSRect(
+                    x: trackRect.origin.x,
+                    y: barY,
+                    width: fillWidth,
+                    height: barHeight
+                )
+                let fillPath = NSBezierPath(roundedRect: fillRect, xRadius: barHeight / 2, yRadius: barHeight / 2)
+                let fillColor: NSColor
+                if tabItem.percent < 10 && tabItem.isLive {
+                    fillColor = NSColor.systemRed
+                } else {
+                    fillColor = accentColor
+                }
+                fillColor.setFill()
+                fillPath.fill()
+            }
         }
     }
 }
@@ -136,9 +169,13 @@ struct ProviderTabItem {
     private let rowHeight: CGFloat = 46.0
 
     static func defaultItems(balances: [Balance]) -> [ProviderTabItem] {
-        var result = [ProviderTabItem(id: "overview", name: "Overview", accentColor: nil)]
+        let totalRemaining = balances.reduce(0.0) { $0 + $1.remaining }
+        let totalBaseline = balances.reduce(0.0) { $0 + $1.baseline }
+        let totalPercent = totalBaseline > 0 ? max(0, totalRemaining / totalBaseline * 100) : 0
+        let anyLive = balances.contains { $0.live }
+        var result = [ProviderTabItem(id: "overview", name: "Overview", accentColor: nil, percent: totalPercent, isLive: anyLive)]
         for b in balances {
-            result.append(ProviderTabItem(id: b.id, name: b.name, accentColor: providerAccentNSColor(b.id)))
+            result.append(ProviderTabItem(id: b.id, name: b.name, accentColor: providerAccentNSColor(b.id), percent: b.percent, isLive: b.live))
         }
         return result
     }
@@ -170,7 +207,13 @@ struct ProviderTabItem {
     }
 
     func updateItems(_ newItems: [ProviderTabItem]) {
-        guard newItems.map(\.id) != items.map(\.id) else {
+        if newItems.map(\.id) == items.map(\.id) {
+            items = newItems
+            for (index, item) in newItems.enumerated() where index < buttons.count {
+                if let tabBtn = buttons[index] as? ProviderTabButton {
+                    tabBtn.tabItem = item
+                }
+            }
             updateSelection()
             return
         }

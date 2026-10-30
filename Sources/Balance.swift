@@ -30,7 +30,10 @@ struct Balance: Codable, Equatable {
         self.dynamicCookieDomain = dynamicCookieDomain
         self.dynamicAuthHeader = dynamicAuthHeader
     }
-    var percent: Double { baseline > 0 ? max(0, remaining / baseline * 100) : 0 }
+    var percent: Double {
+        let base = baseline > 0 ? baseline : (remaining > 0 ? remaining : 0)
+        return base > 0 ? max(0, remaining / base * 100) : 0
+    }
     var percentageLabel: String {
         if (!live && baseline == 0) || (id == "crowbot" && account.isEmpty) { return "—" }
         // Do not round a partly used balance back up to 100%.
@@ -39,7 +42,6 @@ struct Balance: Codable, Equatable {
     }
     var stale: Bool { !live || Date().timeIntervalSince(updated) > 900 }
     var money: String {
-        if id == "refuseless" { return "\(Int(remaining)) credits" }
         return remaining.formatted(.currency(code: "USD"))
     }
     static let initial: [Balance] = [

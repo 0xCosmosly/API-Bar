@@ -672,16 +672,13 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
     func updateTitles() {
         for (i, b) in (mergeIcons ? [selectedMergedBalance] : balances).enumerated() where i < items.count {
             if mergeIcons && mergedProvider == "overview" {
-                let usdRemaining = balances.filter { $0.id != "refuseless" }.reduce(0.0) { $0 + $1.remaining }
-                let usdBaseline = balances.filter { $0.id != "refuseless" }.reduce(0.0) { $0 + $1.baseline }
-                let creditsRemaining = balances.filter { $0.id == "refuseless" }.reduce(0.0) { $0 + $1.remaining }
+                let usdRemaining = balances.reduce(0.0) { $0 + $1.remaining }
+                let usdBaseline = balances.reduce(0.0) { $0 + $1.baseline }
                 let totalPercent = usdBaseline > 0 ? max(0, usdRemaining / usdBaseline * 100) : 0
                 let percentText = "\(Int(floor(totalPercent)))%"
                 items[i].button?.title = percentText
                 items[i].button?.image = ProviderIcon.menuBarImage("overview")
-                let summary = creditsRemaining > 0
-                    ? "\(usdRemaining.formatted(.currency(code: "USD"))) + \(Int(creditsRemaining)) credits"
-                    : usdRemaining.formatted(.currency(code: "USD"))
+                let summary = usdRemaining.formatted(.currency(code: "USD"))
                 items[i].button?.toolTip = "Overview: \(summary) · \(percentText) · \(balances.filter { isConnected($0.id) }.count) connected"
                 items[i].button?.setAccessibilityValue("\(percentText) remaining across all providers")
             } else {
@@ -729,7 +726,7 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         detail.image = NSImage(systemSymbolName: "chart.bar", accessibilityDescription: nil)
         let submenu = NSMenu()
         disabled(submenu, "Account: \(b.account)")
-        disabled(submenu, "100% = \(b.id == "refuseless" ? "\(Int(b.baseline)) credits" : b.baseline.formatted(.currency(code: "USD")))")
+        disabled(submenu, "100% = \(b.baseline.formatted(.currency(code: "USD")))")
         disabled(submenu, "Checked \(relativeTimeString(for: b.updated))")
         if let expires = b.expires { disabled(submenu, "Expires \(expires)") }
         disabled(submenu, "Calculated from last verified balance")
@@ -952,7 +949,7 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         let result = a.runModal()
         if result == .alertFirstButtonReturn { balances.forEach { openInBrave(billingURL($0)) } }
     }
-    @objc func about() { alert("API Bar 0.4.7", "A small companion for account-wide Vertex AI, Fireworks, Crowbot, Google AI Studio, Cerebras, and Refuseless credits. Menu bar percentages, balance details, baseline settings, and Start at Login.\n\nConnect in Settings to refresh account balances using sessions stored in macOS Keychain. Failed requests keep the last successful balance. Background refresh never requests Keychain approval.\n\nMenu styling and provider symbols follow CodexBar. Independent app; not affiliated with CodexBar, Google, Fireworks, or Cerebras.") }
+    @objc func about() { alert("API Bar 0.4.7", "A small companion for account-wide Vertex AI, Fireworks, Crowbot, Google AI Studio, Cerebras, and Refuseless balances. Menu bar percentages, balance details, baseline settings, and Start at Login.\n\nConnect in Settings to refresh account balances using sessions stored in macOS Keychain. Failed requests keep the last successful balance. Background refresh never requests Keychain approval.\n\nMenu styling and provider symbols follow CodexBar. Independent app; not affiliated with CodexBar, Google, Fireworks, or Cerebras.") }
     func alert(_ title: String, _ message: String) {
         let a = NSAlert()
         a.icon = NSApp.applicationIconImage ?? BrandMark.appIconImage(size: 128)

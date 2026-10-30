@@ -64,6 +64,33 @@ import AppKit
         precondition(app.balances.contains(where: { $0.id == "refuseless" }))
         precondition(UserDefaults.standard.stringArray(forKey: "RemovedProviders")?.contains("refuseless") == false)
 
+        // Test provider tab gauge tracking and shrinking with less tokens
+        let fwIndex = tabs.items.firstIndex(where: { $0.id == "fireworks" })!
+        if let fwIdxInBalances = app.balances.firstIndex(where: { $0.id == "fireworks" }) {
+            app.balances[fwIdxInBalances].baseline = 100
+            app.balances[fwIdxInBalances].remaining = 42.0
+            view.updateProviders(app.balances)
+            let updatedFwPercent = tabs.items[fwIndex].percent
+            precondition(updatedFwPercent == 42.0, "Provider tab bar percent did not update with remaining tokens")
+            let fwButton = tabs.buttons[fwIndex] as! ProviderTabButton
+            precondition(fwButton.tabItem.percent == 42.0, "Provider tab button did not receive updated percent")
+
+            // Lower tokens even further
+            app.balances[fwIdxInBalances].remaining = 5.0
+            view.updateProviders(app.balances)
+            precondition(tabs.items[fwIndex].percent == 5.0, "Provider tab percent did not shrink with less tokens")
+            precondition(fwButton.tabItem.percent == 5.0)
+        }
+
+        // Test OverviewCardContent totalUsdRemaining calculation includes Refuseless as dollars
+        if let rIdx = app.balances.firstIndex(where: { $0.id == "refuseless" }) {
+            app.balances[rIdx].baseline = 100
+            app.balances[rIdx].remaining = 50.0
+            let overviewContent = OverviewCardContent(app: app)
+            precondition(!overviewContent.totalSummaryText.contains("credits"), "Overview total must not count credits")
+            precondition(overviewContent.totalUsdRemaining >= 50.0, "Overview total USD must include Refuseless dollar amount")
+        }
+
         // Test menu item ordering and titles in merged menu
         let mergedMenu = NSMenu()
         mergedMenu.identifier = NSUserInterfaceItemIdentifier("merged")

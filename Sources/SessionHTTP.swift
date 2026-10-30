@@ -364,6 +364,82 @@ struct RefuselessProvider: BalanceProvider {
         })
     }
 
+    static func parse(html: String) throws -> (remaining: Double, baseline: Double, account: String) {
+        var balance: Double?
+
+        // Pattern A: RSC JSON payload: "balance":0 or \"balance\":0 or "balance": 12.34
+        if let match = html.range(of: #"["\\]+balance["\\]+\s*:\s*([0-9]+(?:\.[0-9]+)?)"#, options: .regularExpression) {
+            let substr = String(html[match])
+            if let numRange = substr.range(of: #"[0-9]+(?:\.[0-9]+)?"#, options: .regularExpression),
+               let num = Double(substr[numRange]) {
+                balance = num
+            }
+        }
+
+        // Pattern B: <p class="hm-balance-figure">$0.00<span>USD</span></p>
+        if balance == nil, let match = html.range(of: #"class=["']hm-balance-figure["']>\$([0-9]+(?:\.[0-9]+)?)"#, options: .regularExpression) {
+            let substr = String(html[match])
+            if let numRange = substr.range(of: #"[0-9]+(?:\.[0-9]+)?"#, options: .regularExpression),
+               let num = Double(substr[numRange]) {
+                balance = num
+            }
+        }
+
+        // Pattern C: <div class="console-balance"><span>Balance</span><strong>$0.00</strong>
+        if balance == nil, let match = html.range(of: #"(?s)class=["']console-balance["'].*?<strong>\$([0-9]+(?:\.[0-9]+)?)</strong>"#, options: .regularExpression) {
+            let substr = String(html[match])
+            if let dollarRange = substr.range(of: #"\$([0-9]+(?:\.[0-9]+)?)"#, options: .regularExpression) {
+                let dollarStr = String(substr[dollarRange]).dropFirst()
+                if let num = Double(dollarStr) {
+                    balance = num
+                }
+            }
+        }
+
+        guard let finalBalance = balance else {
+            throw ConnectorError.message("Could not parse Refuseless balance from console page.")
+        }
+
+        var deposited: Double = 0.0
+        if let match = html.range(of: #"["\\]+depositedCents["\\]+\s*:\s*([0-9]+)"#, options: .regularExpression) {
+            let substr = String(html[match])
+            if let numRange = substr.range(of: #"[0-9]+"#, options: .regularExpression),
+               let cents = Double(substr[numRange]) {
+                deposited = cents / 100.0
+            }
+        } else if let match = html.range(of: #"<dt>Top-ups</dt>\s*<dd>\$([0-9]+(?:\.[0-9]+)?)</dd>"#, options: .regularExpression) {
+            let substr = String(html[match])
+            if let dollarRange = substr.range(of: #"\$([0-9]+(?:\.[0-9]+)?)"#, options: .regularExpression) {
+                let dollarStr = String(substr[dollarRange]).dropFirst()
+                deposited = Double(dollarStr) ?? 0.0
+            }
+        }
+
+        let baseline: Double
+        if deposited > 0 {
+            baseline = max(deposited, finalBalance)
+        } else if finalBalance > 0 {
+            baseline = PaymentReference.inferTier(for: finalBalance)
+        } else {
+            baseline = 0.0
+        }
+
+        var emailAccount = ""
+        if let match = html.range(of: #"["\\]+email["\\]+\s*:\s*["\\]+([^"\\]+@[^"\\]+)["\\]+"#, options: .regularExpression) {
+            let substr = String(html[match])
+            if let atIdx = substr.firstIndex(of: "@") {
+                let prefix = substr[..<atIdx]
+                let startIdx = prefix.lastIndex(where: { $0 == "\"" || $0 == "\\" || $0 == ":" || $0 == " " }) ?? prefix.startIndex
+                let actualStart = substr.index(after: startIdx)
+                let suffix = substr[atIdx...]
+                let endIdx = suffix.firstIndex(where: { $0 == "\"" || $0 == "\\" || $0 == " " || $0 == "," }) ?? suffix.endIndex
+                emailAccount = String(substr[actualStart..<endIdx])
+            }
+        }
+
+        return (remaining: finalBalance, baseline: baseline, account: emailAccount)
+    }
+
     func fetchBalance() async throws -> Reading {
         var cookies = await http.cookies
         if cookies.isEmpty {
@@ -374,9 +450,30 @@ struct RefuselessProvider: BalanceProvider {
             throw ConnectorError.message("No signed-in Refuseless session was found in Brave. Sign in there, then connect again.")
         }
         try? await http.persist()
-        let balance: Double = 100.0
-        let ref = PaymentReference.inferTier(for: balance)
-        let acct = account.isEmpty ? "DeepSeek Credits" : account
-        return Reading(provider: providerID, remaining: balance, currency: "USD", account: acct, url: "https://refuseless.com/console", expires: nil, reference: ref)
+
+        guard let url = URL(string: "https://refuseless.com/console") else {
+            throw ConnectorError.message("Invalid Refuseless console URL.")
+        }
+
+        let (data, response) = try await http.request(url: url, headers: ["Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"])
+        guard response.statusCode == 200 else {
+            throw ConnectorError.message("Refuseless console returned HTTP \(response.statusCode). Please sign in again in Brave.")
+        }
+        guard let html = String(data: data, encoding: .utf8) else {
+            throw ConnectorError.message("Refuseless returned invalid HTML encoding.")
+        }
+
+        let parsed = try Self.parse(html: html)
+        let resolvedAccount = !account.isEmpty ? account : (!parsed.account.isEmpty ? parsed.account : "Refuseless Account")
+
+        return Reading(
+            provider: providerID,
+            remaining: parsed.remaining,
+            currency: "USD",
+            account: resolvedAccount,
+            url: "https://refuseless.com/console",
+            expires: nil,
+            reference: parsed.baseline
+        )
     }
 }
