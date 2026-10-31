@@ -67,15 +67,13 @@ struct BalanceCardContent: View {
                     }
                 }.frame(height: 6)
                 HStack(alignment: .firstTextBaseline) {
-                    Text(balance.baseline > 0 ? "\(balance.percentageLabel) left" : "Balance")
+                    Text(balance.live || balance.baseline > 0 ? "\(balance.percentageLabel) left" : "Balance")
                         .font(.footnote)
                         .foregroundStyle(Color.primary)
                     Spacer()
                     Text(balance.id == "crowbot" && balance.account.isEmpty
                         ? "Connect to read"
-                        : (balance.baseline > 0
-                            ? "\(balance.money) / \(balance.baseline.formatted(.currency(code: "USD")))"
-                            : "\(balance.money)"))
+                        : "\(balance.money) / \(balance.baseline.formatted(.currency(code: "USD")))")
                         .font(.footnote)
                         .foregroundStyle(Color.primary)
                 }
@@ -242,7 +240,7 @@ struct ManageProvidersSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     var allSelected: Bool {
-        Balance.initial.allSatisfy { initB in app.balances.contains(where: { $0.id == initB.id }) }
+        !app.balances.isEmpty && Balance.initial.allSatisfy { initB in app.balances.contains(where: { $0.id == initB.id }) }
     }
 
     var body: some View {
@@ -364,7 +362,7 @@ struct OnboardingView: View {
     @State private var login = SMAppService.mainApp.status == .enabled
 
     var allSelected: Bool {
-        Balance.initial.allSatisfy { initB in app.balances.contains(where: { $0.id == initB.id }) }
+        !app.balances.isEmpty && Balance.initial.allSatisfy { initB in app.balances.contains(where: { $0.id == initB.id }) }
     }
 
     var body: some View {
@@ -422,6 +420,9 @@ struct OnboardingView: View {
                     .controlSize(.regular)
                 } else {
                     Button("Finish Setup") {
+                        if login && SMAppService.mainApp.status != .enabled {
+                            app.toggleLogin()
+                        }
                         onFinish()
                     }
                     .buttonStyle(.borderedProminent)
@@ -1006,7 +1007,7 @@ struct SettingsPane: View {
 
                                     Spacer()
 
-                                    Button("100%: \(balance.baseline > 0 ? balance.baseline.formatted(.currency(code: "USD")) : "—")") {
+                                    Button("100%: \(balance.baseline.formatted(.currency(code: "USD")))") {
                                         app.setBaseline(for: index)
                                     }
                                     .controlSize(.small)

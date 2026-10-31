@@ -30,10 +30,7 @@ struct Balance: Codable, Equatable {
         self.dynamicCookieDomain = dynamicCookieDomain
         self.dynamicAuthHeader = dynamicAuthHeader
     }
-    var percent: Double {
-        let base = baseline > 0 ? baseline : (remaining > 0 ? remaining : 0)
-        return base > 0 ? max(0, remaining / base * 100) : 0
-    }
+    var percent: Double { baseline > 0 ? max(0, remaining / baseline * 100) : 0 }
     var percentageLabel: String {
         if (!live && baseline == 0) || (id == "crowbot" && account.isEmpty) { return "—" }
         // Do not round a partly used balance back up to 100%.
@@ -97,7 +94,7 @@ struct Reading: Decodable {
 enum ReadingValidation {
     static func valid(_ r: Reading, balances: [Balance]) -> Bool {
         guard r.remaining.isFinite, r.remaining >= 0, r.remaining < 1_000_000_000,
-              (r.currency == "USD" || r.currency == "CREDITS"), let url = URL(string: r.url), url.scheme == "https",
+              r.currency == "USD", let url = URL(string: r.url), url.scheme == "https",
               let balance = balances.first(where: { $0.id == r.provider }) else { return false }
         if r.provider == "vertex" {
             let web = url.host == "console.cloud.google.com" && (balance.account.isEmpty || url.path.hasPrefix("/billing/\(balance.account)/credits"))

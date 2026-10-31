@@ -528,6 +528,62 @@ enum BraveSessionImporter {
         }
         return nil
     }
+
+    static func discoverGoogleAIStudioProjectID() -> String? {
+        let (root, accessingRoot) = resolvedBrowserRoot()
+        defer { if accessingRoot { root.stopAccessingSecurityScopedResource() } }
+
+        var selectedProfile: URL?
+        if let bookmark = UserDefaults.standard.data(forKey: profileBookmarkKey) {
+            var stale = false
+            selectedProfile = try? ProfileBookmark.resolve(bookmark, stale: &stale)
+        }
+        if selectedProfile == nil, let path = UserDefaults.standard.string(forKey: "BraveProfilePath") {
+            let url = URL(fileURLWithPath: path)
+            if FileManager.default.fileExists(atPath: url.path) { selectedProfile = url }
+        }
+        let profiles = selectedProfile.map { [$0] } ?? availableProfiles().map(\.url)
+        let projectPattern = #"^gen-lang-client-[A-Za-z0-9_-]+$"#
+        guard let projectRegex = try? NSRegularExpression(pattern: projectPattern) else { return nil }
+
+        for profile in profiles {
+            let accessing = profile.startAccessingSecurityScopedResource()
+            defer { if accessing { profile.stopAccessingSecurityScopedResource() } }
+
+            let historyFile = profile.appendingPathComponent("History")
+            guard FileManager.default.fileExists(atPath: historyFile.path) else { continue }
+            let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("APIBarHistory-" + UUID().uuidString)
+            guard (try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)) != nil else { continue }
+            defer { try? FileManager.default.removeItem(at: tempDir) }
+
+            let tempHistory = tempDir.appendingPathComponent("History")
+            guard (try? FileManager.default.copyItem(at: historyFile, to: tempHistory)) != nil else { continue }
+            let wal = profile.appendingPathComponent("History-wal")
+            if FileManager.default.fileExists(atPath: wal.path) {
+                _ = try? FileManager.default.copyItem(at: wal, to: tempDir.appendingPathComponent("History-wal"))
+            }
+
+            var db: OpaquePointer?
+            guard sqlite3_open_v2(tempHistory.path, &db, SQLITE_OPEN_READONLY | SQLITE_OPEN_NOMUTEX, nil) == SQLITE_OK, let database = db else { continue }
+            defer { sqlite3_close(database) }
+
+            let query = "SELECT url FROM urls WHERE url LIKE '%aistudio.google.com/spend%' ORDER BY last_visit_time DESC LIMIT 100;"
+            var stmt: OpaquePointer?
+            guard sqlite3_prepare_v2(database, query, -1, &stmt, nil) == SQLITE_OK else { continue }
+            defer { sqlite3_finalize(stmt) }
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                guard let cString = sqlite3_column_text(stmt, 0) else { continue }
+                let value = String(cString: cString)
+                guard let components = URLComponents(string: value),
+                      components.host == "aistudio.google.com", components.path == "/spend",
+                      let project = components.queryItems?.first(where: { $0.name == "project" })?.value,
+                      projectRegex.firstMatch(in: project, range: NSRange(project.startIndex..., in: project)) != nil else { continue }
+                return project
+            }
+        }
+        return nil
+    }
+
     private static func safeStoragePassword(interactive: Bool, forceFresh: Bool = false) throws -> Data {
         if !forceFresh {
             if let cachedPassword { return cachedPassword }

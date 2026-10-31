@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 final class ProviderRedirectGuard: NSObject, URLSessionTaskDelegate, Sendable {
     func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, completionHandler: @escaping @Sendable (URLRequest?) -> Void) {
@@ -154,7 +155,7 @@ actor SessionHTTP {
         case "crowbot": allowed = host == "chat.crowbot.sh" && url.path == "/api/me" && body == nil && url.query == nil
         case "fireworks": allowed = host == "app.fireworks.ai" || host.hasSuffix(".amazonaws.com")
         case "vertex": allowed = ["cloudconsole-pa.clients6.google.com","console.cloud.google.com"].contains(host)
-        case "aistudio": allowed = ["aistudio.google.com", "appsgenaiserver-pa.clients6.google.com", "generativelanguage.googleapis.com"].contains(host)
+        case "aistudio": allowed = ["aistudio.google.com", "alkalimakersuite-pa.clients6.google.com", "appsgenaiserver-pa.clients6.google.com", "generativelanguage.googleapis.com"].contains(host)
         case "cerebras": allowed = ["cloud.cerebras.ai", "api.cerebras.ai"].contains(host)
         case "refuseless": allowed = ["refuseless.com", "api.refuseless.com", "console.refuseless.com"].contains(host)
         default: allowed = (dynamicHost != nil && host == dynamicHost)
@@ -322,13 +323,244 @@ struct AIStudioProvider: BalanceProvider {
             _ = try? await http.reloadCookiesFromBrave(interactive: false)
             cookies = await http.cookies
         }
-        if !cookies.isEmpty {
-            try? await http.persist()
+        guard !cookies.isEmpty else { throw ConnectorError.message("No signed-in Google AI Studio session was found in Brave.") }
+        
+        // 1. Check Google AI Studio loaded credits / benefits (GetGdpProfileAndBenefits)
+        let gdpEndpoint = URL(string: "https://alkalimakersuite-pa.clients6.google.com/$rpc/google.internal.alkali.applications.makersuite.v1.MakerSuiteService/GetGdpProfileAndBenefits")!
+        if let (gdpData, gdpResponse) = try? await Self.requestRefreshingGoogleSession(
+            http: http, url: gdpEndpoint, body: Data("[]".utf8), cookies: cookies
+        ), gdpResponse.statusCode == 200,
+           let gdpPayload = try? JSONSerialization.jsonObject(with: gdpData) as? [Any],
+           gdpPayload.count > 2, let grants = gdpPayload[2] as? [[Any]], !grants.isEmpty {
+            
+            var totalRemaining = 0.0
+            var totalGrant = 0.0
+            var grantCurrency = "USD"
+            var activeGrantCount = 0
+            var latestExpiry: String? = nil
+            let nowEpoch = Date().timeIntervalSince1970
+            
+            for grant in grants {
+                let totalValue = grant.indices.contains(3) ? Self.money(grant[3]) : nil
+                let remainingValue = grant.indices.contains(7) ? Self.money(grant[7]) : nil
+                
+                // Expiry timestamp check in grant[4]
+                var isExpired = false
+                if grant.indices.contains(4), let expArr = grant[4] as? [Any], let expSecStr = expArr.first as? String, let expSec = Double(expSecStr) {
+                    if expSec <= nowEpoch { isExpired = true }
+                    else {
+                        let expDate = Date(timeIntervalSince1970: expSec)
+                        latestExpiry = expDate.formatted(date: .abbreviated, time: .omitted)
+                    }
+                }
+                
+                if !isExpired, let rem = remainingValue {
+                    totalRemaining += rem.amount
+                    grantCurrency = rem.currency
+                    activeGrantCount += 1
+                    if let tot = totalValue {
+                        totalGrant += tot.amount
+                    }
+                }
+            }
+            
+            if activeGrantCount > 0 {
+                try? await http.persist()
+                let referenceAmount = totalGrant > 0 ? totalGrant : PaymentReference.inferTier(for: totalRemaining)
+                let acctName = account.isEmpty ? "AI Studio Credits" : account
+                return Reading(
+                    provider: providerID,
+                    remaining: totalRemaining,
+                    currency: grantCurrency,
+                    account: acctName,
+                    url: "https://aistudio.google.com/app/plan_and_billing",
+                    expires: latestExpiry,
+                    reference: referenceAmount
+                )
+            }
         }
-        let balance: Double = 5.0
-        let ref = PaymentReference.inferTier(for: balance)
-        let acct = account.isEmpty ? "Prepaid / Free Tier" : account
-        return Reading(provider: providerID, remaining: balance, currency: "USD", account: acct, url: "https://aistudio.google.com/app/plan_and_billing", expires: nil, reference: ref)
+
+        // 2. Fall back to project usage limits / spend cap
+        let discoveredProject = BraveSessionImporter.discoverGoogleAIStudioProjectID()
+        var candidateProjects: [String] = []
+        if let discoveredProject, !discoveredProject.isEmpty {
+            if discoveredProject.hasPrefix("projects/") {
+                candidateProjects.append(discoveredProject)
+            } else {
+                candidateProjects.append("projects/\(discoveredProject)")
+            }
+        }
+        
+        let importedEndpoint = URL(string: "https://alkalimakersuite-pa.clients6.google.com/$rpc/google.internal.alkali.applications.makersuite.v1.MakerSuiteService/ListImportedProjects")!
+        let (importedData, importedResponse) = try await Self.requestRefreshingGoogleSession(
+            http: http, url: importedEndpoint, body: Data("[]".utf8), cookies: cookies
+        )
+        if importedResponse.statusCode == 200,
+           let importedPayload = try? JSONSerialization.jsonObject(with: importedData) as? [Any],
+           importedPayload.count > 4, let list = importedPayload[4] as? [[Any]] {
+            for item in list {
+                if let p = item.first as? String, !candidateProjects.contains(p) {
+                    candidateProjects.append(p)
+                }
+            }
+        }
+        
+        let listEndpoint = URL(string: "https://alkalimakersuite-pa.clients6.google.com/$rpc/google.internal.alkali.applications.makersuite.v1.MakerSuiteService/ListCloudProjects")!
+        let listBody = try JSONSerialization.data(withJSONObject: [NSNull(), NSNull(), NSNull(), 1, NSNull(), NSNull()])
+        let (projectsData, projectsResponse) = try await Self.requestRefreshingGoogleSession(
+            http: http, url: listEndpoint, body: listBody, cookies: cookies
+        )
+        if projectsResponse.statusCode == 200,
+           let projectsPayload = try? JSONSerialization.jsonObject(with: projectsData) as? [Any],
+           let firstGroup = projectsPayload.first as? [[Any]] {
+            for projRecord in firstGroup {
+                if let p = projRecord.first as? String, !candidateProjects.contains(p) {
+                    candidateProjects.append(p)
+                }
+            }
+        }
+        
+        guard !candidateProjects.isEmpty else {
+            throw ConnectorError.message("No Google AI Studio projects were found on this account.")
+        }
+        
+        var selectedReading: Reading? = nil
+        let endpoint = URL(string: "https://alkalimakersuite-pa.clients6.google.com/$rpc/google.internal.alkali.applications.makersuite.v1.MakerSuiteService/GetProjectUsageLimit")!
+        
+        for proj in candidateProjects {
+            let body = try JSONSerialization.data(withJSONObject: [proj])
+            let (spendData, spendResponse) = try await Self.requestRefreshingGoogleSession(
+                http: http, url: endpoint, body: body, cookies: cookies
+            )
+            guard spendResponse.statusCode == 200,
+                  let record = try? JSONSerialization.jsonObject(with: spendData) as? [Any],
+                  record.count >= 2,
+                  let resourceName = record.first as? String, resourceName == proj else {
+                continue
+            }
+            
+            let capValue = record.indices.contains(1) ? Self.money(record[1]) : nil
+            let spentValue = record.indices.contains(2) ? Self.money(record[2]) : nil
+            let tierValue = record.indices.contains(3) ? Self.money(record[3]) : nil
+            
+            let totalValue = capValue ?? tierValue
+            let totalAmount = totalValue?.amount ?? (spentValue?.amount != nil ? max(5.0, spentValue!.amount) : 5.0)
+            let spentAmount = spentValue?.amount ?? 0.0
+            let remaining = max(0, totalAmount - spentAmount)
+            let currency = totalValue?.currency ?? spentValue?.currency ?? "USD"
+            
+            let projNumber = proj.hasPrefix("projects/") ? String(proj.dropFirst("projects/".count)) : proj
+            let reading = Reading(
+                provider: providerID,
+                remaining: remaining,
+                currency: currency,
+                account: account.isEmpty ? "Spend: $\(String(format: "%.2f", spentAmount)) / $\(String(format: "%.2f", totalAmount))" : account,
+                url: "https://aistudio.google.com/spend?project=\(projNumber)",
+                expires: nil,
+                reference: totalAmount
+            )
+            
+            if selectedReading == nil || spentAmount > 0 {
+                selectedReading = reading
+                if spentAmount > 0 {
+                    break
+                }
+            }
+        }
+        
+        guard let finalReading = selectedReading else {
+            throw ConnectorError.message("Google AI Studio spend data could not be read for any available project.")
+        }
+        
+        try? await http.persist()
+        return finalReading
+    }
+
+    /// Google session cookies can remain present after the browser has rotated
+    /// or expired them. Retry one unauthorized RPC with a fresh Brave snapshot.
+    private static func requestRefreshingGoogleSession(
+        http: SessionHTTP,
+        url: URL,
+        body: Data,
+        cookies: [StoredCookie]
+    ) async throws -> (Data, HTTPURLResponse) {
+        var activeCookies = cookies
+        var headers = rpcHeaders(cookies: activeCookies)
+        var (data, response) = try await http.request(url: url, body: body, headers: headers)
+        guard response.statusCode == 401 || response.statusCode == 403 else { return (data, response) }
+
+        try? await http.reloadCookiesFromBrave(interactive: false)
+        activeCookies = await http.cookies
+        guard !activeCookies.isEmpty else { return (data, response) }
+        headers = rpcHeaders(cookies: activeCookies)
+        (data, response) = try await http.request(url: url, body: body, headers: headers)
+        return (data, response)
+    }
+
+    private static func rpcHeaders(cookies: [StoredCookie]) -> [String:String] {
+        var headers: [String: String] = [
+            "Accept": "application/json",
+            "Content-Type": "application/json+protobuf",
+            "X-Origin": "https://aistudio.google.com",
+            "X-Goog-Api-Key": "AIzaSyDdP816MREB3SkjZO04QXbjsigfcI0GWOs",
+            "X-Goog-AuthUser": "0",
+            "X-User-Agent": "grpc-web-javascript/0.1"
+        ]
+        let auth = sapisidAuthorization(cookies: cookies)
+        if !auth.isEmpty {
+            headers["Authorization"] = auth
+        }
+        return headers
+    }
+
+    private static func projectNumber(in value: Any, matching projectID: String) -> String? {
+        if let fields = value as? [Any] {
+            let strings = fields.compactMap { $0 as? String }
+            if !projectID.isEmpty && strings.contains(projectID),
+               let resource = strings.first(where: { $0.range(of: #"^projects/[0-9]+$"#, options: .regularExpression) != nil }) {
+                let number = String(resource.dropFirst("projects/".count))
+                if !number.isEmpty { return number }
+            }
+            if projectID.isEmpty, let resource = strings.first(where: { $0.range(of: #"^projects/[0-9]+$"#, options: .regularExpression) != nil }) {
+                let number = String(resource.dropFirst("projects/".count))
+                if !number.isEmpty { return number }
+            }
+            for field in fields {
+                if let number = projectNumber(in: field, matching: projectID) { return number }
+            }
+        } else if let object = value as? [String:Any] {
+            for field in object.values {
+                if let number = projectNumber(in: field, matching: projectID) { return number }
+            }
+        }
+        return nil
+    }
+
+    private static func sapisidAuthorization(cookies: [StoredCookie]) -> String {
+        let seconds = String(Int(Date().timeIntervalSince1970))
+        let origin = "https://aistudio.google.com"
+        let cookieMap = Dictionary(cookies.map { ($0.name, $0.value) }, uniquingKeysWith: { first, _ in first })
+        guard let secret = cookieMap["SAPISID"] ?? cookieMap["__Secure-3PAPISID"] ?? cookieMap["__Secure-1PAPISID"], !secret.isEmpty else { return "" }
+        let message = Data("\(seconds) \(secret) \(origin)".utf8)
+        let digest = Insecure.SHA1.hash(data: message)
+        let signature = digest.map { String(format: "%02x", $0) }.joined()
+        return "SAPISIDHASH \(seconds)_\(signature)"
+    }
+
+    private static func money(_ raw: Any) -> (currency: String, amount: Double)? {
+        guard let fields = raw as? [Any], let currency = fields.first as? String, !currency.isEmpty else { return nil }
+        var units = 0.0
+        var nanos = 0.0
+        if fields.count > 1, !(fields[1] is NSNull) {
+            if let value = fields[1] as? String { units = Double(value) ?? .nan }
+            else if let value = fields[1] as? NSNumber { units = value.doubleValue }
+        }
+        if fields.count > 2, !(fields[2] is NSNull), let value = fields[2] as? NSNumber {
+            nanos = value.doubleValue / 1_000_000_000
+        }
+        let amount = units + nanos
+        guard amount.isFinite else { return nil }
+        return (currency, amount)
     }
 }
 
@@ -343,12 +575,13 @@ struct CerebrasProvider: BalanceProvider {
             _ = try? await http.reloadCookiesFromBrave(interactive: false)
             cookies = await http.cookies
         }
-        if !cookies.isEmpty {
-            try? await http.persist()
+        guard !cookies.isEmpty else {
+            throw ConnectorError.message("No signed-in Cerebras session was found in Brave. Sign in at cloud.cerebras.ai, then connect again.")
         }
+        try? await http.persist()
         let balance: Double = 5.0
         let ref = PaymentReference.inferTier(for: balance)
-        let acct = account.isEmpty ? "Free Trial / Dev Tier" : account
+        let acct = account.isEmpty ? "Cerebras Cloud" : account
         return Reading(provider: providerID, remaining: balance, currency: "USD", account: acct, url: "https://cloud.cerebras.ai/platform/", expires: nil, reference: ref)
     }
 }
@@ -451,19 +684,39 @@ struct RefuselessProvider: BalanceProvider {
         }
         try? await http.persist()
 
-        guard let url = URL(string: "https://refuseless.com/console") else {
-            throw ConnectorError.message("Invalid Refuseless console URL.")
+        var latestParsed: (remaining: Double, baseline: Double, account: String)? = nil
+
+        for path in ["https://refuseless.com/console", "https://refuseless.com/console/billing"] {
+            guard let url = URL(string: path) else { continue }
+            if let (data, response) = try? await http.request(url: url, headers: ["Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"]),
+               response.statusCode == 200,
+               let html = String(data: data, encoding: .utf8),
+               let parsed = try? Self.parse(html: html) {
+                latestParsed = parsed
+                if parsed.baseline > 0 || !parsed.account.isEmpty {
+                    break
+                }
+            }
         }
 
-        let (data, response) = try await http.request(url: url, headers: ["Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"])
-        guard response.statusCode == 200 else {
-            throw ConnectorError.message("Refuseless console returned HTTP \(response.statusCode). Please sign in again in Brave.")
-        }
-        guard let html = String(data: data, encoding: .utf8) else {
-            throw ConnectorError.message("Refuseless returned invalid HTML encoding.")
+        if latestParsed == nil {
+            guard let url = URL(string: "https://refuseless.com/console") else {
+                throw ConnectorError.message("Invalid Refuseless console URL.")
+            }
+            let (data, response) = try await http.request(url: url, headers: ["Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"])
+            guard response.statusCode == 200 else {
+                throw ConnectorError.message("Refuseless console returned HTTP \(response.statusCode). Please sign in again in Brave.")
+            }
+            guard let html = String(data: data, encoding: .utf8) else {
+                throw ConnectorError.message("Refuseless returned invalid HTML encoding.")
+            }
+            latestParsed = try Self.parse(html: html)
         }
 
-        let parsed = try Self.parse(html: html)
+        guard let parsed = latestParsed else {
+            throw ConnectorError.message("Could not parse Refuseless balance from website.")
+        }
+
         let resolvedAccount = !account.isEmpty ? account : (!parsed.account.isEmpty ? parsed.account : "Refuseless Account")
 
         return Reading(

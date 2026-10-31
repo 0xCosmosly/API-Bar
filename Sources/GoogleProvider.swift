@@ -203,7 +203,7 @@ struct GoogleProvider: BalanceProvider {
             return iso.date(from: text) ?? fractionalISO.date(from: text)
         }
         var total = 0.0
-        var grantTotal = 0.0
+        var largestActiveGrant = 0.0
         var ends: [Date] = []
         var seen = Set<String>()
         var resolvedAccount = account
@@ -221,13 +221,18 @@ struct GoogleProvider: BalanceProvider {
             }
             let amount = try ProviderJSON.money(row["remainingAmount"])
             total += amount
-            if let grant = (try? ProviderJSON.money(row["amount"])) ?? (try? ProviderJSON.money(row["initialAmount"])), grant > 0 {
-                grantTotal += grant
+            // Google Cloud's Credits dashboard exposes the credit's `value` as
+            // its "Original value" column; `remainingAmount` changes as it is spent.
+            if let grant = (try? ProviderJSON.money(row["value"]))
+                ?? (try? ProviderJSON.money(row["initialAmount"]))
+                ?? (try? ProviderJSON.money(row["originalAmount"]))
+                ?? (try? ProviderJSON.money(row["originalValue"])), grant > 0 {
+                largestActiveGrant = max(largestActiveGrant, grant)
             }
             if amount > 0 { ends.append(end) }
         }
         let expiry = ends.min().map { $0.formatted(date:.abbreviated,time:.omitted) }
-        let reference = grantTotal > 0 ? grantTotal : PaymentReference.inferTier(for: total)
+        let reference = largestActiveGrant > 0 ? largestActiveGrant : PaymentReference.inferTier(for: total)
         return Reading(provider:"vertex",remaining:total,currency:"USD",account:resolvedAccount,url:Self.endpoint,expires:expiry,reference:reference)
     }
 }

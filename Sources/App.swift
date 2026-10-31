@@ -18,7 +18,9 @@ enum ProviderSortMode: String, CaseIterable, Codable {
 
 @MainActor
 final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowDelegate, ObservableObject {
-    @Published var balances = Balance.initial
+    // Providers are opt-in. A first launch starts with an empty list and the
+    // onboarding provider step records only the choices the user makes.
+    @Published var balances: [Balance] = []
     @Published var mergeIcons: Bool = {
         if UserDefaults.standard.object(forKey: "MergeProviderIcons") != nil {
             return UserDefaults.standard.bool(forKey: "MergeProviderIcons")
@@ -269,18 +271,12 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
             let initialMap = Dictionary(uniqueKeysWithValues: Balance.initial.map { ($0.id, $0) })
             var ordered: [Balance] = []
             for s in saved {
-                if initialMap[s.id] != nil {
+                if initialMap[s.id] != nil || s.dynamicEndpoint != nil {
                     var b = s
                     if b.id == "aistudio" || b.name == "AI Studio" || b.name.isEmpty {
                         b.name = "Google AI Studio"
                     }
                     ordered.append(b)
-                }
-            }
-            let removed = Set(UserDefaults.standard.stringArray(forKey: "RemovedProviders") ?? [])
-            for initial in Balance.initial {
-                if !ordered.contains(where: { $0.id == initial.id }) && !removed.contains(initial.id) {
-                    ordered.append(initial)
                 }
             }
             var changed = ordered.map(\.id) != saved.map(\.id)
@@ -343,12 +339,12 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         for item in items { NSStatusBar.system.removeStatusItem(item) }
         items.removeAll()
         mergedMenuView = nil
-        let identities = mergeIcons ? ["merged"] : balances.map(\.id)
+        let identities = mergeIcons ? ["merged"] : (balances.isEmpty ? ["merged"] : balances.map(\.id))
         for identity in identities {
             let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
             item.autosaveName = identity
             item.button?.setAccessibilityIdentifier(identity)
-            let name = identity == "merged" ? "All providers" : balances.first(where: { $0.id == identity })!.name
+            let name = identity == "merged" ? "All providers" : (balances.first(where: { $0.id == identity })?.name ?? "API Bar")
             item.button?.setAccessibilityLabel("API Bar — \(name)")
             let menu = NSMenu(); menu.delegate = self
             menu.identifier = NSUserInterfaceItemIdentifier(identity)
@@ -637,6 +633,17 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         if balances[i].account.isEmpty { balances[i].account = r.account }
         let oldRemaining = balances[i].remaining
         balances[i].remaining = r.remaining; balances[i].updated = Date(); balances[i].live = true; balances[i].expires = r.expires
+        if r.provider == "refuseless" {
+            let ref = r.reference ?? r.remaining
+            balances[i].baseline = ref
+            providerStatus[r.provider] = "Connected · refreshes every 5 minutes"
+            if sortMode != .manual {
+                applySorting()
+            } else {
+                save(); updateTitles()
+            }
+            return
+        }
         // Automatic 100% reference calculation:
         // When remaining balance increases while previous remaining > 0,
         // infer the paid tier from the delta and add it to the previous remaining.
@@ -672,15 +679,22 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
     func updateTitles() {
         for (i, b) in (mergeIcons ? [selectedMergedBalance] : balances).enumerated() where i < items.count {
             if mergeIcons && mergedProvider == "overview" {
-                let usdRemaining = balances.reduce(0.0) { $0 + $1.remaining }
-                let usdBaseline = balances.reduce(0.0) { $0 + $1.baseline }
-                let totalPercent = usdBaseline > 0 ? max(0, usdRemaining / usdBaseline * 100) : 0
-                let percentText = "\(Int(floor(totalPercent)))%"
-                items[i].button?.title = percentText
-                items[i].button?.image = ProviderIcon.menuBarImage("overview")
-                let summary = usdRemaining.formatted(.currency(code: "USD"))
-                items[i].button?.toolTip = "Overview: \(summary) · \(percentText) · \(balances.filter { isConnected($0.id) }.count) connected"
-                items[i].button?.setAccessibilityValue("\(percentText) remaining across all providers")
+                if balances.isEmpty {
+                    items[i].button?.title = ""
+                    items[i].button?.image = BrandMark.appIconImage(size: 18)
+                    items[i].button?.toolTip = "API Bar: No providers configured"
+                    items[i].button?.setAccessibilityValue("No providers configured")
+                } else {
+                    let usdRemaining = balances.reduce(0.0) { $0 + $1.remaining }
+                    let usdBaseline = balances.reduce(0.0) { $0 + $1.baseline }
+                    let totalPercent = usdBaseline > 0 ? max(0, usdRemaining / usdBaseline * 100) : 0
+                    let percentText = "\(Int(floor(totalPercent)))%"
+                    items[i].button?.title = percentText
+                    items[i].button?.image = ProviderIcon.menuBarImage("overview")
+                    let summary = usdRemaining.formatted(.currency(code: "USD"))
+                    items[i].button?.toolTip = "Overview: \(summary) · \(percentText) · \(balances.filter { isConnected($0.id) }.count) connected"
+                    items[i].button?.setAccessibilityValue("\(percentText) remaining across all providers")
+                }
             } else {
                 items[i].button?.title = b.percentageLabel
                 items[i].button?.image = ProviderIcon.menuBarImage(b.id)

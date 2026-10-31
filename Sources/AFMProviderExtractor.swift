@@ -107,7 +107,7 @@ public enum AFMProviderExtractor {
             dashboardURL: "https://refuseless.com/console",
             endpoint: "https://api.refuseless.com/v1/billing",
             jsonPath: "balance",
-            defaultBaseline: 100.0,
+            defaultBaseline: 0.0,
             aliases: ["refuseless", "refuseless balance", "deepseek credits"]
         ),
         KnownProviderMeta(
