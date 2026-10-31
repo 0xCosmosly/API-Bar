@@ -13,7 +13,7 @@ if [ -z "${SDK:-}" ]; then
     fi
 fi
 mkdir -p .cache/checks
-swiftc -sdk "$SDK" -parse-as-library -module-cache-path "$PWD/.cache/modules" Sources/Balance.swift Sources/Provider.swift Sources/Credentials.swift Sources/SessionHTTP.swift Sources/GoogleProvider.swift Sources/CrowbotProvider.swift Tests/Checks.swift -o .cache/checks/APIBarChecks
+swiftc -sdk "$SDK" -parse-as-library -module-cache-path "$PWD/.cache/modules" Sources/BrandMark.swift Sources/Balance.swift Sources/Provider.swift Sources/Credentials.swift Sources/SessionHTTP.swift Sources/GoogleProvider.swift Sources/CrowbotProvider.swift Sources/AppUpdater.swift Tests/Checks.swift -o .cache/checks/APIBarChecks
 .cache/checks/APIBarChecks
 plutil -lint Resources/Info.plist
 UI_SOURCES=()

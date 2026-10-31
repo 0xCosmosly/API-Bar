@@ -738,6 +738,7 @@ struct OnboardingView: View {
 
 struct SettingsPane: View {
     @ObservedObject var app: APIBarApp
+    @ObservedObject private var updater = AppUpdater.shared
     @State private var login = SMAppService.mainApp.status == .enabled
     @State private var draggedBalance: Balance?
     @State private var showAFMPanel = true
@@ -772,6 +773,43 @@ struct SettingsPane: View {
                     Label("Welcome Tour…", systemImage: "sparkles")
                 }
                 .controlSize(.small)
+
+                Button {
+                    Task { await updater.checkForUpdates(manual: true) }
+                } label: {
+                    if updater.isChecking {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Label(updater.updateAvailable ? "Update Available!" : "Check for Updates…", systemImage: updater.updateAvailable ? "arrow.down.circle.fill" : "arrow.triangle.2.circlepath")
+                    }
+                }
+                .controlSize(.small)
+                .disabled(updater.isChecking || updater.isInstalling)
+            }
+
+            if updater.updateAvailable, let ver = updater.latestVersion {
+                HStack(spacing: 12) {
+                    Image(systemName: "sparkles")
+                        .font(.title3)
+                        .foregroundStyle(Color.accentColor)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("API Bar v\(ver) is available!")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                        Text(updater.statusMessage)
+                            .font(.caption)
+                            .foregroundStyle(Color.secondary)
+                    }
+                    Spacer()
+                    Button("View Release Notes & Install…") {
+                        updater.showUpdateWindow()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                }
+                .padding(12)
+                .background(RoundedRectangle(cornerRadius: 10).fill(Color.accentColor.opacity(0.10)))
+                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.accentColor.opacity(0.25), lineWidth: 1))
             }
 
             // MARK: - Preferences Card

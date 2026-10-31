@@ -326,9 +326,15 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         writeDiagnostics()
         timer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in Task { @MainActor in
             guard let self else { return }; self.updateTitles()
-            if self.lastRefresh.map({ Date().timeIntervalSince($0) >= 300 }) != false { await self.refreshAll() }
+            if self.lastRefresh.map({ Date().timeIntervalSince($0) >= 300 }) != false {
+                await self.refreshAll()
+                await AppUpdater.shared.checkForUpdates(manual: false)
+            }
         } }
-        Task { await refreshAll() }
+        Task {
+            await refreshAll()
+            await AppUpdater.shared.checkForUpdates(manual: false)
+        }
         if !UserDefaults.standard.bool(forKey: "HasCompletedOnboarding") {
             DispatchQueue.main.async { [weak self] in
                 self?.showOnboarding()
@@ -714,6 +720,10 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
             card.view = content
             menu.addItem(card)
             menu.addItem(.separator())
+            if AppUpdater.shared.updateAvailable, let ver = AppUpdater.shared.latestVersion {
+                action(menu, "Update to v\(ver) Available…", #selector(openSoftwareUpdate), 0, "arrow.down.circle.fill")
+                menu.addItem(.separator())
+            }
             action(menu, "Dashboard…", #selector(openMergedBilling), 0, "arrow.up.right.square")
             let refreshItem = action(menu, "Refresh", #selector(refreshMergedProvider), 0, "arrow.clockwise")
             refreshItem.keyEquivalent = "r"
@@ -725,6 +735,8 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
             login.state = SMAppService.mainApp.status == .enabled ? .on : .off
             if SMAppService.mainApp.status == .requiresApproval { disabled(menu, "Login item needs approval in System Settings") }
             action(menu, "Settings…", #selector(settings), 0, "gearshape").keyEquivalent = ","
+            action(menu, "Check for Updates…", #selector(checkForUpdates), 0, "arrow.triangle.2.circlepath")
+            action(menu, "About API Bar…", #selector(about), 0, "info.circle")
             menu.addItem(.separator())
             action(menu, "Quit API Bar", #selector(quit), 0, "power").keyEquivalent = "q"
             return
@@ -735,6 +747,10 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         menu.minimumWidth = 330
         let card = NSMenuItem(); card.view = BalanceCard(b,status:providerStatus[b.id]); menu.addItem(card)
         menu.addItem(.separator())
+        if AppUpdater.shared.updateAvailable, let ver = AppUpdater.shared.latestVersion {
+            action(menu, "Update to v\(ver) Available…", #selector(openSoftwareUpdate), index, "arrow.down.circle.fill")
+            menu.addItem(.separator())
+        }
         if let error = appError { disabled(menu, "Save error: \(error)") }
         let detail = NSMenuItem(title: "Usage Details", action: nil, keyEquivalent: "")
         detail.image = NSImage(systemSymbolName: "chart.bar", accessibilityDescription: nil)
@@ -756,6 +772,7 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         login.state = SMAppService.mainApp.status == .enabled ? .on : .off
         if SMAppService.mainApp.status == .requiresApproval { disabled(menu, "Login item needs approval in System Settings") }
         action(menu, "Settings…", #selector(settings), index, "gearshape").keyEquivalent = ","
+        action(menu, "Check for Updates…", #selector(checkForUpdates), index, "arrow.triangle.2.circlepath")
         action(menu, "About API Bar…", #selector(about), index, "info.circle")
         menu.addItem(.separator())
         action(menu, "Quit API Bar", #selector(quit), index, "power").keyEquivalent = "q"
@@ -962,6 +979,12 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         NSApp.activate(ignoringOtherApps: true)
         let result = a.runModal()
         if result == .alertFirstButtonReturn { balances.forEach { openInBrave(billingURL($0)) } }
+    }
+    @objc func checkForUpdates() {
+        Task { await AppUpdater.shared.checkForUpdates(manual: true) }
+    }
+    @objc func openSoftwareUpdate() {
+        AppUpdater.shared.showUpdateWindow()
     }
     @objc func about() { alert("API Bar 0.4.7", "A small companion for account-wide Vertex AI, Fireworks, Crowbot, Google AI Studio, Cerebras, and Refuseless balances. Menu bar percentages, balance details, baseline settings, and Start at Login.\n\nConnect in Settings to refresh account balances using sessions stored in macOS Keychain. Failed requests keep the last successful balance. Background refresh never requests Keychain approval.\n\nMenu styling and provider symbols follow CodexBar. Independent app; not affiliated with CodexBar, Google, Fireworks, or Cerebras.") }
     func alert(_ title: String, _ message: String) {
