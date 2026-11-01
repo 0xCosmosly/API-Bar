@@ -13,6 +13,7 @@ I built API Bar because some of the AI providers I use every day (like Google Cl
 - **Zero API Key Hassle (Brave Import)**: Seamlessly reads your authenticated browser sessions directly from Brave. No need to hunt down admin keys.
 - **Local Apple AI Model (AFM)**: Add unsupported or custom AI APIs in seconds. Just paste a cURL or let local Apple intelligence detect the balance format on-device.
 - **Automatic 100% Reference Baseline**: Smart tier detection automatically calculates your 100% baseline from your latest payment, top-up, or grant.
+- **Built-In Updates**: Checks GitHub Releases for new versions, shows the changelog, and installs the update in place — no separate downloader.
 - **100% Private & Local**: Zero telemetry, zero third-party cloud servers. Your sessions stay locked safely in your macOS Keychain.
 
 ---
@@ -26,7 +27,7 @@ I built API Bar because some of the AI providers I use every day (like Google Cl
 | **Cerebras** | Fast inference platform credits | Brave session |
 | **Google AI Studio** | Developer quota & tier credits | Brave session |
 | **Crowbot** | Chat & API usage credits | Brave session |
-| **Refuseless** | DeepSeek reasoning credits | Brave session |
+| **Refuseless** | Prepaid USD balance & top-up ledger | Brave session |
 | **Custom / Any API** | Venice, OpenRouter, Groq, Together, etc. | Local AI detection or Bearer token |
 
 ---
@@ -62,6 +63,20 @@ cd api-bar
 ./build.command    # builds & installs to /Applications/API Bar.app
 ```
 
+`check.command` runs its tests against a throwaway directory, so it never reads, overwrites, or deletes your real saved sessions or `balances.json`.
+
+---
+
+### 📦 Publishing a Release
+
+API Bar updates itself from GitHub Releases, so publishing is just a tag plus an asset:
+
+1. Bump `CFBundleShortVersionString` in `Resources/Info.plist`.
+2. Run `./build.command` — this writes `APIBar-app.zip` next to the project.
+3. Create a GitHub Release tagged `vX.Y.Z` and attach `APIBar-app.zip`.
+
+Running copies poll `releases/latest` in the background, show the release body as a changelog window when the tag is newer, and install the attached zip in place. No hosting, CDN, or appcast is required.
+
 ---
 
 ### ❓ FAQ (Quick Answers)
@@ -74,6 +89,9 @@ API Bar automatically infers your top-up baseline (e.g., a $5 top-up or $300 Goo
 
 **Q: Can I monitor other providers like OpenRouter or Venice?**  
 Yes! Open Settings and expand **Add Custom Provider**. Type in the provider name or paste a cURL command, and Apple's local Foundation Model will automatically configure the endpoint and parser.
+
+**Q: How do I update API Bar?**  
+Pick **Check for Updates…** from the menu, or let it check in the background. When a newer release exists you'll see the changelog and a one-click install.
 
 ---
 
