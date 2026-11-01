@@ -165,6 +165,38 @@ import Security
         precondition(zeroBal == 0.0 && zeroBase == 0.0 && zeroAcct == "user@refuseless.com")
         let (paidBal, paidBase, paidAcct) = try RefuselessProvider.parse(html: "<p class=\"hm-balance-figure\">$15.50<span>USD</span></p><dl class=\"hm-balance-rows\"><div><dt>Top-ups</dt><dd>$20.00</dd></div></dl><script>\"email\":\"paid@refuseless.com\",\"balance\":15.5,\"depositedCents\":2000</script>")
         precondition(paidBal == 15.50 && paidBase == 20.0 && paidAcct == "paid@refuseless.com")
+
+        // Real console payload: the RSC `balance`/`spentTotal` integers are
+        // micro-dollars and the billing ledger reports cents. Reading the
+        // micro-dollar balance as dollars produced a $24,947,613 total.
+        let liveConsole = """
+        <div class="console-balance"><span>Balance</span><strong>$24.91</strong><a class="console-balance-add" aria-label="Add credits" href="/console/billing"><svg width="15" height="15" viewBox="0 0 24 24"></svg></a></div>
+        <p class="hm-balance-figure">$24.91<span>USD</span></p><dl class="hm-balance-rows"><div><dt>Top-ups</dt><dd>$20.00</dd></div><div><dt>Spent</dt><dd>$0.06</dd></div></dl>
+        <script>self.__next_f.push([1,"[\\"$\\",\\"$L2a\\",null,{\\"balance\\":24911322,\\"depositedCents\\":2000,\\"spentTotal\\":63743}]"])</script>
+        <script>self.__next_f.push([1,"{\\"email\\":\\"user@refuseless.com\\",\\"balance\\":24911322}"])</script>
+        """
+        let (liveBal, liveBase, liveAcct) = try RefuselessProvider.parse(html: liveConsole)
+        precondition(abs(liveBal - 24.911322) < 0.0001, "Balance must be dollars from micro-dollar payload, got \(liveBal)")
+        precondition(abs(liveBase - 24.975065) < 0.001, "Total granted must be remaining + spent, got \(liveBase)")
+        precondition(liveAcct == "user@refuseless.com")
+
+        // Billing ledger: amountCents + bonusCents for completed top-ups is the
+        // truest total ever granted ($20.00 + $5.00).
+        let liveBilling = """
+        <p class="hm-balance-figure">$24.91<span>USD</span></p><dl class="hm-balance-rows"><div><dt>Top-ups</dt><dd>$20.00</dd></div><div><dt>Spent</dt><dd>$0.06</dd></div><div><dt>This month</dt><dd>$0.06</dd></div></dl>
+        <script>self.__next_f.push([1,"[\\"$\\",\\"$L2d\\",null,{\\"balance\\":24911322,\\"depositedCents\\":2000,\\"spentTotal\\":63743,\\"monthSpend\\":63743}]"])</script>
+        <script>self.__next_f.push([1,"{\\"deposits\\":[{\\"id\\":12425,\\"provider\\":\\"stripe\\",\\"reference\\":\\"abl-test\\",\\"amountCents\\":2000,\\"bonusCents\\":500,\\"currency\\":\\"USD\\",\\"status\\":\\"completed\\",\\"invoice\\":true}],\\"total\\":1,\\"page\\":1,\\"perPage\\":10}"])</script>
+        <script>self.__next_f.push([1,"{\\"available\\":true,\\"thresholdCents\\":500,\\"amountCents\\":2000}"])</script>
+        """
+        let (ledgerBal, ledgerBase, _) = try RefuselessProvider.parse(html: liveBilling)
+        precondition(abs(ledgerBal - 24.911322) < 0.0001, "Ledger page balance must be dollars, got \(ledgerBal)")
+        precondition(abs(ledgerBase - 25.0) < 0.0001, "Ledger total must be $20.00 top-up + $5.00 bonus, got \(ledgerBase)")
+
+        // Micro-dollar fallback when the rendered figure is absent.
+        let microOnly = "<script>self.__next_f.push([1,\"{\\\"balance\\\":24911322,\\\"spentTotal\\\":63743}\"])</script>"
+        let (microBal, microBase, _) = try RefuselessProvider.parse(html: microOnly)
+        precondition(abs(microBal - 24.911322) < 0.0001, "Micro-dollar balance must divide by 1e6, got \(microBal)")
+        precondition(abs(microBase - 24.975065) < 0.001, "Micro-dollar total must be remaining + spent, got \(microBase)")
         let testRefuseless = Balance(id: "refuseless", name: "Refuseless", baseline: 100, remaining: 75.50, updated: Date(), account: "Test")
         precondition(testRefuseless.money == 75.50.formatted(.currency(code: "USD")), "Refuseless must format in USD dollars, not credits")
         precondition(!testRefuseless.money.contains("credits"), "Refuseless money must not contain 'credits'")

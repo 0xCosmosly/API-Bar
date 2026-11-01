@@ -229,7 +229,14 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
     var settingsWindow: NSWindow?
     var onboardingWindow: NSWindow?
     var mergedMenuView: MergedMenuView?
-    let dataURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("APIBar/balances.json")
+    /// Test/CLI harnesses set `APIBAR_DATA_DIR` so they never overwrite the
+    /// user's real balance file.
+    let dataURL: URL = {
+        if let custom = ProcessInfo.processInfo.environment["APIBAR_DATA_DIR"], !custom.isEmpty {
+            return URL(fileURLWithPath: custom, isDirectory: true).appendingPathComponent("balances.json")
+        }
+        return FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("APIBar/balances.json")
+    }()
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         if !UserDefaults.standard.bool(forKey: "HasCompletedOnboarding") {
             showOnboarding()
@@ -254,6 +261,12 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         if let index = CommandLine.arguments.firstIndex(of: "--connect-provider") ?? CommandLine.arguments.firstIndex(of: "--check-saved-provider"), CommandLine.arguments.indices.contains(index + 2) {
             let provider = CommandLine.arguments[index + 1], output = CommandLine.arguments[index + 2]
             let useSaved = CommandLine.arguments.contains("--check-saved-provider")
+            // The provider list normally loads later; the diagnostic path needs
+            // it up front so `fetch` can resolve the balance record.
+            if let data = try? Data(contentsOf: dataURL),
+               let saved = try? JSONDecoder().decode([Balance].self, from: data) {
+                balances = saved
+            }
             Task {
                 var result: [String:Any] = ["provider":provider]
                 do {

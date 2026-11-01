@@ -597,35 +597,27 @@ struct RefuselessProvider: BalanceProvider {
         })
     }
 
+    /// Refuseless exposes money in three different units on its console pages:
+    ///   1. Rendered dollars (`$24.91`) in `hm-balance-figure` / `console-balance`.
+    ///   2. RSC payload integers (`"balance":24911322`, `"spentTotal":63743`)
+    ///      which are micro-dollars (1e-6 USD), not dollars.
+    ///   3. Cents in the billing ledger (`"amountCents":2000`, `"bonusCents":500`).
+    /// Reading (2) as dollars produced absurd totals such as $24,947,613, so the
+    /// rendered figures are preferred and micro-dollars are converted explicitly.
     static func parse(html: String) throws -> (remaining: Double, baseline: Double, account: String) {
-        var balance: Double?
+        // 1. Available balance. The RSC payload is micro-dollars and exact; the
+        // rendered figure is rounded to cents. Use the payload when both agree
+        // within a cent, otherwise the units changed and the rendered value wins.
+        let renderedBalance = Self.dollarAmount(html, pattern: #"class=["']hm-balance-figure["']>\s*\$?([0-9][0-9,]*(?:\.[0-9]+)?)"#)
+            ?? Self.dollarAmount(html, pattern: #"(?s)class=["']console-balance["'].*?<strong>\s*\$?([0-9][0-9,]*(?:\.[0-9]+)?)"#)
+        let payloadBalance = Self.integerValue(html, key: "balance").map { $0 / 1_000_000 }
 
-        // Pattern A: RSC JSON payload: "balance":0 or \"balance\":0 or "balance": 12.34
-        if let match = html.range(of: #"["\\]+balance["\\]+\s*:\s*([0-9]+(?:\.[0-9]+)?)"#, options: .regularExpression) {
-            let substr = String(html[match])
-            if let numRange = substr.range(of: #"[0-9]+(?:\.[0-9]+)?"#, options: .regularExpression),
-               let num = Double(substr[numRange]) {
-                balance = num
-            }
-        }
-
-        // Pattern B: <p class="hm-balance-figure">$0.00<span>USD</span></p>
-        if balance == nil, let match = html.range(of: #"class=["']hm-balance-figure["']>\$([0-9]+(?:\.[0-9]+)?)"#, options: .regularExpression) {
-            let substr = String(html[match])
-            if let numRange = substr.range(of: #"[0-9]+(?:\.[0-9]+)?"#, options: .regularExpression),
-               let num = Double(substr[numRange]) {
-                balance = num
-            }
-        }
-
-        // Pattern C: <div class="console-balance"><span>Balance</span><strong>$0.00</strong>
-        if balance == nil, let match = html.range(of: #"(?s)class=["']console-balance["'].*?<strong>\$([0-9]+(?:\.[0-9]+)?)</strong>"#, options: .regularExpression) {
-            let substr = String(html[match])
-            if let dollarRange = substr.range(of: #"\$([0-9]+(?:\.[0-9]+)?)"#, options: .regularExpression) {
-                let dollarStr = String(substr[dollarRange]).dropFirst()
-                if let num = Double(dollarStr) {
-                    balance = num
-                }
+        var balance = renderedBalance
+        if let payloadBalance {
+            if let renderedBalance {
+                balance = abs(renderedBalance - payloadBalance) <= 0.01 ? payloadBalance : renderedBalance
+            } else {
+                balance = payloadBalance
             }
         }
 
@@ -633,28 +625,36 @@ struct RefuselessProvider: BalanceProvider {
             throw ConnectorError.message("Could not parse Refuseless balance from console page.")
         }
 
-        var deposited: Double = 0.0
-        if let match = html.range(of: #"["\\]+depositedCents["\\]+\s*:\s*([0-9]+)"#, options: .regularExpression) {
-            let substr = String(html[match])
-            if let numRange = substr.range(of: #"[0-9]+"#, options: .regularExpression),
-               let cents = Double(substr[numRange]) {
-                deposited = cents / 100.0
-            }
-        } else if let match = html.range(of: #"<dt>Top-ups</dt>\s*<dd>\$([0-9]+(?:\.[0-9]+)?)</dd>"#, options: .regularExpression) {
-            let substr = String(html[match])
-            if let dollarRange = substr.range(of: #"\$([0-9]+(?:\.[0-9]+)?)"#, options: .regularExpression) {
-                let dollarStr = String(substr[dollarRange]).dropFirst()
-                deposited = Double(dollarStr) ?? 0.0
+        // Spend follows the same rule: micro-dollars in the payload, dollars rendered.
+        let renderedSpent = Self.dollarAmount(html, pattern: #"<dt>\s*Spent\s*</dt>\s*<dd>\s*\$?([0-9][0-9,]*(?:\.[0-9]+)?)"#)
+        let payloadSpent = Self.integerValue(html, key: "spentTotal").map { $0 / 1_000_000 }
+        var spent = renderedSpent ?? 0
+        if let payloadSpent {
+            if let renderedSpent {
+                spent = abs(renderedSpent - payloadSpent) <= 0.01 ? payloadSpent : renderedSpent
+            } else {
+                spent = payloadSpent
             }
         }
 
+        // Top-ups: rendered dollars, or cents in the payload.
+        var deposited = Self.dollarAmount(html, pattern: #"<dt>\s*Top-ups\s*</dt>\s*<dd>\s*\$?([0-9][0-9,]*(?:\.[0-9]+)?)"#) ?? 0
+        if deposited == 0, let cents = Self.integerValue(html, key: "depositedCents") {
+            deposited = cents / 100
+        }
+
+        // The billing ledger itemises every completed top-up plus its bonus.
+        // That sum is the real amount ever granted, so it is the best 100%.
+        let ledgerTotal = Self.depositLedgerTotal(html)
+
         let baseline: Double
-        if deposited > 0 {
-            baseline = max(deposited, finalBalance)
+        if ledgerTotal > 0 {
+            baseline = max(ledgerTotal, finalBalance)
         } else if finalBalance > 0 {
-            baseline = PaymentReference.inferTier(for: finalBalance)
+            // Total granted = what remains plus what has been consumed.
+            baseline = max(finalBalance + spent, deposited)
         } else {
-            baseline = 0.0
+            baseline = 0
         }
 
         var emailAccount = ""
@@ -673,6 +673,48 @@ struct RefuselessProvider: BalanceProvider {
         return (remaining: finalBalance, baseline: baseline, account: emailAccount)
     }
 
+    /// Extracts a rendered dollar figure using capture group 1, so surrounding
+    /// markup digits (`width="15"`, `viewBox="0 0 24 24"`) cannot be mistaken
+    /// for the amount.
+    private static func dollarAmount(_ html: String, pattern: String) -> Double? {
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
+        let ns = html as NSString
+        guard let match = regex.firstMatch(in: html, range: NSRange(location: 0, length: ns.length)),
+              match.numberOfRanges > 1, match.range(at: 1).location != NSNotFound else { return nil }
+        let raw = ns.substring(with: match.range(at: 1)).replacingOccurrences(of: ",", with: "")
+        guard let value = Double(raw), value.isFinite, value >= 0 else { return nil }
+        return value
+    }
+
+    /// Reads an integer field from the RSC payload, tolerating the JSON escapes
+    /// React Server Components emits (`\"balance\":24911322`).
+    private static func integerValue(_ html: String, key: String) -> Double? {
+        let pattern = #"["\\]+"# + NSRegularExpression.escapedPattern(for: key) + #"["\\]+\s*:\s*([0-9]+)"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
+        let ns = html as NSString
+        guard let match = regex.firstMatch(in: html, range: NSRange(location: 0, length: ns.length)),
+              match.numberOfRanges > 1, match.range(at: 1).location != NSNotFound else { return nil }
+        return Double(ns.substring(with: match.range(at: 1)))
+    }
+
+    /// Sums `amountCents` + `bonusCents` for completed entries in the billing
+    /// deposit ledger. Auto-recharge settings also expose an `amountCents`, so
+    /// only the `deposits` array is considered.
+    private static func depositLedgerTotal(_ html: String) -> Double {
+        guard let start = html.range(of: #"["\\]+deposits["\\]+\s*:\s*\["#, options: .regularExpression),
+              let end = html.range(of: "]", range: start.upperBound..<html.endIndex) else { return 0 }
+        let block = String(html[start.upperBound..<end.lowerBound])
+        var total = 0.0
+        for chunk in block.components(separatedBy: "{") where !chunk.isEmpty {
+            let lower = chunk.lowercased()
+            if lower.contains("status"), !lower.contains("completed") { continue }
+            let amount = Self.integerValue(chunk, key: "amountCents") ?? 0
+            let bonus = Self.integerValue(chunk, key: "bonusCents") ?? 0
+            total += (amount + bonus) / 100
+        }
+        return total
+    }
+
     func fetchBalance() async throws -> Reading {
         var cookies = await http.cookies
         if cookies.isEmpty {
@@ -686,16 +728,16 @@ struct RefuselessProvider: BalanceProvider {
 
         var latestParsed: (remaining: Double, baseline: Double, account: String)? = nil
 
-        for path in ["https://refuseless.com/console", "https://refuseless.com/console/billing"] {
+        // The billing page carries the deposit ledger (top-up + bonus), which
+        // gives the truest "total granted" figure, so read it first.
+        for path in ["https://refuseless.com/console/billing", "https://refuseless.com/console"] {
             guard let url = URL(string: path) else { continue }
             if let (data, response) = try? await http.request(url: url, headers: ["Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"]),
                response.statusCode == 200,
                let html = String(data: data, encoding: .utf8),
                let parsed = try? Self.parse(html: html) {
                 latestParsed = parsed
-                if parsed.baseline > 0 || !parsed.account.isEmpty {
-                    break
-                }
+                if parsed.baseline > 0 { break }
             }
         }
 

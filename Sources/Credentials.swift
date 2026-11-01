@@ -13,7 +13,16 @@ enum ConnectorError: LocalizedError {
 
 enum KeychainVault {
     static let service = "local.apibar.APIBar.sessions"
-    private static let vaultDir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("APIBar/vault")
+    /// Test/CLI runs must never read, write, or delete the user's real saved
+    /// sessions. Setting `APIBAR_VAULT_DIR` redirects storage to a scratch
+    /// directory and disables every Keychain operation.
+    static let isEphemeral = (ProcessInfo.processInfo.environment["APIBAR_VAULT_DIR"]?.isEmpty == false)
+    private static let vaultDir: URL = {
+        if let custom = ProcessInfo.processInfo.environment["APIBAR_VAULT_DIR"], !custom.isEmpty {
+            return URL(fileURLWithPath: custom, isDirectory: true)
+        }
+        return FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("APIBar/vault")
+    }()
     // Brave and local sessions use the macOS file-based keychain. Its legacy
     // ACL dialogs also need an explicit interaction policy. Serialize calls so
     // an interactive Connect cannot accidentally enable a background prompt.
@@ -34,6 +43,7 @@ enum KeychainVault {
         if let data = try? Data(contentsOf: file), !data.isEmpty {
             return data
         }
+        if isEphemeral { return nil }
         let context = LAContext(); context.interactionNotAllowed = true
         let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: account, kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne, kSecUseAuthenticationContext as String: context]
         var item: CFTypeRef?
@@ -53,6 +63,7 @@ enum KeychainVault {
         let file = vaultDir.appendingPathComponent("\(account).dat")
         try? data.write(to: file, options: .atomic)
         try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
+        if isEphemeral { return }
 
         let context = LAContext(); context.interactionNotAllowed = !interactive
         let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: account, kSecUseAuthenticationContext as String: context]
@@ -70,6 +81,7 @@ enum KeychainVault {
     static func clear(_ account: String) {
         let file = vaultDir.appendingPathComponent("\(account).dat")
         try? FileManager.default.removeItem(at: file)
+        if isEphemeral { return }
         _ = try? access { SecItemDelete([kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: account] as CFDictionary) }
     }
 }
