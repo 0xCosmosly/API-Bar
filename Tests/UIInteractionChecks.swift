@@ -302,16 +302,25 @@ import AppKit
         precondition(ICloudSync.shared.isEnabled == true)
         precondition(app.iCloudSyncEnabled == true)
 
+        // Test OpenCode local config push to iCloud
+        let localOpenCodeFile = ICloudSync.shared.localOpenCodeURL
+        let initialOpenCodeConfig = "{\"providers\":{\"refuseless\":{\"apiKey\":\"test_refuseless_key\"}}}"
+        try initialOpenCodeConfig.write(to: localOpenCodeFile, atomically: true, encoding: .utf8)
+        precondition(ICloudSync.shared.isOpenCodeSyncEnabled == true)
+
         let pushedSuccess = await ICloudSync.shared.pushLocalState()
         precondition(pushedSuccess == true, "pushLocalState failed")
         guard let balancesFile = ICloudSync.shared.balancesURL,
               let settingsFile = ICloudSync.shared.settingsURL,
-              let manifestFile = ICloudSync.shared.manifestURL else {
+              let manifestFile = ICloudSync.shared.manifestURL,
+              let cloudOpenCodeFile = ICloudSync.shared.cloudOpenCodeURL else {
             preconditionFailure("iCloud URLs not resolved")
         }
         precondition(FileManager.default.fileExists(atPath: balancesFile.path), "balances.json missing in iCloud")
         precondition(FileManager.default.fileExists(atPath: settingsFile.path), "settings.json missing in iCloud")
         precondition(FileManager.default.fileExists(atPath: manifestFile.path), "manifest.json missing in iCloud")
+        precondition(FileManager.default.fileExists(atPath: cloudOpenCodeFile.path), "opencode.json missing in iCloud")
+        precondition((try? String(contentsOf: cloudOpenCodeFile, encoding: .utf8)) == initialOpenCodeConfig)
 
         let balancesData = try Data(contentsOf: balancesFile)
         let pushedBalances = try JSONDecoder().decode([Balance].self, from: balancesData)
@@ -357,6 +366,12 @@ import AppKit
         let mockSessionData = try JSONEncoder().encode(mockSession)
         try mockSessionData.write(to: remoteVaultDir.appendingPathComponent("togetherai.dat"), options: .atomic)
 
+        // Device B updates opencode.json in iCloud
+        let updatedOpenCodeConfig = "{\"providers\":{\"refuseless\":{\"apiKey\":\"test_refuseless_key\"},\"crowbot\":{\"apiKey\":\"test_crowbot_key\"}}}"
+        try updatedOpenCodeConfig.write(to: cloudOpenCodeFile, atomically: true, encoding: .utf8)
+        let futureDate = Date().addingTimeInterval(10)
+        try FileManager.default.setAttributes([.modificationDate: futureDate], ofItemAtPath: cloudOpenCodeFile.path)
+
         let didMerge = await ICloudSync.shared.pullAndMerge()
         precondition(didMerge == true, "pullAndMerge did not report merge changes")
         guard let mergedFw = app.balances.first(where: { $0.id == "fireworks" }) else {
@@ -369,6 +384,16 @@ import AppKit
         precondition(mergedTogether.dynamicEndpoint == "https://api.together.xyz/v1/balance")
         precondition(mergedTogether.dynamicAuthHeader == "Bearer test_together_key")
         precondition(FileManager.default.fileExists(atPath: KeychainVault.vaultDir.appendingPathComponent("togetherai.dat").path), "togetherai session file was not transferred from iCloud to local vault")
+
+        precondition((try? String(contentsOf: localOpenCodeFile, encoding: .utf8)) == updatedOpenCodeConfig, "Local opencode.json did not update with Device B changes")
+        let backupFile = localOpenCodeFile.deletingLastPathComponent().appendingPathComponent("opencode.json.bak")
+        precondition(FileManager.default.fileExists(atPath: backupFile.path), "opencode.json.bak backup missing")
+        precondition((try? String(contentsOf: backupFile, encoding: .utf8)) == initialOpenCodeConfig, "opencode.json.bak content mismatch")
+
+        ICloudSync.shared.setOpenCodeSyncEnabled(false)
+        precondition(ICloudSync.shared.isOpenCodeSyncEnabled == false)
+        ICloudSync.shared.setOpenCodeSyncEnabled(true)
+        precondition(ICloudSync.shared.isOpenCodeSyncEnabled == true)
 
         precondition(ICloudSync.shared.statusBadge == "Active" || ICloudSync.shared.statusBadge == "Synced")
         precondition(app.iCloudStatusMessage.contains("Synced") || app.iCloudStatusMessage.contains("ago") || app.iCloudStatusMessage.contains("just now"))

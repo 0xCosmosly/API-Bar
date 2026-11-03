@@ -22,13 +22,17 @@ struct Balance: Codable, Equatable {
     var dynamicJsonPath: String?
     var dynamicCookieDomain: String?
     var dynamicAuthHeader: String?
+    var tokensPerDay: Double? = nil
+    var runwayDays: Int? = nil
 
-    init(id: String, name: String, baseline: Double, remaining: Double, updated: Date, account: String, expires: String? = nil, live: Bool = false, dynamicEndpoint: String? = nil, dynamicJsonPath: String? = nil, dynamicCookieDomain: String? = nil, dynamicAuthHeader: String? = nil) {
+    init(id: String, name: String, baseline: Double, remaining: Double, updated: Date, account: String, expires: String? = nil, live: Bool = false, dynamicEndpoint: String? = nil, dynamicJsonPath: String? = nil, dynamicCookieDomain: String? = nil, dynamicAuthHeader: String? = nil, tokensPerDay: Double? = nil, runwayDays: Int? = nil) {
         self.id = id; self.name = name; self.baseline = baseline; self.remaining = remaining
         self.updated = updated; self.account = account; self.expires = expires; self.live = live
         self.dynamicEndpoint = dynamicEndpoint; self.dynamicJsonPath = dynamicJsonPath
         self.dynamicCookieDomain = dynamicCookieDomain
         self.dynamicAuthHeader = dynamicAuthHeader
+        self.tokensPerDay = tokensPerDay
+        self.runwayDays = runwayDays
     }
     var percent: Double { baseline > 0 ? max(0, remaining / baseline * 100) : 0 }
     var percentageLabel: String {
@@ -41,6 +45,9 @@ struct Balance: Codable, Equatable {
     var money: String {
         return remaining.formatted(.currency(code: "USD"))
     }
+    var pacingMessage: String? {
+        PacingCalculator.pacingMessage(tokensPerDay: tokensPerDay, runwayDays: runwayDays)
+    }
     static let initial: [Balance] = [
         Balance(id: "vertex", name: "Vertex AI", baseline: 0, remaining: 0, updated: .distantPast, account: ""),
         Balance(id: "fireworks", name: "Fireworks", baseline: 0, remaining: 0, updated: .distantPast, account: ""),
@@ -50,6 +57,49 @@ struct Balance: Codable, Equatable {
         Balance(id: "refuseless", name: "Refuseless", baseline: 0, remaining: 0, updated: .distantPast, account: ""),
         Balance(id: "lutheos", name: "Lutheos", baseline: 0, remaining: 0, updated: .distantPast, account: "")
     ]
+}
+
+enum PacingCalculator {
+    /// Formats large token figures into compact human-readable representations (e.g. 152.9M, 500K, 8,400).
+    static func formatTokens(_ count: Double) -> String {
+        guard count.isFinite, count >= 0 else { return "0" }
+        if count >= 1_000_000_000 {
+            let val = count / 1_000_000_000
+            return (val.truncatingRemainder(dividingBy: 1) == 0 ? String(format: "%.0fB", val) : String(format: "%.1fB", val))
+        } else if count >= 1_000_000 {
+            let val = count / 1_000_000
+            return (val.truncatingRemainder(dividingBy: 1) == 0 ? String(format: "%.0fM", val) : String(format: "%.1fM", val))
+        } else if count >= 100_000 {
+            return String(format: "%.0fK", count / 1_000)
+        } else if count >= 10_000 {
+            let val = count / 1_000
+            return (val.truncatingRemainder(dividingBy: 1) == 0 ? String(format: "%.0fK", val) : String(format: "%.1fK", val))
+        } else {
+            let formatter = NumberFormatter()
+            formatter.numberStyle = .decimal
+            return formatter.string(from: NSNumber(value: Int(round(count)))) ?? "\(Int(round(count)))"
+        }
+    }
+
+    /// Formats the pacing message: "x tokens per day - Runs out in x days"
+    static func pacingMessage(tokensPerDay: Double?, runwayDays: Int?) -> String? {
+        guard let tokens = tokensPerDay, tokens > 0, let days = runwayDays, days >= 0 else { return nil }
+        let formattedTokens = formatTokens(tokens)
+        let daysString = days == 1 ? "1 day" : "\(days) days"
+        return "\(formattedTokens) tokens per day - Runs out in \(daysString)"
+    }
+
+    /// Calculates days until depletion based on remaining funds and daily spend.
+    static func calculateRunway(remaining: Double, dailySpend: Double) -> Int? {
+        guard remaining > 0, dailySpend > 0 else { return nil }
+        return max(0, Int(floor(remaining / dailySpend)))
+    }
+
+    /// Calculates tokens per day given total tokens over active days.
+    static func calculateTokensPerDay(totalTokens: Double, activeDays: Double) -> Double? {
+        guard activeDays > 0, totalTokens >= 0 else { return nil }
+        return totalTokens / activeDays
+    }
 }
 
 enum PaymentReference {
@@ -80,8 +130,10 @@ struct Reading: Decodable {
     let url: String
     let expires: String?
     var reference: Double? = nil
+    var tokensPerDay: Double? = nil
+    var runwayDays: Int? = nil
 
-    init(provider: String, remaining: Double, currency: String, account: String, url: String, expires: String?, reference: Double? = nil) {
+    init(provider: String, remaining: Double, currency: String, account: String, url: String, expires: String?, reference: Double? = nil, tokensPerDay: Double? = nil, runwayDays: Int? = nil) {
         self.provider = provider
         self.remaining = remaining
         self.currency = currency
@@ -89,6 +141,8 @@ struct Reading: Decodable {
         self.url = url
         self.expires = expires
         self.reference = reference
+        self.tokensPerDay = tokensPerDay
+        self.runwayDays = runwayDays
     }
 }
 

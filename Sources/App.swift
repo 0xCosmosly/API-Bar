@@ -55,6 +55,10 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         get { ICloudSync.shared.isEnabled }
         set { ICloudSync.shared.setEnabled(newValue) }
     }
+    var isOpenCodeSyncEnabled: Bool {
+        get { ICloudSync.shared.isOpenCodeSyncEnabled }
+        set { ICloudSync.shared.setOpenCodeSyncEnabled(newValue) }
+    }
     var iCloudStatus: String {
         ICloudSync.shared.statusBadge
     }
@@ -63,6 +67,9 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
     }
     func setICloudSyncEnabled(_ enabled: Bool) {
         ICloudSync.shared.setEnabled(enabled)
+    }
+    func setOpenCodeSyncEnabled(_ enabled: Bool) {
+        ICloudSync.shared.setOpenCodeSyncEnabled(enabled)
     }
     func syncICloudNow() {
         Task { await ICloudSync.shared.syncNow() }
@@ -833,9 +840,14 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         if balances[i].account.isEmpty || balances[i].account.hasSuffix(" Account") { balances[i].account = r.account }
         let oldRemaining = balances[i].remaining
         balances[i].remaining = r.remaining; balances[i].updated = Date(); balances[i].live = true; balances[i].expires = r.expires
+        if let tpd = r.tokensPerDay { balances[i].tokensPerDay = tpd }
+        if let rd = r.runwayDays { balances[i].runwayDays = rd }
         if r.provider == "refuseless" || r.provider == "lutheos" {
-            let ref = r.reference ?? r.remaining
-            balances[i].baseline = ref
+            if let ref = r.reference, ref > 0 {
+                balances[i].baseline = ref
+            } else if balances[i].baseline <= 0 {
+                balances[i].baseline = PaymentReference.inferTier(for: r.remaining)
+            }
             providerStatus[r.provider] = "Connected · refreshes every 5 min"
             if sortMode != .manual {
                 applySorting()
@@ -883,7 +895,7 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
                 if balances.isEmpty {
                     items[i].button?.title = ""
                     items[i].button?.image = BrandMark.appIconImage(size: 18)
-                    items[i].button?.toolTip = "API Bar: No providers configured"
+                    items[i].button?.toolTip = nil
                     items[i].button?.setAccessibilityValue("No providers configured")
                 } else {
                     let usdRemaining = balances.reduce(0.0) { $0 + $1.remaining }
@@ -896,14 +908,13 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
                     }()
                     items[i].button?.title = percentText
                     items[i].button?.image = ProviderIcon.menuBarImage("overview")
-                    let summary = usdRemaining.formatted(.currency(code: "USD"))
-                    items[i].button?.toolTip = "Overview: \(summary) · \(percentText) · \(balances.filter { isConnected($0.id) }.count) connected"
+                    items[i].button?.toolTip = nil
                     items[i].button?.setAccessibilityValue("\(percentText) remaining across all providers")
                 }
             } else {
                 items[i].button?.title = b.percentageLabel
                 items[i].button?.image = ProviderIcon.menuBarImage(b.id)
-                items[i].button?.toolTip = "\(b.name): \(b.money) · \(b.percentageLabel) · \(providerStatus[b.id] ?? "Waiting for first refresh")"
+                items[i].button?.toolTip = nil
                 items[i].button?.setAccessibilityValue("\(b.percentageLabel) remaining\(b.stale ? ", stale" : "")")
             }
         }

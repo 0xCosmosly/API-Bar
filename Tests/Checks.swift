@@ -205,6 +205,41 @@ import Security
         precondition(devalBase == 9.0, "Devalue baseline must be 9.0, got \(devalBase)")
         precondition(devalAcct == "user@lutheos.com", "Devalue account must be user@lutheos.com, got \(devalAcct)")
 
+        // Pacing formatting and calculation checks
+        precondition(PacingCalculator.formatTokens(152_882_923) == "152.9M")
+        precondition(PacingCalculator.formatTokens(1_000_000) == "1M")
+        precondition(PacingCalculator.formatTokens(250_000) == "250K")
+        precondition(PacingCalculator.formatTokens(8_400) == "8,400")
+        precondition(PacingCalculator.pacingMessage(tokensPerDay: 152_882_923, runwayDays: 5) == "152.9M tokens per day - Runs out in 5 days")
+        precondition(PacingCalculator.pacingMessage(tokensPerDay: 500_000, runwayDays: 1) == "500K tokens per day - Runs out in 1 day")
+        precondition(PacingCalculator.pacingMessage(tokensPerDay: nil, runwayDays: 5) == nil)
+        precondition(PacingCalculator.pacingMessage(tokensPerDay: 1000, runwayDays: nil) == nil)
+        precondition(PacingCalculator.calculateRunway(remaining: 10.0, dailySpend: 2.0) == 5)
+        precondition(PacingCalculator.calculateTokensPerDay(totalTokens: 100_000, activeDays: 2) == 50_000)
+
+        let overviewPacingData = Data("{\"type\":\"data\",\"nodes\":[{},{},{\"type\":\"data\",\"data\":[{\"tokens\":1,\"runwayDays\":2,\"buckets\":3},152882923,5,[4],{\"tokens\":1}]}]}".utf8)
+        let extractedPacing = LutheosProvider.extractPacing(from: overviewPacingData)
+        precondition(extractedPacing?.tokensPerDay == 152882923.0)
+        precondition(extractedPacing?.runwayDays == 5)
+        let testBalanceWithPacing = Balance(id: "lutheos", name: "Lutheos", baseline: 9.0, remaining: 7.77, updated: Date(), account: "user@lutheos.com", tokensPerDay: 152882923.0, runwayDays: 5)
+        precondition(testBalanceWithPacing.pacingMessage == "152.9M tokens per day - Runs out in 5 days")
+
+        // Refuseless pacing extraction checks
+        let sampleRefuselessPacing = """
+        <script>self.__next_f.push([1,"{\\"periodOutputTokens\\":5728510,\\"series\\":[{\\"at\\":\\"2026-11-01\\",\\"spend\\":2300000},{\\"at\\":\\"2026-11-02\\",\\"spend\\":11850000},{\\"at\\":\\"2026-11-03\\",\\"spend\\":10455708}]}"])</script>
+        """
+        let refPacing = RefuselessProvider.extractPacing(html: sampleRefuselessPacing, remaining: 0.699055)
+        precondition(refPacing != nil, "Refuseless pacing extraction should succeed")
+        precondition(abs(refPacing!.tokensPerDay - 1909503.33) < 1.0, "Refuseless tokensPerDay mismatch")
+        precondition(refPacing!.runwayDays == 0, "Refuseless runway should be 0 days with $0.70 remaining and $10.46 daily spend")
+        let refBalWithPacing = Balance(id: "refuseless", name: "Refuseless", baseline: 25.0, remaining: 0.70, updated: Date(), account: "user@refuseless.com", tokensPerDay: refPacing!.tokensPerDay, runwayDays: refPacing!.runwayDays)
+        precondition(refBalWithPacing.pacingMessage == "1.9M tokens per day - Runs out in 0 days")
+
+        let refPacingWithRunway = RefuselessProvider.extractPacing(html: sampleRefuselessPacing, remaining: 50.00)
+        precondition(refPacingWithRunway?.runwayDays == 4, "Refuseless runway should be 4 days with $50 remaining and $10.46 daily spend")
+        let refBalWithRunway = Balance(id: "refuseless", name: "Refuseless", baseline: 100.0, remaining: 50.00, updated: Date(), account: "user@refuseless.com", tokensPerDay: refPacingWithRunway!.tokensPerDay, runwayDays: refPacingWithRunway!.runwayDays)
+        precondition(refBalWithRunway.pacingMessage == "1.9M tokens per day - Runs out in 4 days")
+
         // Real console payload: the RSC `balance`/`spentTotal` integers are
         // micro-dollars and the billing ledger reports cents. Reading the
         // micro-dollar balance as dollars produced a $24,947,613 total.

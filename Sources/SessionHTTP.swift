@@ -716,6 +716,49 @@ struct RefuselessProvider: BalanceProvider {
         return total
     }
 
+    /// Extracts 30-day token pacing and runway metrics from the Refuseless console RSC payload.
+    /// Returns tokens per day and remaining runway days, or nil if metrics cannot be calculated.
+    static func extractPacing(html: String, remaining: Double) -> (tokensPerDay: Double, runwayDays: Int)? {
+        guard let outputTokens = Self.integerValue(html, key: "periodOutputTokens"), outputTokens > 0 else {
+            return nil
+        }
+
+        var activeDays = 0
+        var latestSpend: Double = 0
+        var totalSpend: Double = 0
+
+        let seriesPattern = #"["\\]+spend["\\]+\s*:\s*([0-9]+)"#
+        if let regex = try? NSRegularExpression(pattern: seriesPattern) {
+            let ns = html as NSString
+            let matches = regex.matches(in: html, range: NSRange(location: 0, length: ns.length))
+            for match in matches where match.numberOfRanges > 1 {
+                let valStr = ns.substring(with: match.range(at: 1))
+                if let val = Double(valStr), val > 0 {
+                    // Refuseless spend in RSC payload is in micro-dollars (1e-6 USD)
+                    let spendUSD = val / 1_000_000.0
+                    activeDays += 1
+                    totalSpend += spendUSD
+                    latestSpend = spendUSD
+                }
+            }
+        }
+
+        var dailySpend = latestSpend > 0 ? latestSpend : (activeDays > 0 ? (totalSpend / Double(activeDays)) : 0)
+        if dailySpend == 0, activeDays == 0, let periodSpend = Self.integerValue(html, key: "periodSpend"), periodSpend > 0 {
+            let days = Self.integerValue(html, key: "days") ?? 30.0
+            dailySpend = (periodSpend / 1_000_000.0) / max(1.0, days)
+            activeDays = Int(days)
+        }
+
+        let tokensPerDay = activeDays > 0 ? (outputTokens / Double(activeDays)) : outputTokens
+        let runwayDays = dailySpend > 0 ? max(0, Int(floor(remaining / dailySpend))) : nil
+
+        if let runway = runwayDays {
+            return (tokensPerDay: tokensPerDay, runwayDays: runway)
+        }
+        return nil
+    }
+
     func fetchBalance() async throws -> Reading {
         var cookies = await http.cookies
         if cookies.isEmpty {
@@ -728,17 +771,30 @@ struct RefuselessProvider: BalanceProvider {
         try? await http.persist()
 
         var latestParsed: (remaining: Double, baseline: Double, account: String)? = nil
+        var pacing: (tokensPerDay: Double, runwayDays: Int)? = nil
 
         // The billing page carries the deposit ledger (top-up + bonus), which
-        // gives the truest "total granted" figure, so read it first.
+        // gives the truest "total granted" figure. We check both billing and console
+        // so we obtain accurate baseline ledger totals as well as pacing telemetry.
         for path in ["https://refuseless.com/console/billing", "https://refuseless.com/console"] {
             guard let url = URL(string: path) else { continue }
             if let (data, response) = try? await http.request(url: url, headers: ["Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"]),
                response.statusCode == 200,
-               let html = String(data: data, encoding: .utf8),
-               let parsed = try? Self.parse(html: html) {
-                latestParsed = parsed
-                if parsed.baseline > 0 { break }
+               let html = String(data: data, encoding: .utf8) {
+                if let parsed = try? Self.parse(html: html) {
+                    if let existing = latestParsed {
+                        latestParsed = (
+                            remaining: parsed.remaining,
+                            baseline: max(existing.baseline, parsed.baseline),
+                            account: parsed.account.isEmpty ? existing.account : parsed.account
+                        )
+                    } else {
+                        latestParsed = parsed
+                    }
+                }
+                if pacing == nil, let rem = latestParsed?.remaining {
+                    pacing = Self.extractPacing(html: html, remaining: rem)
+                }
             }
         }
 
@@ -754,6 +810,9 @@ struct RefuselessProvider: BalanceProvider {
                 throw ConnectorError.message("Refuseless returned invalid HTML encoding.")
             }
             latestParsed = try Self.parse(html: html)
+            if pacing == nil, let rem = latestParsed?.remaining {
+                pacing = Self.extractPacing(html: html, remaining: rem)
+            }
         }
 
         guard let parsed = latestParsed else {
@@ -769,7 +828,9 @@ struct RefuselessProvider: BalanceProvider {
             account: resolvedAccount,
             url: "https://refuseless.com/console",
             expires: nil,
-            reference: parsed.baseline
+            reference: parsed.baseline,
+            tokensPerDay: pacing?.tokensPerDay,
+            runwayDays: pacing?.runwayDays
         )
     }
 }
@@ -860,9 +921,6 @@ struct LutheosProvider: BalanceProvider {
                         if let s = val as? String, let d = Double(s), d > 0 { return d }
                     }
                 }
-                if let spend = dict["lifetimeSpend"] as? Double, let bal = dict["balance"] as? Double, spend + bal > 0 {
-                    return spend + bal
-                }
                 for v in dict.values {
                     if let b = findBaseline(in: v) { return b }
                 }
@@ -916,13 +974,7 @@ struct LutheosProvider: BalanceProvider {
                             let credVal = deref(credRef, in: dataArr)
                             if let d = credVal as? Double, d > 0 { baseline = d }
                             else if let i = credVal as? Int, i > 0 { baseline = Double(i) }
-                        }
-                        if let spendRef = dict["lifetimeSpend"] {
-                            let spendVal = deref(spendRef, in: dataArr)
-                            let spend: Double? = (spendVal as? Double) ?? (spendVal as? Int).map { Double($0) }
-                            if let s = spend, let bal = remaining, s + bal > 0 {
-                                if baseline == nil { baseline = s + bal }
-                            }
+                            else if let s = credVal as? String, let d = Double(s), d > 0 { baseline = d }
                         }
                     }
                 } else if let dict = node["data"] as? [String: Any] {
@@ -1017,25 +1069,69 @@ struct LutheosProvider: BalanceProvider {
         return ""
     }
 
-    func fetchBalance() async throws -> Reading {
-        var latestParsed: (remaining: Double, baseline: Double, account: String)? = nil
+    static func extractPacing(from data: Data) -> (tokensPerDay: Double, runwayDays: Int)? {
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let nodes = json["nodes"] as? [[String: Any]] else { return nil }
 
-        // Try Strategy 1: Overview SvelteKit data endpoint
-        if let overviewURL = URL(string: "https://lutheos.com/overview/__data.json") {
-            if let (data, response) = try? await http.request(url: overviewURL, headers: [
-                "Accept": "application/json",
-                "x-sveltekit-invalidated": "100"
-            ]), response.statusCode == 200, !data.isEmpty {
-                if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                   let type = json["type"] as? String, type == "redirect" {
-                    throw ConnectorError.message("Lutheos session expired. Reconnect in Settings.")
+        func deref(_ val: Any, in dataArr: [Any]) -> Any {
+            if let idx = val as? Int, idx >= 0 && idx < dataArr.count {
+                return dataArr[idx]
+            }
+            return val
+        }
+
+        var runwayDays: Int? = nil
+        var tokensPerDay: Double? = nil
+
+        for node in nodes {
+            guard let dataArr = node["data"] as? [Any], !dataArr.isEmpty,
+                  let rootObj = dataArr[0] as? [String: Any] else { continue }
+
+            if let rRef = rootObj["runwayDays"] {
+                let rVal = deref(rRef, in: dataArr)
+                if let i = rVal as? Int, i >= 0 { runwayDays = i }
+                else if let d = rVal as? Double, d >= 0 { runwayDays = Int(d) }
+            }
+
+            if let bRef = rootObj["buckets"], let bArr = deref(bRef, in: dataArr) as? [Any] {
+                var totalTokens = 0.0
+                var activeDays = 0
+                for item in bArr {
+                    let bObj = deref(item, in: dataArr)
+                    if let bDict = bObj as? [String: Any] {
+                        let tokRef = bDict["tokens"] ?? 0
+                        let tokVal = deref(tokRef, in: dataArr)
+                        let tok = (tokVal as? Double) ?? (tokVal as? Int).map(Double.init) ?? 0
+                        if tok > 0 {
+                            totalTokens += tok
+                            activeDays += 1
+                        }
+                    }
                 }
-                latestParsed = try? Self.parse(data: data, url: overviewURL.absoluteString)
+                if activeDays > 0 {
+                    tokensPerDay = totalTokens / Double(activeDays)
+                }
+            }
+
+            if tokensPerDay == nil, let tRef = rootObj["tokens"] {
+                let tVal = deref(tRef, in: dataArr)
+                if let d = tVal as? Double, d > 0 { tokensPerDay = d }
+                else if let i = tVal as? Int, i > 0 { tokensPerDay = Double(i) }
             }
         }
 
-        // Try Strategy 2: Billing SvelteKit data endpoint
-        if latestParsed == nil, let billingURL = URL(string: "https://lutheos.com/billing/__data.json") {
+        if let t = tokensPerDay, let r = runwayDays {
+            return (tokensPerDay: t, runwayDays: r)
+        }
+        return nil
+    }
+
+    func fetchBalance() async throws -> Reading {
+        var latestParsed: (remaining: Double, baseline: Double, account: String)? = nil
+        var pacing: (tokensPerDay: Double, runwayDays: Int)? = nil
+
+        // Try Strategy 1: Billing SvelteKit data endpoint (source of truth for credited total and balance)
+        if let billingURL = URL(string: "https://lutheos.com/billing/__data.json") {
             if let (billData, billResp) = try? await http.request(url: billingURL, headers: [
                 "Accept": "application/json",
                 "x-sveltekit-invalidated": "100"
@@ -1045,6 +1141,26 @@ struct LutheosProvider: BalanceProvider {
                     throw ConnectorError.message("Lutheos session expired. Reconnect in Settings.")
                 }
                 latestParsed = try? Self.parse(data: billData, url: billingURL.absoluteString)
+            }
+        }
+
+        // Fetch Overview SvelteKit data endpoint for pacing & runway metrics (and fallback balance if billing failed)
+        if let overviewURL = URL(string: "https://lutheos.com/overview/__data.json") {
+            if let (data, response) = try? await http.request(url: overviewURL, headers: [
+                "Accept": "application/json",
+                "x-sveltekit-invalidated": "100"
+            ]), response.statusCode == 200, !data.isEmpty {
+                if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   let type = json["type"] as? String, type == "redirect" {
+                    if latestParsed == nil {
+                        throw ConnectorError.message("Lutheos session expired. Reconnect in Settings.")
+                    }
+                } else {
+                    if latestParsed == nil {
+                        latestParsed = try? Self.parse(data: data, url: overviewURL.absoluteString)
+                    }
+                    pacing = Self.extractPacing(from: data)
+                }
             }
         }
 
@@ -1079,7 +1195,9 @@ struct LutheosProvider: BalanceProvider {
             account: resolvedAccount,
             url: "https://lutheos.com/billing",
             expires: nil,
-            reference: parsed.baseline
+            reference: parsed.baseline,
+            tokensPerDay: pacing?.tokensPerDay,
+            runwayDays: pacing?.runwayDays
         )
     }
 }

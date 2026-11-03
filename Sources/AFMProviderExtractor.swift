@@ -115,7 +115,7 @@ public enum AFMProviderExtractor {
             name: "Lutheos",
             domain: "lutheos.com",
             dashboardURL: "https://lutheos.com/billing",
-            endpoint: "https://lutheos.com/overview/__data.json",
+            endpoint: "https://lutheos.com/billing/__data.json",
             jsonPath: "balance",
             defaultBaseline: 0.0,
             aliases: ["lutheos", "lutheos.com", "lutheos ai", "lutheos balance"]

@@ -8,7 +8,11 @@
 
 > **A native macOS menu-bar companion to [CodexBar](https://github.com/steipete/CodexBar)** engineered to track active credits, quotas, and balances for AI providers it doesn't cover yet — right from your menu bar with zero API key hassle.
 
-API Bar lives in your macOS menu bar alongside your daily developer tools, continuously pulling real-time credit balances and subscription quotas from your signed-in browser sessions and custom endpoints. Never hit an unexpected rate limit or quota cutoff mid-prompt again.
+API Bar lives in your macOS menu bar alongside your daily developer tools, continuously pulling real-time credit balances, token burn rates, and subscription quotas from your signed-in browser sessions and custom endpoints. Never hit an unexpected rate limit or quota cutoff mid-prompt again.
+
+<p align="center">
+  <img src="docs/images/menubar_popover.png" alt="API Bar Menu Bar Popover" width="520" />
+</p>
 
 ---
 
@@ -17,6 +21,7 @@ API Bar lives in your macOS menu bar alongside your daily developer tools, conti
 - [Highlights](#-highlights)
 - [Supported Providers](#-supported-providers)
 - [How It Works](#-how-it-works)
+- [Interface at a Glance](#-interface-at-a-glance)
 - [Getting Started](#-getting-started)
 - [Paper Design System](#-paper-design-system)
 - [Architecture & Repository Map (Agent Guide)](#-architecture--repository-map-agent-guide)
@@ -31,14 +36,15 @@ API Bar lives in your macOS menu bar alongside your daily developer tools, conti
 ## ✨ Highlights
 
 - **Live Credit & Burn Rate Gauges**: Track remaining balances as dynamic percentage rings, microdollar increments, or currency values in your menu bar.
-- **Single or Multi-Icon Display**: Merge all providers into a single unified gauge with a rich drop-down dashboard, or pin individual provider gauges to the menu bar.
+- **Burn Rate & Runway Pacing**: Real-time pacing estimates calculated from your active usage (e.g. `1.9M tokens per day - Runs out in 3 days`) so you never get surprised by an unexpected balance exhaustion.
+- **OpenCode & Multi-Mac iCloud Sync**: Seamlessly sync your monitored providers, baseline dollar targets, and OpenCode configurations (`opencode.json`) across all your Macs via iCloud with automatic safety backups.
+- **Single or Multi-Icon Display**: Merge all providers into a single unified gauge with a rich drop-down dashboard, or pin individual provider gauges to your menu bar.
 - **Zero API Key Hassle (Dominant Browser Session Import)**: Automatically detects your primary browser (Brave, Google Chrome, Arc, Microsoft Edge, Vivaldi, or Chromium) and imports authenticated sessions directly on-device. No hunting down admin API keys.
 - **Dual Permission Model (Folder Access vs. Full Disk Access)**:
-  - *Full Disk Access*: Automated, one-click access across all browser profiles and future browser updates.
   - *Folder Access Only*: Instant, targeted permission scoped strictly to your selected browser folder without visiting macOS System Settings.
+  - *Full Disk Access*: Automated, one-click access across all browser profiles and future browser updates.
 - **On-Device Apple Intelligence Extractor (AFM)**: Add any custom or unsupported provider in seconds. Paste a cURL command or JSON payload, and on-device heuristics automatically extract the balance and configure the client.
 - **Automatic 100% Baseline Ingestion**: Automatically detects payments, top-ups, and trial grants to calculate remaining percentage baseline.
-- **Multi-Device iCloud Sync**: Syncs provider lists, custom endpoints, baseline targets, and session credentials securely across all your Macs via iCloud.
 - **In-App Self-Updater**: Background update checks via GitHub Releases with native changelog presentation and one-click in-place installation.
 - **100% Private, Local & Sandboxed**: Zero telemetry, zero third-party proxy servers. Cookies and authentication tokens remain encrypted in your local macOS Keychain.
 
@@ -52,53 +58,39 @@ API Bar lives in your macOS menu bar alongside your daily developer tools, conti
 | **Fireworks AI** | Inference balance & prepaid credits | Dominant browser session (`auth_token`) | Latest top-up |
 | **Cerebras** | Fast inference platform credits & usage tier | Dominant browser session (`auth_token`) | Tier quota / top-up |
 | **Google AI Studio** | Developer quota, token credits & project tiers | Dominant browser session (`__Secure-` auth) | Project allocation |
-| **Refuseless** | Prepaid USD balance & deposit ledger | Dominant browser session | Total deposits sum |
-| **Lutheos** | Private inference prepaid credit balance | Dominant browser session or Bearer key | Inferred top-up tier |
+| **Refuseless** | Prepaid USD balance, deposit ledger & burn rate pacing | Dominant browser session | Total deposits sum |
+| **Lutheos** | Private inference prepaid credit balance & runway pacing | Dominant browser session or Bearer key | Inferred top-up tier |
 | **Venice AI** | Consumption currency balances (USD & DIEM) | Dominant browser session or Bearer key | Inferred baseline |
 | **Crowbot** | Chat & API usage credits (microdollar precision) | Dominant browser session (`crowbot_session`) | Account quota |
+| **OpenCode Sync** | Bi-directional `opencode.json` configuration sync | Apple iCloud Drive container | Automatic `.bak` safety |
 | **Custom / Any AI API** | OpenRouter, Groq, Together, DeepSeek, local endpoints | cURL / JSON via on-device AFM extractor | Custom reference |
 
 ---
 
 ## 🧠 How It Works
 
+API Bar seamlessly connects your day-to-day AI browser sessions to your macOS menu bar:
+
 ```mermaid
-flowchart TD
-    subgraph Browser ["Dominant Browser (Brave, Chrome, Arc, Edge)"]
-        Cookies[("SQLite Cookie Store<br/>~/Library/Application Support/...")]
-    end
-
-    subgraph macOS ["macOS Subsystems"]
-        Keychain[("macOS Keychain<br/>Safe Storage Password")]
-        Cloud[("Apple iCloud<br/>NSUbiquitousKeyValueStore")]
-    end
-
-    subgraph Core ["API Bar Engine"]
-        Importer["BraveSessionImporter<br/>(AES-128-CBC DPAPI)"]
-        HTTP["SessionHTTP<br/>(SAPISID / Bearer Client)"]
-        AFM["AFMProviderExtractor<br/>(On-Device AI Parser)"]
-        Sync["ICloudSync<br/>(Push / Pull Engine)"]
-    end
-
-    subgraph UI ["Paper Design System (SwiftUI)"]
-        MenuBar["NSStatusItem Menu Bar Gauges"]
-        PopOver["Hero Overview & Provider Cards"]
-        Settings["Settings & Permission Controls"]
-    end
-
-    Keychain -->|Decrypt Safe Key| Importer
-    Cookies -->|Read Cookies| Importer
-    Importer -->|Authenticated HTTP| HTTP
-    HTTP -->|Fetch Live Balances| Core
-    AFM -->|Parse Arbitrary cURL| Core
-    Core <-->|Atomic Sync| Cloud
-    Core --> UI
+flowchart LR
+    A["🌐 1. Your AI Accounts<br/><i>(Signed in via Brave, Chrome, Arc...)</i>"] --> B["⚡️ 2. API Bar Menu Bar<br/><i>(Live balance rings & burn rate)</i>"]
+    B --> C["📊 3. Detailed Dashboard<br/><i>(Runway pacing, credits & cards)</i>"]
+    B <--> D["☁️ iCloud Sync<br/><i>(All Macs & OpenCode config)</i>"]
 ```
 
-1. **Dominant Browser Detection**: API Bar inspects your system's default HTTP handler and installed application bundles to select your active browser (Brave, Chrome, Arc, Edge, etc.).
-2. **Safe Storage Decryption**: Reads your browser's session cookies locally. Values protected by Chromium's DPAPI implementation are decrypted using your system's local Keychain Safe Storage key via CommonCrypto AES-128-CBC.
-3. **Background Polling**: An authenticated HTTP client fetches updated balances every 5 minutes. Background refreshes are explicitly restricted from prompting for Keychain UI if a session expires.
-4. **iCloud Synchronization**: Keeps your monitored providers, baseline dollar targets, and custom endpoints aligned across your devices without exposing plaintext credentials.
+1. **No API Keys to Hunt Down**: API Bar detects your active browser on-device. It reads your authenticated session cookies locally and securely via macOS Keychain encryption—no need to generate or rotate administrative API keys.
+2. **Real-Time Burn Rate & Runway**: Beyond raw balances, API Bar calculates your real-world consumption pace and displays how many days or hours remain before your credits exhaust.
+3. **OpenCode & Cross-Mac Syncing**: If you use OpenCode, API Bar automatically keeps your configuration files synced across your machines with automatic rollback backups, ensuring all your workspaces share the same models and settings.
+4. **Completely Local & Private**: All balance checks happen directly between your Mac and the official AI provider endpoints. No middleman servers, no proxy servers, and zero telemetry.
+
+---
+
+## 📸 Interface at a Glance
+
+| 🚀 Effortless 3-Step Setup | ⚙️ Native Settings & OpenCode Sync |
+| :---: | :---: |
+| <img src="docs/images/onboarding.png" width="420" alt="API Bar Onboarding" /> | <img src="docs/images/settings.png" width="420" alt="API Bar Settings & Sync" /> |
+| *Select your providers, connect your browser in one click, and choose your menu bar style.* | *Manage tracked endpoints, configure iCloud & OpenCode syncing, and inspect live connection status.* |
 
 ---
 

@@ -32,13 +32,15 @@ struct ICloudManifest: Codable, Equatable {
     var deviceId: String
     var deviceName: String
     var providerCount: Int
+    var hasOpenCode: Bool?
 
-    init(version: Int = 1, lastModified: Date = Date(), deviceId: String, deviceName: String, providerCount: Int) {
+    init(version: Int = 1, lastModified: Date = Date(), deviceId: String, deviceName: String, providerCount: Int, hasOpenCode: Bool? = nil) {
         self.version = version
         self.lastModified = lastModified
         self.deviceId = deviceId
         self.deviceName = deviceName
         self.providerCount = providerCount
+        self.hasOpenCode = hasOpenCode
     }
 }
 
@@ -47,12 +49,14 @@ final class ICloudSync: ObservableObject {
     static let shared = ICloudSync()
 
     static let enabledKey = "ICloudSyncEnabled"
+    static let openCodeEnabledKey = "ICloudSyncOpenCodeEnabled"
     static let lastSyncKey = "ICloudSyncLastDate"
     static let deviceIdKey = "APIBarDeviceUUID"
 
     @Published private(set) var isSyncing: Bool = false
     @Published private(set) var isAvailable: Bool = false
     @Published var isEnabled: Bool = false
+    @Published var isOpenCodeSyncEnabled: Bool = true
     @Published private(set) var lastSyncDate: Date? = nil
     @Published private(set) var statusMessage: String = "Disabled"
     @Published private(set) var lastError: String? = nil
@@ -61,6 +65,8 @@ final class ICloudSync: ObservableObject {
     private var pushDebounceTask: Task<Void, Never>?
     private var monitorSource: DispatchSourceFileSystemObject?
     private var monitorFD: Int32 = -1
+    private var openCodeMonitorSource: DispatchSourceFileSystemObject?
+    private var openCodeMonitorFD: Int32 = -1
     private var isPerformingSync: Bool = false
     private var lastPushedDate: Date = .distantPast
 
@@ -112,8 +118,25 @@ final class ICloudSync: ObservableObject {
         baseDirectoryURL?.appendingPathComponent("vault", isDirectory: true)
     }
 
+    var localOpenCodeURL: URL {
+        if let custom = ProcessInfo.processInfo.environment["APIBAR_OPENCODE_FILE"], !custom.isEmpty {
+            return URL(fileURLWithPath: custom)
+        }
+        return FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".config/opencode/opencode.json")
+    }
+
+    var cloudOpenCodeURL: URL? {
+        baseDirectoryURL?.appendingPathComponent("opencode.json")
+    }
+
     init() {
         self.isEnabled = UserDefaults.standard.bool(forKey: Self.enabledKey)
+        if UserDefaults.standard.object(forKey: Self.openCodeEnabledKey) == nil {
+            self.isOpenCodeSyncEnabled = true
+        } else {
+            self.isOpenCodeSyncEnabled = UserDefaults.standard.bool(forKey: Self.openCodeEnabledKey)
+        }
         if let ts = UserDefaults.standard.object(forKey: Self.lastSyncKey) as? Date {
             self.lastSyncDate = ts
         }
@@ -126,6 +149,9 @@ final class ICloudSync: ObservableObject {
         _ = checkAvailability()
         if isEnabled {
             startMonitoring()
+            if isOpenCodeSyncEnabled {
+                startOpenCodeMonitoring()
+            }
             Task { await syncNow() }
         }
     }
@@ -137,10 +163,26 @@ final class ICloudSync: ObservableObject {
         if enabled {
             _ = checkAvailability()
             startMonitoring()
+            if isOpenCodeSyncEnabled {
+                startOpenCodeMonitoring()
+            }
             Task { await syncNow() }
         } else {
             stopMonitoring()
+            stopOpenCodeMonitoring()
             updateStatusMessage()
+        }
+    }
+
+    func setOpenCodeSyncEnabled(_ enabled: Bool) {
+        guard isOpenCodeSyncEnabled != enabled else { return }
+        isOpenCodeSyncEnabled = enabled
+        UserDefaults.standard.set(enabled, forKey: Self.openCodeEnabledKey)
+        if enabled && isEnabled {
+            startOpenCodeMonitoring()
+            schedulePush()
+        } else {
+            stopOpenCodeMonitoring()
         }
     }
 
@@ -352,6 +394,38 @@ final class ICloudSync: ObservableObject {
             }
         }
 
+        // 4. Pull OpenCode configuration
+        if isOpenCodeSyncEnabled,
+           let cloudOpenCode = cloudOpenCodeURL,
+           FileManager.default.fileExists(atPath: cloudOpenCode.path) {
+            let localOpenCode = localOpenCodeURL
+            let shouldCopy: Bool
+            if !FileManager.default.fileExists(atPath: localOpenCode.path) {
+                shouldCopy = true
+            } else if let remoteAttrs = try? FileManager.default.attributesOfItem(atPath: cloudOpenCode.path),
+                      let localAttrs = try? FileManager.default.attributesOfItem(atPath: localOpenCode.path),
+                      let remoteDate = remoteAttrs[.modificationDate] as? Date,
+                      let localDate = localAttrs[.modificationDate] as? Date,
+                      remoteDate > localDate {
+                shouldCopy = true
+            } else {
+                shouldCopy = false
+            }
+
+            if shouldCopy, let data = try? Data(contentsOf: cloudOpenCode), !data.isEmpty {
+                let configDir = localOpenCode.deletingLastPathComponent()
+                try? FileManager.default.createDirectory(at: configDir, withIntermediateDirectories: true)
+                if FileManager.default.fileExists(atPath: localOpenCode.path) {
+                    let backupURL = configDir.appendingPathComponent("opencode.json.bak")
+                    try? FileManager.default.removeItem(at: backupURL)
+                    try? FileManager.default.copyItem(at: localOpenCode, to: backupURL)
+                }
+                try? data.write(to: localOpenCode, options: .atomic)
+                try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: localOpenCode.path)
+                didChangeLocally = true
+            }
+        }
+
         return didChangeLocally
     }
 
@@ -404,7 +478,17 @@ final class ICloudSync: ObservableObject {
                 }
             }
 
-            // 4. Write manifest.json
+            // 4. Write OpenCode configuration
+            if isOpenCodeSyncEnabled,
+               let cloudOpenCode = cloudOpenCodeURL,
+               FileManager.default.fileExists(atPath: localOpenCodeURL.path) {
+                if let data = try? Data(contentsOf: localOpenCodeURL), !data.isEmpty {
+                    try data.write(to: cloudOpenCode, options: .atomic)
+                    try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: cloudOpenCode.path)
+                }
+            }
+
+            // 5. Write manifest.json
             let pushTime = Date()
             lastPushedDate = pushTime
             if let manifestURL = manifestURL {
@@ -413,7 +497,8 @@ final class ICloudSync: ObservableObject {
                     lastModified: pushTime,
                     deviceId: deviceId,
                     deviceName: deviceName,
-                    providerCount: app.balances.count
+                    providerCount: app.balances.count,
+                    hasOpenCode: isOpenCodeSyncEnabled && FileManager.default.fileExists(atPath: localOpenCodeURL.path)
                 )
                 let data = try JSONEncoder().encode(manifest)
                 try data.write(to: manifestURL, options: .atomic)
@@ -477,6 +562,49 @@ final class ICloudSync: ObservableObject {
         if monitorFD >= 0 {
             close(monitorFD)
             monitorFD = -1
+        }
+    }
+
+    func startOpenCodeMonitoring() {
+        stopOpenCodeMonitoring()
+        guard isEnabled && isOpenCodeSyncEnabled else { return }
+        let url = localOpenCodeURL
+        guard FileManager.default.fileExists(atPath: url.path) else { return }
+
+        let fd = open(url.path, O_EVTONLY)
+        guard fd >= 0 else { return }
+        openCodeMonitorFD = fd
+
+        let source = DispatchSource.makeFileSystemObjectSource(
+            fileDescriptor: fd,
+            eventMask: [.write, .extend, .attrib, .rename, .delete],
+            queue: DispatchQueue.global(qos: .utility)
+        )
+
+        source.setEventHandler { [weak self] in
+            Task { @MainActor [weak self] in
+                guard let self = self, self.isEnabled, self.isOpenCodeSyncEnabled, !self.isPerformingSync else { return }
+                self.schedulePush()
+                self.startOpenCodeMonitoring()
+            }
+        }
+
+        source.setCancelHandler {
+            close(fd)
+        }
+
+        openCodeMonitorSource = source
+        source.resume()
+    }
+
+    func stopOpenCodeMonitoring() {
+        if let source = openCodeMonitorSource {
+            source.cancel()
+            openCodeMonitorSource = nil
+        }
+        if openCodeMonitorFD >= 0 {
+            close(openCodeMonitorFD)
+            openCodeMonitorFD = -1
         }
     }
 }

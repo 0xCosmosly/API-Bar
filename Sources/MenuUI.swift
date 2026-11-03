@@ -245,6 +245,14 @@ struct BalanceCardContent: View {
                     }
                 }
                 .frame(height: 6)
+
+                if let pacing = balance.pacingMessage {
+                    Text(pacing)
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .foregroundStyle(Color.secondary)
+                        .lineLimit(1)
+                        .padding(.top, 1)
+                }
             }
             .padding(.horizontal, 16)
 
@@ -372,6 +380,13 @@ struct OverviewCardContent: View {
                             }
                         }
                         .frame(height: 5)
+
+                        if let pacing = balance.pacingMessage {
+                            Text(pacing)
+                                .font(.system(size: 9.5, weight: .medium, design: .rounded))
+                                .foregroundStyle(Color.secondary)
+                                .lineLimit(1)
+                        }
                     }
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
@@ -939,6 +954,16 @@ struct OnboardingView: View {
                     Text("Keep your providers, custom endpoints, and baselines up to date across all your Macs.")
                         .font(.caption)
                         .foregroundStyle(Color.secondary)
+
+                    if app.iCloudSyncEnabled {
+                        Toggle("Sync OpenCode configuration (~/.config/opencode/opencode.json)", isOn: Binding(
+                            get: { app.isOpenCodeSyncEnabled },
+                            set: { app.setOpenCodeSyncEnabled($0) }
+                        ))
+                        .font(.subheadline)
+                        .padding(.top, 4)
+                        .padding(.leading, 8)
+                    }
                 }
 
                 Divider()
@@ -1206,6 +1231,21 @@ struct SettingsPane: View {
                 }
 
                 if icloud.isEnabled {
+                    Divider().opacity(0.6)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Toggle("Sync OpenCode configuration", isOn: Binding(
+                            get: { icloud.isOpenCodeSyncEnabled },
+                            set: { icloud.setOpenCodeSyncEnabled($0) }
+                        ))
+                        .font(.subheadline)
+                        .foregroundStyle(Color.primary)
+
+                        Text("Syncs ~/.config/opencode/opencode.json across devices via iCloud Drive.")
+                            .font(.footnote)
+                            .foregroundStyle(Color.secondary)
+                    }
+
                     Divider().opacity(0.6)
 
                     HStack(alignment: .center) {

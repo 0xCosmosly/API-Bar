@@ -863,7 +863,9 @@ enum BraveSessionImporter {
             kSecUseAuthenticationContext as String: context
         ]
         var item: CFTypeRef?
-        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        let status = (try? KeychainVault.access(interactive: interactive) {
+            SecItemCopyMatching(query as CFDictionary, &item)
+        }) ?? errSecInteractionNotAllowed
         if status == errSecSuccess, let value = item as? Data {
             cachedPassword = value
             try? KeychainVault.save(value, account: storageKey, interactive: interactive)
