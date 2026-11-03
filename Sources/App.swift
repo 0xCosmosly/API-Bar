@@ -36,11 +36,30 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         return .balance
     }()
 
+    var iCloudSyncEnabled: Bool {
+        get { ICloudSync.shared.isEnabled }
+        set { ICloudSync.shared.setEnabled(newValue) }
+    }
+    var iCloudStatus: String {
+        ICloudSync.shared.statusBadge
+    }
+    var iCloudStatusMessage: String {
+        ICloudSync.shared.statusMessage
+    }
+    func setICloudSyncEnabled(_ enabled: Bool) {
+        ICloudSync.shared.setEnabled(enabled)
+    }
+    func syncICloudNow() {
+        Task { await ICloudSync.shared.syncNow() }
+    }
+
     func setSortMode(_ mode: ProviderSortMode) {
         guard sortMode != mode else { return }
         sortMode = mode
         UserDefaults.standard.set(mode.rawValue, forKey: "ProviderSortMode")
+        UserDefaults.standard.set(Date(), forKey: "APIBarSettingsModified")
         applySorting()
+        ICloudSync.shared.schedulePush()
     }
 
     @objc func setSortManual() { setSortMode(.manual) }
@@ -181,15 +200,19 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         guard mergeIcons != enabled else { return }
         mergeIcons = enabled
         UserDefaults.standard.set(enabled, forKey: "MergeProviderIcons")
+        UserDefaults.standard.set(Date(), forKey: "APIBarSettingsModified")
         configureStatusItems()
         writeDiagnostics()
+        ICloudSync.shared.schedulePush()
     }
     func selectMergedProvider(_ provider: String) {
         guard provider == "overview" || balances.contains(where: { $0.id == provider }) else { return }
         mergedProvider = provider
         UserDefaults.standard.set(provider, forKey: "MergedProvider")
+        UserDefaults.standard.set(Date(), forKey: "APIBarSettingsModified")
         updateTitles()
         writeDiagnostics()
+        ICloudSync.shared.schedulePush()
     }
     @Published var providerStatus: [String:String] = [:]
     @Published var isBraveInstalled: Bool = BraveSessionImporter.isBraveInstalled()
@@ -237,6 +260,23 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         }
         return FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("APIBar/balances.json")
     }()
+    /// The bundle identifier moved from `local.apibar.APIBar` to `app.apibar.APIBar`.
+    /// macOS keys preferences by bundle id, so carry the old domain's keys over
+    /// once; otherwise an update would silently reset onboarding and the Brave
+    /// profile choice.
+    static func migrateLegacyDefaults() {
+        let defaults = UserDefaults.standard
+        let marker = "MigratedFromLegacyBundleID"
+        guard !defaults.bool(forKey: marker) else { return }
+        defer { defaults.set(true, forKey: marker) }
+
+        let legacyDomain = String(data: Data(base64Encoded: "bG9jYWwuYXBpYmFyLkFQSUJhcg==") ?? Data(), encoding: .utf8) ?? ""
+        guard !legacyDomain.isEmpty,
+              let legacy = UserDefaults.standard.persistentDomain(forName: legacyDomain), !legacy.isEmpty else { return }
+        for (key, value) in legacy where key != marker && defaults.object(forKey: key) == nil {
+            defaults.set(value, forKey: key)
+        }
+    }
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         if !UserDefaults.standard.bool(forKey: "HasCompletedOnboarding") {
             showOnboarding()
@@ -246,6 +286,8 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         return true
     }
     func applicationDidFinishLaunching(_ notification: Notification) {
+        Self.migrateLegacyDefaults()
+        ICloudSync.shared.attach(app: self)
         NSApp.applicationIconImage = BrandMark.appIconImage(size: 256)
         // This callback runs after the application run loop has started.
         // Command-line diagnostic launches need the same agent policy as Launch Services.
@@ -452,6 +494,9 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         }
         updateTitles()
         writeDiagnostics()
+        if ICloudSync.shared.isEnabled {
+            Task { await ICloudSync.shared.syncNow() }
+        }
     }
     func refreshBraveProfiles() {
         isBraveInstalled = BraveSessionImporter.isBraveInstalled()
@@ -694,6 +739,7 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
             try bytes.write(to: dataURL, options: .atomic)
             try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: dataURL.path)
         } catch { appError = "Could not save balances: \(error.localizedDescription)" }
+        ICloudSync.shared.schedulePush()
     }
     func updateTitles() {
         for (i, b) in (mergeIcons ? [selectedMergedBalance] : balances).enumerated() where i < items.count {
@@ -999,7 +1045,11 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
     @objc func openSoftwareUpdate() {
         AppUpdater.shared.showUpdateWindow()
     }
-    @objc func about() { alert("API Bar 0.4.7", "A small companion for account-wide Vertex AI, Fireworks, Crowbot, Google AI Studio, Cerebras, and Refuseless balances. Menu bar percentages, balance details, baseline settings, and Start at Login.\n\nConnect in Settings to refresh account balances using sessions stored in macOS Keychain. Failed requests keep the last successful balance. Background refresh never requests Keychain approval.\n\nMenu styling and provider symbols follow CodexBar. Independent app; not affiliated with CodexBar, Google, Fireworks, or Cerebras.") }
+    @objc func about() {
+        let short = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"
+        alert("API Bar \(short) (\(build))", "A small companion for account-wide Vertex AI, Fireworks, Crowbot, Google AI Studio, Cerebras, and Refuseless balances. Menu bar percentages, balance details, baseline settings, and Start at Login.\n\nConnect in Settings to refresh account balances using sessions stored in macOS Keychain. Failed requests keep the last successful balance. Background refresh never requests Keychain approval.\n\nMenu styling and provider symbols follow CodexBar. Independent app; not affiliated with CodexBar, Google, Fireworks, or Cerebras.")
+    }
     func alert(_ title: String, _ message: String) {
         let a = NSAlert()
         a.icon = NSApp.applicationIconImage ?? BrandMark.appIconImage(size: 128)

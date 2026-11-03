@@ -12,12 +12,12 @@ enum ConnectorError: LocalizedError {
 }
 
 enum KeychainVault {
-    static let service = "local.apibar.APIBar.sessions"
+    static let service = "app.apibar.APIBar.sessions"
     /// Test/CLI runs must never read, write, or delete the user's real saved
     /// sessions. Setting `APIBAR_VAULT_DIR` redirects storage to a scratch
     /// directory and disables every Keychain operation.
     static let isEphemeral = (ProcessInfo.processInfo.environment["APIBAR_VAULT_DIR"]?.isEmpty == false)
-    private static let vaultDir: URL = {
+    static let vaultDir: URL = {
         if let custom = ProcessInfo.processInfo.environment["APIBAR_VAULT_DIR"], !custom.isEmpty {
             return URL(fileURLWithPath: custom, isDirectory: true)
         }

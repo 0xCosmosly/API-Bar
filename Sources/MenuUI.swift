@@ -660,6 +660,19 @@ struct OnboardingView: View {
 
                 Divider()
 
+                VStack(alignment: .leading, spacing: 4) {
+                    Toggle("Sync with iCloud", isOn: Binding(
+                        get: { app.iCloudSyncEnabled },
+                        set: { app.setICloudSyncEnabled($0) }
+                    ))
+                    .font(.subheadline)
+                    Text("Keep your providers, custom endpoints, and baselines up to date across all your Macs.")
+                        .font(.caption)
+                        .foregroundStyle(Color.secondary)
+                }
+
+                Divider()
+
                 VStack(alignment: .leading, spacing: 6) {
                     HStack {
                         Text("Sort Providers")
@@ -739,6 +752,7 @@ struct OnboardingView: View {
 struct SettingsPane: View {
     @ObservedObject var app: APIBarApp
     @ObservedObject private var updater = AppUpdater.shared
+    @ObservedObject private var icloud = ICloudSync.shared
     @State private var login = SMAppService.mainApp.status == .enabled
     @State private var draggedBalance: Balance?
     @State private var showAFMPanel = true
@@ -852,6 +866,108 @@ struct SettingsPane: View {
                     Text("Rearrange providers manually or sort them automatically across menus and menu-bar items.")
                         .font(.footnote)
                         .foregroundStyle(Color.secondary)
+                }
+            }
+            .padding(14)
+            .background(RoundedRectangle(cornerRadius: 10).fill(Color(NSColor.controlBackgroundColor)))
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.primary.opacity(0.08), lineWidth: 1))
+
+            // MARK: - iCloud Sync Card
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .center, spacing: 8) {
+                    Image(systemName: "icloud")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(Color.accentColor)
+                    Text("iCloud Sync")
+                        .font(.headline)
+                        .foregroundStyle(Color.primary)
+                    Spacer()
+                    if !icloud.isAvailable {
+                        Text("Unavailable")
+                            .font(.caption2)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(Color.orange)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Capsule().fill(Color.orange.opacity(0.15)))
+                    } else if icloud.isEnabled {
+                        HStack(spacing: 4) {
+                            if icloud.isSyncing {
+                                ProgressView().controlSize(.mini)
+                            } else {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .font(.caption2)
+                            }
+                            Text(icloud.isSyncing ? "Syncing…" : "Active")
+                                .font(.caption2)
+                                .fontWeight(.semibold)
+                        }
+                        .foregroundStyle(Color.green)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Capsule().fill(Color.green.opacity(0.15)))
+                    } else {
+                        Text("Off")
+                            .font(.caption2)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(Color.secondary)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Capsule().fill(Color.secondary.opacity(0.15)))
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Toggle("Sync with iCloud", isOn: Binding(
+                        get: { icloud.isEnabled },
+                        set: { app.setICloudSyncEnabled($0) }
+                    ))
+                    .font(.subheadline)
+                    .foregroundStyle(Color.primary)
+                    .disabled(!icloud.isAvailable)
+
+                    Text("Keep your providers, custom endpoints, baseline targets, and sessions synchronized across all your Macs via iCloud Drive.")
+                        .font(.footnote)
+                        .foregroundStyle(Color.secondary)
+                }
+
+                if icloud.isEnabled {
+                    Divider()
+
+                    HStack(alignment: .center) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(icloud.statusMessage)
+                                .font(.caption)
+                                .foregroundStyle(Color.secondary)
+                        }
+                        Spacer()
+                        Button {
+                            app.syncICloudNow()
+                        } label: {
+                            HStack(spacing: 5) {
+                                if icloud.isSyncing {
+                                    ProgressView().controlSize(.small)
+                                } else {
+                                    Image(systemName: "arrow.triangle.2.circlepath")
+                                }
+                                Text("Sync Now")
+                            }
+                        }
+                        .controlSize(.small)
+                        .disabled(icloud.isSyncing || !icloud.isAvailable)
+                    }
+                }
+
+                if !icloud.isAvailable {
+                    HStack(spacing: 8) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(Color.orange)
+                        Text("iCloud Drive is not available. Turn on iCloud Drive in macOS System Settings to synchronize across devices.")
+                            .font(.caption)
+                            .foregroundStyle(Color.secondary)
+                    }
+                    .padding(8)
+                    .background(RoundedRectangle(cornerRadius: 6).fill(Color.orange.opacity(0.10)))
                 }
             }
             .padding(14)

@@ -5,7 +5,7 @@
 	<key>CFBundleExecutable</key>
 	<string>APIBar</string>
 	<key>CFBundleIdentifier</key>
-	<string>local.apibar.APIBar</string>
+	<string>app.apibar.APIBar</string>
 	<key>CFBundleName</key>
 	<string>API Bar</string>
 	<key>CFBundleDisplayName</key>
@@ -13,9 +13,9 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.4.7</string>
+	<string>0.4.8</string>
 	<key>CFBundleVersion</key>
-	<string>20</string>
+	<string>21</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>13.0</string>
 	<key>LSUIElement</key>

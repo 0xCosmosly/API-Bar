@@ -1,0 +1,482 @@
+import Foundation
+import AppKit
+
+struct ICloudSettings: Codable, Equatable {
+    var sortMode: String?
+    var mergeIcons: Bool?
+    var mergedProvider: String?
+    var removedProviders: [String]?
+    var lastModified: Date
+    var deviceName: String
+
+    init(
+        sortMode: String? = nil,
+        mergeIcons: Bool? = nil,
+        mergedProvider: String? = nil,
+        removedProviders: [String]? = nil,
+        lastModified: Date = Date(),
+        deviceName: String = Host.current().localizedName ?? "Mac"
+    ) {
+        self.sortMode = sortMode
+        self.mergeIcons = mergeIcons
+        self.mergedProvider = mergedProvider
+        self.removedProviders = removedProviders
+        self.lastModified = lastModified
+        self.deviceName = deviceName
+    }
+}
+
+struct ICloudManifest: Codable, Equatable {
+    var version: Int
+    var lastModified: Date
+    var deviceId: String
+    var deviceName: String
+    var providerCount: Int
+
+    init(version: Int = 1, lastModified: Date = Date(), deviceId: String, deviceName: String, providerCount: Int) {
+        self.version = version
+        self.lastModified = lastModified
+        self.deviceId = deviceId
+        self.deviceName = deviceName
+        self.providerCount = providerCount
+    }
+}
+
+@MainActor
+final class ICloudSync: ObservableObject {
+    static let shared = ICloudSync()
+
+    static let enabledKey = "ICloudSyncEnabled"
+    static let lastSyncKey = "ICloudSyncLastDate"
+    static let deviceIdKey = "APIBarDeviceUUID"
+
+    @Published private(set) var isSyncing: Bool = false
+    @Published private(set) var isAvailable: Bool = false
+    @Published var isEnabled: Bool = false
+    @Published private(set) var lastSyncDate: Date? = nil
+    @Published private(set) var statusMessage: String = "Disabled"
+    @Published private(set) var lastError: String? = nil
+
+    private weak var app: APIBarApp?
+    private var pushDebounceTask: Task<Void, Never>?
+    private var monitorSource: DispatchSourceFileSystemObject?
+    private var monitorFD: Int32 = -1
+    private var isPerformingSync: Bool = false
+    private var lastPushedDate: Date = .distantPast
+
+    var deviceId: String {
+        if let id = UserDefaults.standard.string(forKey: Self.deviceIdKey) {
+            return id
+        }
+        let fresh = UUID().uuidString
+        UserDefaults.standard.set(fresh, forKey: Self.deviceIdKey)
+        return fresh
+    }
+
+    var deviceName: String {
+        Host.current().localizedName ?? "Mac"
+    }
+
+    var statusBadge: String {
+        if !isAvailable { return "Unavailable" }
+        if !isEnabled { return "Off" }
+        if isSyncing { return "Syncing…" }
+        return "Active"
+    }
+
+    var baseDirectoryURL: URL? {
+        if let custom = ProcessInfo.processInfo.environment["APIBAR_ICLOUD_DIR"], !custom.isEmpty {
+            return URL(fileURLWithPath: custom, isDirectory: true)
+        }
+        if let ubiquity = FileManager.default.url(forUbiquityContainerIdentifier: nil) {
+            return ubiquity.appendingPathComponent("Documents/API Bar", isDirectory: true)
+        }
+        let cloudDocs = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Mobile Documents/com~apple~CloudDocs/API Bar", isDirectory: true)
+        return cloudDocs
+    }
+
+    var balancesURL: URL? {
+        baseDirectoryURL?.appendingPathComponent("balances.json")
+    }
+
+    var settingsURL: URL? {
+        baseDirectoryURL?.appendingPathComponent("settings.json")
+    }
+
+    var manifestURL: URL? {
+        baseDirectoryURL?.appendingPathComponent("manifest.json")
+    }
+
+    var vaultDirectoryURL: URL? {
+        baseDirectoryURL?.appendingPathComponent("vault", isDirectory: true)
+    }
+
+    init() {
+        self.isEnabled = UserDefaults.standard.bool(forKey: Self.enabledKey)
+        if let ts = UserDefaults.standard.object(forKey: Self.lastSyncKey) as? Date {
+            self.lastSyncDate = ts
+        }
+        _ = checkAvailability()
+        updateStatusMessage()
+    }
+
+    func attach(app: APIBarApp) {
+        self.app = app
+        _ = checkAvailability()
+        if isEnabled {
+            startMonitoring()
+            Task { await syncNow() }
+        }
+    }
+
+    func setEnabled(_ enabled: Bool) {
+        guard isEnabled != enabled else { return }
+        isEnabled = enabled
+        UserDefaults.standard.set(enabled, forKey: Self.enabledKey)
+        if enabled {
+            _ = checkAvailability()
+            startMonitoring()
+            Task { await syncNow() }
+        } else {
+            stopMonitoring()
+            updateStatusMessage()
+        }
+    }
+
+    func checkAvailability() -> Bool {
+        if ProcessInfo.processInfo.environment["APIBAR_ICLOUD_DIR"] != nil {
+            isAvailable = true
+            return true
+        }
+        if FileManager.default.url(forUbiquityContainerIdentifier: nil) != nil {
+            isAvailable = true
+            return true
+        }
+        let cloudDocsRoot = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Mobile Documents/com~apple~CloudDocs")
+        let available = FileManager.default.fileExists(atPath: cloudDocsRoot.path)
+        isAvailable = available
+        return available
+    }
+
+    func updateStatusMessage() {
+        if !isAvailable {
+            statusMessage = "iCloud Drive is not available on this Mac"
+        } else if !isEnabled {
+            statusMessage = "iCloud Sync is turned off"
+        } else if isSyncing {
+            statusMessage = "Syncing with iCloud…"
+        } else if let date = lastSyncDate {
+            statusMessage = "Last synced \(relativeTimeString(for: date))"
+        } else {
+            statusMessage = "Ready to sync"
+        }
+    }
+
+    func schedulePush() {
+        guard isEnabled, !isPerformingSync else { return }
+        pushDebounceTask?.cancel()
+        pushDebounceTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 800_000_000)
+            guard !Task.isCancelled else { return }
+            await self?.pushLocalState()
+        }
+    }
+
+    func syncNow() async {
+        guard !isPerformingSync else { return }
+        isPerformingSync = true
+        isSyncing = true
+        statusMessage = "Syncing with iCloud…"
+        defer {
+            isSyncing = false
+            isPerformingSync = false
+            updateStatusMessage()
+        }
+
+        guard checkAvailability() else {
+            statusMessage = "iCloud Drive is not available on this Mac"
+            return
+        }
+
+        _ = await pullAndMerge()
+        _ = await pushLocalState()
+    }
+
+    @discardableResult
+    func pullAndMerge() async -> Bool {
+        guard let base = baseDirectoryURL, let app = app else { return false }
+        guard checkAvailability() else { return false }
+        guard FileManager.default.fileExists(atPath: base.path) else { return false }
+
+        var didChangeLocally = false
+
+        // 1. Pull settings
+        if let settingsURL = settingsURL,
+           let data = try? Data(contentsOf: settingsURL),
+           let remoteSettings = try? JSONDecoder().decode(ICloudSettings.self, from: data) {
+
+            if let remoteRemoved = remoteSettings.removedProviders {
+                let localRemoved = UserDefaults.standard.stringArray(forKey: "RemovedProviders") ?? []
+                let combined = Array(Set(localRemoved).union(remoteRemoved))
+                if combined.sorted() != localRemoved.sorted() {
+                    UserDefaults.standard.set(combined, forKey: "RemovedProviders")
+                    for removedID in remoteRemoved {
+                        if let idx = app.balances.firstIndex(where: { $0.id == removedID }) {
+                            app.balances.remove(at: idx)
+                            app.clients.removeValue(forKey: removedID)
+                            KeychainVault.clear(removedID)
+                            app.providerStatus.removeValue(forKey: removedID)
+                            app.inFlight.remove(removedID)
+                            didChangeLocally = true
+                        }
+                    }
+                }
+            }
+
+            let localSettingsTS = (UserDefaults.standard.object(forKey: "APIBarSettingsModified") as? Date) ?? .distantPast
+            if remoteSettings.lastModified > localSettingsTS {
+                if let modeStr = remoteSettings.sortMode, let mode = ProviderSortMode(rawValue: modeStr), mode != app.sortMode {
+                    app.sortMode = mode
+                    UserDefaults.standard.set(mode.rawValue, forKey: "ProviderSortMode")
+                    didChangeLocally = true
+                }
+                if let merge = remoteSettings.mergeIcons, merge != app.mergeIcons {
+                    app.mergeIcons = merge
+                    UserDefaults.standard.set(merge, forKey: "MergeProviderIcons")
+                    app.configureStatusItems()
+                    didChangeLocally = true
+                }
+                if let merged = remoteSettings.mergedProvider, merged != app.mergedProvider {
+                    app.mergedProvider = merged
+                    UserDefaults.standard.set(merged, forKey: "MergedProvider")
+                    didChangeLocally = true
+                }
+                UserDefaults.standard.set(remoteSettings.lastModified, forKey: "APIBarSettingsModified")
+            }
+        }
+
+        // 2. Pull balances
+        if let balancesURL = balancesURL,
+           let data = try? Data(contentsOf: balancesURL),
+           let remoteBalances = try? JSONDecoder().decode([Balance].self, from: data) {
+
+            var current = app.balances
+            let removedSet = Set(UserDefaults.standard.stringArray(forKey: "RemovedProviders") ?? [])
+
+            for remote in remoteBalances {
+                if let localIdx = current.firstIndex(where: { $0.id == remote.id }) {
+                    if remote.baseline > 0 && remote.baseline != current[localIdx].baseline {
+                        if remote.updated >= current[localIdx].updated || current[localIdx].baseline == 0 {
+                            current[localIdx].baseline = remote.baseline
+                            didChangeLocally = true
+                        }
+                    }
+                    if remote.dynamicEndpoint != nil {
+                        if current[localIdx].dynamicEndpoint != remote.dynamicEndpoint ||
+                           current[localIdx].dynamicJsonPath != remote.dynamicJsonPath ||
+                           current[localIdx].dynamicCookieDomain != remote.dynamicCookieDomain ||
+                           current[localIdx].dynamicAuthHeader != remote.dynamicAuthHeader {
+                            current[localIdx].dynamicEndpoint = remote.dynamicEndpoint
+                            current[localIdx].dynamicJsonPath = remote.dynamicJsonPath
+                            current[localIdx].dynamicCookieDomain = remote.dynamicCookieDomain
+                            current[localIdx].dynamicAuthHeader = remote.dynamicAuthHeader
+                            if let auth = remote.dynamicAuthHeader, !auth.isEmpty {
+                                current[localIdx].live = true
+                                app.providerStatus[remote.id] = "Connected · refreshes every 5 minutes"
+                            }
+                            didChangeLocally = true
+                        }
+                    }
+                    if remote.updated > current[localIdx].updated {
+                        current[localIdx].remaining = remote.remaining
+                        current[localIdx].updated = remote.updated
+                        current[localIdx].account = remote.account
+                        current[localIdx].expires = remote.expires
+                        current[localIdx].live = remote.live || current[localIdx].live
+                        didChangeLocally = true
+                    }
+                } else if !removedSet.contains(remote.id) {
+                    current.append(remote)
+                    if app.isConnected(remote.id) || (remote.dynamicAuthHeader != nil && !remote.dynamicAuthHeader!.isEmpty) {
+                        app.providerStatus[remote.id] = "Connected · refreshes every 5 minutes"
+                    } else {
+                        app.providerStatus[remote.id] = "Connect in Settings"
+                    }
+                    didChangeLocally = true
+                }
+            }
+
+            if didChangeLocally {
+                app.balances = current
+                app.save()
+                app.applySorting()
+                app.reapplyOrder()
+                app.updateTitles()
+            }
+        }
+
+        // 3. Pull vault sessions
+        if let cloudVault = vaultDirectoryURL, FileManager.default.fileExists(atPath: cloudVault.path) {
+            let localVault = KeychainVault.vaultDir
+            if let files = try? FileManager.default.contentsOfDirectory(atPath: cloudVault.path) {
+                for file in files where file.hasSuffix(".dat") && !file.contains("brave_safe_storage_key") {
+                    let remoteFile = cloudVault.appendingPathComponent(file)
+                    let localFile = localVault.appendingPathComponent(file)
+                    let provider = URL(fileURLWithPath: file).deletingPathExtension().lastPathComponent
+
+                    let shouldCopy: Bool
+                    if !FileManager.default.fileExists(atPath: localFile.path) {
+                        shouldCopy = true
+                    } else if let remoteAttrs = try? FileManager.default.attributesOfItem(atPath: remoteFile.path),
+                              let localAttrs = try? FileManager.default.attributesOfItem(atPath: localFile.path),
+                              let remoteDate = remoteAttrs[.modificationDate] as? Date,
+                              let localDate = localAttrs[.modificationDate] as? Date,
+                              remoteDate > localDate {
+                        shouldCopy = true
+                    } else {
+                        shouldCopy = false
+                    }
+
+                    if shouldCopy, let data = try? Data(contentsOf: remoteFile), !data.isEmpty {
+                        try? FileManager.default.createDirectory(at: localVault, withIntermediateDirectories: true)
+                        try? data.write(to: localFile, options: .atomic)
+                        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: localFile.path)
+                        try? KeychainVault.save(data, account: provider, interactive: false)
+                        if app.balances.contains(where: { $0.id == provider }) {
+                            app.providerStatus[provider] = "Connected · refreshes every 5 minutes"
+                        }
+                    }
+                }
+            }
+        }
+
+        return didChangeLocally
+    }
+
+    @discardableResult
+    func pushLocalState() async -> Bool {
+        guard isEnabled, let base = baseDirectoryURL, let app = app else { return false }
+        guard checkAvailability() else { return false }
+
+        do {
+            try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+            try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: base.path)
+
+            // 1. Write balances.json
+            if let balancesURL = balancesURL {
+                let data = try JSONEncoder().encode(app.balances)
+                try data.write(to: balancesURL, options: .atomic)
+                try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: balancesURL.path)
+            }
+
+            // 2. Write settings.json
+            if let settingsURL = settingsURL {
+                let settings = ICloudSettings(
+                    sortMode: app.sortMode.rawValue,
+                    mergeIcons: app.mergeIcons,
+                    mergedProvider: app.mergedProvider,
+                    removedProviders: UserDefaults.standard.stringArray(forKey: "RemovedProviders") ?? [],
+                    lastModified: Date(),
+                    deviceName: deviceName
+                )
+                let data = try JSONEncoder().encode(settings)
+                try data.write(to: settingsURL, options: .atomic)
+                try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: settingsURL.path)
+            }
+
+            // 3. Write vault sessions
+            if let cloudVault = vaultDirectoryURL {
+                try FileManager.default.createDirectory(at: cloudVault, withIntermediateDirectories: true)
+                try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: cloudVault.path)
+
+                let localVault = KeychainVault.vaultDir
+                if let files = try? FileManager.default.contentsOfDirectory(atPath: localVault.path) {
+                    for file in files where file.hasSuffix(".dat") && !file.contains("brave_safe_storage_key") {
+                        let localFile = localVault.appendingPathComponent(file)
+                        let cloudFile = cloudVault.appendingPathComponent(file)
+                        if let data = try? Data(contentsOf: localFile), !data.isEmpty {
+                            try? data.write(to: cloudFile, options: .atomic)
+                            try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: cloudFile.path)
+                        }
+                    }
+                }
+            }
+
+            // 4. Write manifest.json
+            let pushTime = Date()
+            lastPushedDate = pushTime
+            if let manifestURL = manifestURL {
+                let manifest = ICloudManifest(
+                    version: 1,
+                    lastModified: pushTime,
+                    deviceId: deviceId,
+                    deviceName: deviceName,
+                    providerCount: app.balances.count
+                )
+                let data = try JSONEncoder().encode(manifest)
+                try data.write(to: manifestURL, options: .atomic)
+                try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: manifestURL.path)
+            }
+
+            lastSyncDate = pushTime
+            UserDefaults.standard.set(lastSyncDate, forKey: Self.lastSyncKey)
+            updateStatusMessage()
+            lastError = nil
+            return true
+        } catch {
+            lastError = error.localizedDescription
+            statusMessage = "Sync error: \(error.localizedDescription)"
+            return false
+        }
+    }
+
+    func startMonitoring() {
+        stopMonitoring()
+        guard let base = baseDirectoryURL else { return }
+        try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+
+        let fd = open(base.path, O_EVTONLY)
+        guard fd >= 0 else { return }
+        monitorFD = fd
+
+        let source = DispatchSource.makeFileSystemObjectSource(
+            fileDescriptor: fd,
+            eventMask: [.write, .extend, .attrib, .link, .rename],
+            queue: DispatchQueue.global(qos: .utility)
+        )
+
+        source.setEventHandler { [weak self] in
+            Task { @MainActor [weak self] in
+                guard let self = self, self.isEnabled, !self.isPerformingSync else { return }
+                if let manifestURL = self.manifestURL,
+                   let data = try? Data(contentsOf: manifestURL),
+                   let remoteManifest = try? JSONDecoder().decode(ICloudManifest.self, from: data) {
+                    if remoteManifest.deviceId == self.deviceId {
+                        return
+                    }
+                }
+                await self.pullAndMerge()
+            }
+        }
+
+        source.setCancelHandler {
+            close(fd)
+        }
+
+        monitorSource = source
+        source.resume()
+    }
+
+    func stopMonitoring() {
+        if let source = monitorSource {
+            source.cancel()
+            monitorSource = nil
+        }
+        if monitorFD >= 0 {
+            close(monitorFD)
+            monitorFD = -1
+        }
+    }
+}

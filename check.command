@@ -17,7 +17,8 @@ mkdir -p .cache/checks
 TEST_STATE="$(mktemp -d /tmp/apibar-check.XXXXXX)"
 export APIBAR_VAULT_DIR="$TEST_STATE/vault"
 export APIBAR_DATA_DIR="$TEST_STATE/data"
-mkdir -p "$APIBAR_VAULT_DIR" "$APIBAR_DATA_DIR"
+export APIBAR_ICLOUD_DIR="$TEST_STATE/icloud"
+mkdir -p "$APIBAR_VAULT_DIR" "$APIBAR_DATA_DIR" "$APIBAR_ICLOUD_DIR"
 swiftc -sdk "$SDK" -parse-as-library -module-cache-path "$PWD/.cache/modules" Sources/BrandMark.swift Sources/Balance.swift Sources/Provider.swift Sources/Credentials.swift Sources/SessionHTTP.swift Sources/GoogleProvider.swift Sources/CrowbotProvider.swift Sources/AppUpdater.swift Tests/Checks.swift -o .cache/checks/APIBarChecks
 .cache/checks/APIBarChecks
 plutil -lint Resources/Info.plist

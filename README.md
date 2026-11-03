@@ -11,10 +11,11 @@ I built API Bar because some of the AI providers I use every day (like Google Cl
 - **Live Credit Gauges in Your Menu Bar**: See your remaining credits at a glance as a percentage or dollar amount.
 - **Single or Multi-Icon Display**: Merge all providers into one sleek status icon with easy switching, or display separate gauges for each platform.
 - **Zero API Key Hassle (Brave Import)**: Seamlessly reads your authenticated browser sessions directly from Brave. No need to hunt down admin keys.
+- **iCloud Sync**: Automatically synchronizes your providers, custom endpoints, baseline targets, and session credentials across all your Macs via iCloud Drive.
 - **Local Apple AI Model (AFM)**: Add unsupported or custom AI APIs in seconds. Just paste a cURL or let local Apple intelligence detect the balance format on-device.
 - **Automatic 100% Reference Baseline**: Smart tier detection automatically calculates your 100% baseline from your latest payment, top-up, or grant.
 - **Built-In Updates**: Checks GitHub Releases for new versions, shows the changelog, and installs the update in place — no separate downloader.
-- **100% Private & Local**: Zero telemetry, zero third-party cloud servers. Your sessions stay locked safely in your macOS Keychain.
+- **100% Private & Local**: Zero telemetry, zero third-party cloud servers. Your sessions stay locked safely in your macOS Keychain and private iCloud Drive.
 
 ---
 

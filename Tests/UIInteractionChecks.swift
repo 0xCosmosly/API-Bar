@@ -283,10 +283,98 @@ import AppKit
         precondition(autoOpenRouterDraft.name == "OpenRouter")
         precondition(autoOpenRouterURL == "https://openrouter.ai/credits")
 
+        // Test iCloud Sync: availability, push, pull & merge, session vault sync, status badges
+        var cleanedRemoved = UserDefaults.standard.stringArray(forKey: "RemovedProviders") ?? []
+        cleanedRemoved.removeAll(where: { $0 == "togetherai" })
+        UserDefaults.standard.set(cleanedRemoved, forKey: "RemovedProviders")
+        ICloudSync.shared.attach(app: app)
+        precondition(ICloudSync.shared.isAvailable == true, "iCloud should be available in test environment with APIBAR_ICLOUD_DIR")
+        app.setICloudSyncEnabled(true)
+        precondition(ICloudSync.shared.isEnabled == true)
+        precondition(app.iCloudSyncEnabled == true)
+
+        let pushedSuccess = await ICloudSync.shared.pushLocalState()
+        precondition(pushedSuccess == true, "pushLocalState failed")
+        guard let balancesFile = ICloudSync.shared.balancesURL,
+              let settingsFile = ICloudSync.shared.settingsURL,
+              let manifestFile = ICloudSync.shared.manifestURL else {
+            preconditionFailure("iCloud URLs not resolved")
+        }
+        precondition(FileManager.default.fileExists(atPath: balancesFile.path), "balances.json missing in iCloud")
+        precondition(FileManager.default.fileExists(atPath: settingsFile.path), "settings.json missing in iCloud")
+        precondition(FileManager.default.fileExists(atPath: manifestFile.path), "manifest.json missing in iCloud")
+
+        let balancesData = try Data(contentsOf: balancesFile)
+        let pushedBalances = try JSONDecoder().decode([Balance].self, from: balancesData)
+        precondition(pushedBalances.count == app.balances.count, "Pushed balances count mismatch")
+        let settingsData = try Data(contentsOf: settingsFile)
+        let pushedSettings = try JSONDecoder().decode(ICloudSettings.self, from: settingsData)
+        precondition(pushedSettings.sortMode == app.sortMode.rawValue)
+        precondition(pushedSettings.mergeIcons == app.mergeIcons)
+
+        // Simulate remote changes from Device B
+        var remoteBalances = pushedBalances
+        if let fwIdx = remoteBalances.firstIndex(where: { $0.id == "fireworks" }) {
+            remoteBalances[fwIdx].baseline = 150.0
+            remoteBalances[fwIdx].updated = Date()
+        }
+        let remoteCustom = Balance(
+            id: "togetherai",
+            name: "Together AI",
+            baseline: 25.0,
+            remaining: 24.50,
+            updated: Date(),
+            account: "together.xyz",
+            live: true,
+            dynamicEndpoint: "https://api.together.xyz/v1/balance",
+            dynamicAuthHeader: "Bearer test_together_key"
+        )
+        remoteBalances.append(remoteCustom)
+        let newBalancesData = try JSONEncoder().encode(remoteBalances)
+        try newBalancesData.write(to: balancesFile, options: .atomic)
+
+        let remoteManifest = ICloudManifest(
+            version: 1,
+            lastModified: Date(),
+            deviceId: "mac-b-device-id",
+            deviceName: "MacBook Pro",
+            providerCount: remoteBalances.count
+        )
+        try JSONEncoder().encode(remoteManifest).write(to: manifestFile, options: .atomic)
+
+        let remoteVaultDir = ICloudSync.shared.vaultDirectoryURL!
+        try FileManager.default.createDirectory(at: remoteVaultDir, withIntermediateDirectories: true)
+        let mockSession = [StoredCookie(name: "session_token", value: "tok_12345", domain: ".together.xyz", expires: nil)]
+        let mockSessionData = try JSONEncoder().encode(mockSession)
+        try mockSessionData.write(to: remoteVaultDir.appendingPathComponent("togetherai.dat"), options: .atomic)
+
+        let didMerge = await ICloudSync.shared.pullAndMerge()
+        precondition(didMerge == true, "pullAndMerge did not report merge changes")
+        guard let mergedFw = app.balances.first(where: { $0.id == "fireworks" }) else {
+            preconditionFailure("Fireworks not found after merge")
+        }
+        precondition(mergedFw.baseline == 150.0, "Fireworks baseline did not update from iCloud: got \(mergedFw.baseline)")
+        guard let mergedTogether = app.balances.first(where: { $0.id == "togetherai" }) else {
+            preconditionFailure("Together AI was not merged from iCloud")
+        }
+        precondition(mergedTogether.dynamicEndpoint == "https://api.together.xyz/v1/balance")
+        precondition(mergedTogether.dynamicAuthHeader == "Bearer test_together_key")
+        precondition(FileManager.default.fileExists(atPath: KeychainVault.vaultDir.appendingPathComponent("togetherai.dat").path), "togetherai session file was not transferred from iCloud to local vault")
+
+        precondition(ICloudSync.shared.statusBadge == "Active" || ICloudSync.shared.statusBadge == "Synced")
+        precondition(app.iCloudStatusMessage.contains("Synced") || app.iCloudStatusMessage.contains("ago") || app.iCloudStatusMessage.contains("just now"))
+
+        app.setICloudSyncEnabled(false)
+        precondition(ICloudSync.shared.isEnabled == false)
+        precondition(app.iCloudSyncEnabled == false)
+        precondition(ICloudSync.shared.statusBadge == "Off")
+        app.removeProvider(id: "togetherai")
+
         print("Passed: 900 tab clicks across icons/text/padding, canceled drags, accessibility actions, persistent selector, and Retina brand representations.")
         print("Passed: removeProvider, addProvider, menu order Dashboard -> Refresh -> Refresh All -> Start at Login -> Settings, relative checked time, and harnesses line removed.")
         print("Passed: AFM on-device extraction from cURL/JSON, dynamic provider registration, monogram rendering, and cleanup.")
         print("Passed: Venice AI consumptionCurrency-aware single-digit balance extraction (USD & DIEM), Bearer auth, custom registration, and monogram verification.")
         print("Passed: AFM auto-add by provider name with automated usage dashboard URL resolution and credential probe.")
+        print("Passed: iCloud sync availability, atomic push, multi-device pull & merge, session vault transfer, and status badges.")
     }
 }
