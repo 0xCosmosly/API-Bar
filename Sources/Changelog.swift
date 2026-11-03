@@ -385,16 +385,16 @@ public struct ChangelogView: View {
 
                     VStack(alignment: .leading, spacing: 2) {
                         Text("API Bar")
-                            .font(.headline)
+                            .font(.title3)
                             .fontWeight(.bold)
                             .foregroundStyle(Color.primary)
 
                         HStack(spacing: 4) {
                             Text("Installed:")
-                                .font(.caption2)
+                                .font(.caption)
                                 .foregroundStyle(Color.secondary)
                             Text("v\(updater.currentVersion)")
-                                .font(.caption2)
+                                .font(.caption)
                                 .fontWeight(.semibold)
                                 .foregroundStyle(Color.primary)
                         }
@@ -449,10 +449,10 @@ public struct ChangelogView: View {
                                 ProgressView().controlSize(.small)
                             } else {
                                 Image(systemName: "arrow.triangle.2.circlepath")
-                                    .font(.caption)
+                                    .font(.subheadline)
                             }
                             Text(updater.isChecking ? "Checking…" : "Check for Updates")
-                                .font(.caption)
+                                .font(.subheadline)
                         }
                     }
                     .buttonStyle(.plain)
@@ -463,7 +463,7 @@ public struct ChangelogView: View {
 
                     if let err = changelog.remoteError {
                         Image(systemName: "exclamationmark.circle")
-                            .font(.caption)
+                            .font(.subheadline)
                             .foregroundStyle(Color.orange)
                             .help(err)
                     }
@@ -472,7 +472,7 @@ public struct ChangelogView: View {
                 .padding(.vertical, 10)
                 .background(Color(NSColor.windowBackgroundColor).opacity(0.5))
             }
-            .frame(width: 250)
+            .frame(width: 275)
             .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
 
             Divider()
@@ -486,35 +486,32 @@ public struct ChangelogView: View {
                             VStack(alignment: .leading, spacing: 4) {
                                 HStack(spacing: 8) {
                                     Text("v\(entry.version)")
-                                        .font(.title2)
+                                        .font(.title)
                                         .fontWeight(.bold)
                                         .foregroundStyle(Color.primary)
 
                                     // Version Status Badges
                                     if entry.isCurrent(currentVersion: updater.currentVersion) {
                                         Text("Current Version")
-                                            .font(.caption2)
-                                            .fontWeight(.bold)
-                                            .padding(.horizontal, 8)
-                                            .padding(.vertical, 3)
+                                            .font(.system(size: 12, weight: .bold))
+                                            .padding(.horizontal, 9)
+                                            .padding(.vertical, 3.5)
                                             .background(Color.green.opacity(0.18))
                                             .foregroundStyle(Color.green)
                                             .clipShape(Capsule())
                                     } else if entry.isNewer(currentVersion: updater.currentVersion) {
                                         Text("Update Available")
-                                            .font(.caption2)
-                                            .fontWeight(.bold)
-                                            .padding(.horizontal, 8)
-                                            .padding(.vertical, 3)
+                                            .font(.system(size: 12, weight: .bold))
+                                            .padding(.horizontal, 9)
+                                            .padding(.vertical, 3.5)
                                             .background(Color.orange.opacity(0.18))
                                             .foregroundStyle(Color.orange)
                                             .clipShape(Capsule())
                                     } else {
                                         Text("Previous Version")
-                                            .font(.caption2)
-                                            .fontWeight(.medium)
-                                            .padding(.horizontal, 8)
-                                            .padding(.vertical, 3)
+                                            .font(.system(size: 12, weight: .medium))
+                                            .padding(.horizontal, 9)
+                                            .padding(.vertical, 3.5)
                                             .background(Color.secondary.opacity(0.15))
                                             .foregroundStyle(Color.secondary)
                                             .clipShape(Capsule())
@@ -522,13 +519,13 @@ public struct ChangelogView: View {
                                 }
 
                                 Text(entry.title)
-                                    .font(.subheadline)
-                                    .fontWeight(.medium)
-                                    .foregroundStyle(Color.secondary)
+                                    .font(.headline)
+                                    .fontWeight(.semibold)
+                                    .foregroundStyle(Color.primary)
 
                                 Text("Released \(entry.releaseDate)")
-                                    .font(.caption)
-                                    .foregroundStyle(Color.secondary.opacity(0.8))
+                                    .font(.subheadline)
+                                    .foregroundStyle(Color.secondary)
                             }
 
                             Spacer()
@@ -555,26 +552,25 @@ public struct ChangelogView: View {
 
                         // Highlights preview box if present
                         if !entry.highlights.isEmpty {
-                            VStack(alignment: .leading, spacing: 5) {
+                            VStack(alignment: .leading, spacing: 6) {
                                 Text("Key Highlights:")
-                                    .font(.caption)
+                                    .font(.subheadline)
                                     .fontWeight(.bold)
                                     .foregroundStyle(Color.primary)
 
                                 ForEach(entry.highlights, id: \.self) { highlight in
-                                    HStack(alignment: .top, spacing: 6) {
+                                    HStack(alignment: .top, spacing: 8) {
                                         Text("✓")
-                                            .font(.caption2)
-                                            .fontWeight(.bold)
+                                            .font(.system(size: 12, weight: .bold))
                                             .foregroundStyle(Color.accentColor)
                                         Text(highlight)
-                                            .font(.caption)
+                                            .font(.system(size: 13.5))
                                             .foregroundStyle(Color.primary)
                                             .fixedSize(horizontal: false, vertical: true)
                                     }
                                 }
                             }
-                            .padding(10)
+                            .padding(12)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.04)))
                             .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.primary.opacity(0.08), lineWidth: 1))
@@ -608,7 +604,7 @@ public struct ChangelogView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .frame(minWidth: 700, minHeight: 520)
+        .frame(minWidth: 740, minHeight: 560)
         .background(Color(NSColor.windowBackgroundColor))
         .task {
             // Asynchronously check remote for any freshly published GitHub releases
@@ -630,33 +626,32 @@ private struct VersionRowView: View {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
                     Text("v\(entry.version)")
-                        .font(.subheadline)
-                        .fontWeight(isSelected ? .bold : .semibold)
-                        .foregroundStyle(isSelected ? Color.primary : Color.primary.opacity(0.85))
+                        .font(.system(size: 14, weight: isSelected ? .bold : .semibold))
+                        .foregroundStyle(isSelected ? Color.primary : Color.primary.opacity(0.9))
 
                     Spacer()
 
                     if entry.isCurrent(currentVersion: currentVersion) {
                         Text("Current")
-                            .font(.system(size: 10, weight: .bold))
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
+                            .font(.system(size: 11, weight: .bold))
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 2.5)
                             .background(Color.green.opacity(0.20))
                             .foregroundStyle(Color.green)
                             .clipShape(Capsule())
                     } else if entry.isNewer(currentVersion: currentVersion) {
                         Text("Update")
-                            .font(.system(size: 10, weight: .bold))
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
+                            .font(.system(size: 11, weight: .bold))
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 2.5)
                             .background(Color.orange.opacity(0.20))
                             .foregroundStyle(Color.orange)
                             .clipShape(Capsule())
                     } else {
                         Text("Previous")
-                            .font(.system(size: 9, weight: .medium))
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 2)
+                            .font(.system(size: 10.5, weight: .semibold))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2.5)
                             .background(Color.secondary.opacity(0.12))
                             .foregroundStyle(Color.secondary)
                             .clipShape(Capsule())
@@ -664,12 +659,13 @@ private struct VersionRowView: View {
                 }
 
                 Text(entry.releaseDate)
-                    .font(.caption2)
+                    .font(.system(size: 11.5))
                     .foregroundStyle(Color.secondary)
 
                 Text(entry.summary)
-                    .font(.caption2)
+                    .font(.system(size: 12.5))
                     .foregroundStyle(Color.secondary)
+                    .lineSpacing(1.5)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
             }

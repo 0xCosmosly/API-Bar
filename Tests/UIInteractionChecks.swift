@@ -134,11 +134,7 @@ import SwiftUI
         precondition(sRefIdx < sRefAllIdx, "Refresh must be above Refresh All in separated menu")
         precondition(sRefAllIdx < sLoginIdx, "Refresh All must be above Start at Login in separated menu")
         precondition(sLoginIdx < sSettingsIdx, "Start at Login must be above Settings in separated menu")
-
-        let usageDetails = sepMenu.items.first(where: { $0.title == "Usage Details" })
-        let subTitles = usageDetails?.submenu?.items.map(\.title) ?? []
-        precondition(!subTitles.contains(where: { $0.contains("all harnesses") }), "Usage Details must not contain 'all harnesses'")
-        precondition(subTitles.contains(where: { $0.hasPrefix("Checked ") }), "Usage Details must contain relative time Checked line")
+        precondition(!sepTitles.contains("Usage Details"), "Usage Details menu item must be removed")
 
         // Test AFM on-device provider extraction
         let curlSample = "curl 'https://api.groq.com/openai/v1/models' -H 'Authorization: Bearer gsk_test'"

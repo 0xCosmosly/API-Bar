@@ -93,17 +93,17 @@ struct ProviderTabItem: Equatable {
         style.alignment = .center
         style.lineBreakMode = .byTruncatingTail
 
-        var fontSize: CGFloat = 10.0
-        var font = NSFont.systemFont(ofSize: fontSize, weight: isSelected ? .semibold : .medium)
+        var fontSize: CGFloat = 11.5
+        var font = NSFont.systemFont(ofSize: fontSize, weight: isSelected ? .bold : .semibold)
         var attrs: [NSAttributedString.Key: Any] = [
             .font: font,
             .foregroundColor: textColor,
             .paragraphStyle: style
         ]
         var titleString = NSAttributedString(string: title, attributes: attrs)
-        while titleString.size().width > bounds.width - 4 && fontSize > 7.5 {
+        while titleString.size().width > bounds.width - 4 && fontSize > 9.0 {
             fontSize -= 0.5
-            font = NSFont.systemFont(ofSize: fontSize, weight: isSelected ? .semibold : .medium)
+            font = NSFont.systemFont(ofSize: fontSize, weight: isSelected ? .bold : .semibold)
             attrs[.font] = font
             titleString = NSAttributedString(string: title, attributes: attrs)
         }
@@ -166,7 +166,7 @@ struct ProviderTabItem: Equatable {
     override var acceptsFirstResponder: Bool { true }
 
     private let columns = 4
-    private let rowHeight: CGFloat = 46.0
+    private let rowHeight: CGFloat = 48.0
 
     static func defaultItems(balances: [Balance]) -> [ProviderTabItem] {
         let totalRemaining = balances.reduce(0.0) { $0 + $1.remaining }
@@ -187,8 +187,8 @@ struct ProviderTabItem: Equatable {
     init(items: [ProviderTabItem], selectedID: String, onSelect: @escaping (String) -> Void) {
         self.items = items; self.selectedID = selectedID; self.onSelect = onSelect
         let rowCount = (items.count + 4 - 1) / 4
-        let initialHeight = CGFloat(rowCount) * 46.0 + 8
-        super.init(frame: NSRect(x: 0, y: 0, width: 330, height: initialHeight))
+        let initialHeight = CGFloat(rowCount) * 48.0 + 8
+        super.init(frame: NSRect(x: 0, y: 0, width: 340, height: initialHeight))
         buildButtons()
         layoutTabs()
         updateSelection()
@@ -324,7 +324,7 @@ struct ProviderTabItem: Equatable {
         tabs = ProviderTabsView(items: items, selectedID: app.mergedProvider) { [weak app] id in
             app?.selectMergedProvider(id)
         }
-        super.init(frame: NSRect(x: 0, y: 0, width: 330, height: 280))
+        super.init(frame: NSRect(x: 0, y: 0, width: 340, height: 280))
         addSubview(tabs)
         refresh()
     }

@@ -106,16 +106,16 @@ struct PaperWhiteButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 11, weight: .medium))
+            .font(.system(size: 13, weight: .medium))
             .foregroundStyle(isEnabled ? Color.primary : Color(NSColor.secondaryLabelColor))
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
             .background(
-                RoundedRectangle(cornerRadius: 6)
+                RoundedRectangle(cornerRadius: 7)
                     .fill(Color(NSColor.controlBackgroundColor))
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 6)
+                RoundedRectangle(cornerRadius: 7)
                     .stroke(Color.primary.opacity(isEnabled ? 0.15 : 0.10), lineWidth: 1)
             )
             .opacity(configuration.isPressed ? 0.75 : 1.0)
@@ -129,16 +129,16 @@ struct PaperPillButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 11, weight: .semibold))
+            .font(.system(size: 12.5, weight: .semibold))
             .foregroundStyle(tintColor)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 5)
             .background(
-                RoundedRectangle(cornerRadius: 6)
+                RoundedRectangle(cornerRadius: 7)
                     .fill(tintColor.opacity(0.12))
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 6)
+                RoundedRectangle(cornerRadius: 7)
                     .stroke(tintColor.opacity(0.24), lineWidth: 0.5)
             )
             .opacity(configuration.isPressed ? 0.75 : 1.0)
@@ -152,16 +152,16 @@ struct PaperProminentButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 12, weight: .semibold))
+            .font(.system(size: 13, weight: .semibold))
             .foregroundStyle(isEnabled ? Color.white : Color(NSColor.secondaryLabelColor))
-            .padding(.horizontal, 12)
-            .padding(.vertical, 5)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 6)
             .background(
-                RoundedRectangle(cornerRadius: 6)
+                RoundedRectangle(cornerRadius: 7)
                     .fill(isEnabled ? tintColor : Color(NSColor.separatorColor).opacity(0.35))
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 6)
+                RoundedRectangle(cornerRadius: 7)
                     .stroke(isEnabled ? Color.clear : Color.primary.opacity(0.12), lineWidth: 1)
             )
             .opacity(configuration.isPressed ? 0.8 : 1.0)
@@ -170,8 +170,8 @@ struct PaperProminentButtonStyle: ButtonStyle {
 }
 
 // Adapted from CodexBar's MIT-licensed MenuCardView.swift layout:
-// 310pt width, 20pt horizontal inset, headline/subheadline header,
-// 4pt header lines, 12pt columns, 6pt metric spacing, and a 6pt progress bar.
+// 340pt width, 20pt horizontal inset, headline/subheadline header,
+// 4pt header lines, 12pt columns, 6pt metric spacing, and a 7pt progress bar.
 struct BalanceCardContent: View {
     let balance: Balance
     var status: String? = nil
@@ -190,20 +190,19 @@ struct BalanceCardContent: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             // Header
-            HStack(alignment: .center, spacing: 8) {
-                PaperProviderBadge(id: balance.id, name: balance.name, size: 24)
+            HStack(alignment: .center, spacing: 10) {
+                PaperProviderBadge(id: balance.id, name: balance.name, size: 28)
 
-                VStack(alignment: .leading, spacing: 1) {
+                VStack(alignment: .leading, spacing: 2) {
                     Text(balance.name)
-                        .font(.headline)
-                        .fontWeight(.semibold)
+                        .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(Color.primary)
                     HStack(spacing: 5) {
                         Circle()
                             .fill(balance.live ? Color.green : Color.orange)
-                            .frame(width: 5, height: 5)
+                            .frame(width: 6, height: 6)
                         Text(displayStatus)
-                            .font(.caption2)
+                            .font(.system(size: 12, weight: .regular))
                             .foregroundStyle(Color.secondary)
                             .lineLimit(1)
                     }
@@ -212,27 +211,27 @@ struct BalanceCardContent: View {
                 if balance.baseline > 0 {
                     let tint = percentageColor(for: balance.percent)
                     Text(balance.percentageLabel)
-                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                        .font(.system(size: 14, weight: .bold, design: .rounded))
                         .foregroundStyle(tint)
-                        .padding(.horizontal, 7)
-                        .padding(.vertical, 2)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
                         .background(Capsule().fill(tint.opacity(balance.percent >= 80 || balance.percent < 20 ? 0.14 : 0.08)))
                 }
             }
             .padding(.horizontal, 16)
-            .padding(.top, 10)
+            .padding(.top, 12)
 
             Divider()
 
             // Metric Hero
             VStack(alignment: .leading, spacing: 6) {
-                HStack(alignment: .firstTextBaseline) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text(balance.money)
-                        .font(.system(size: 22, weight: .bold, design: .rounded))
+                        .font(.system(size: 26, weight: .bold, design: .rounded))
                         .foregroundStyle(Color.primary)
                     if balance.baseline > 0 {
                         Text("of \(balance.baseline.formatted(.currency(code: "USD")))")
-                            .font(.subheadline)
+                            .font(.system(size: 13.5, weight: .medium))
                             .foregroundStyle(Color.secondary)
                     }
                 }
@@ -244,14 +243,14 @@ struct BalanceCardContent: View {
                             .frame(width: proxy.size.width * min(max(balance.percent / 100, 0), 1))
                     }
                 }
-                .frame(height: 6)
+                .frame(height: 7)
 
                 if let pacing = balance.pacingMessage {
                     Text(pacing)
-                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .font(.system(size: 12.5, weight: .medium, design: .rounded))
                         .foregroundStyle(Color.secondary)
                         .lineLimit(1)
-                        .padding(.top, 1)
+                        .padding(.top, 2)
                 }
             }
             .padding(.horizontal, 16)
@@ -261,14 +260,14 @@ struct BalanceCardContent: View {
             // Footer
             HStack(alignment: .center, spacing: 6) {
                 Text("Last checked: \(relativeTimeString(for: balance.updated))")
-                    .font(.caption2)
+                    .font(.system(size: 12))
                     .foregroundStyle(Color.secondary)
                     .lineLimit(1)
                     .layoutPriority(0)
                 Spacer(minLength: 6)
                 if !balance.account.isEmpty {
                     Text(balance.account)
-                        .font(.caption2)
+                        .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(Color.secondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
@@ -276,9 +275,9 @@ struct BalanceCardContent: View {
                 }
             }
             .padding(.horizontal, 16)
-            .padding(.bottom, 8)
+            .padding(.bottom, 10)
         }
-        .frame(width: 330, alignment: .leading)
+        .frame(width: 340, alignment: .leading)
     }
 }
 
@@ -315,33 +314,33 @@ struct OverviewCardContent: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             // Hero Header
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(alignment: .firstTextBaseline) {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text(totalSummaryText)
-                        .font(.system(size: 20, weight: .bold, design: .rounded))
+                        .font(.system(size: 24, weight: .bold, design: .rounded))
                         .foregroundStyle(Color.primary)
                     Text("remaining")
-                        .font(.subheadline)
+                        .font(.system(size: 14, weight: .medium))
                         .foregroundStyle(Color.secondary)
                     Spacer()
                     if totalBaseline > 0 {
                         let tint = percentageColor(for: totalPercent)
                         Text(aggregatePercentText)
-                            .font(.system(size: 13, weight: .bold, design: .rounded))
+                            .font(.system(size: 14, weight: .bold, design: .rounded))
                             .foregroundStyle(tint)
-                            .padding(.horizontal, 7)
-                            .padding(.vertical, 2)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
                             .background(Capsule().fill(tint.opacity(totalPercent >= 80 || totalPercent < 20 ? 0.14 : 0.08)))
                     }
                 }
                 HStack {
                     Text("\(connectedCount) of \(app.balances.count) connected · All active providers")
-                        .font(.caption)
+                        .font(.system(size: 12.5))
                         .foregroundStyle(Color.secondary)
                 }
             }
             .padding(.horizontal, 16)
-            .padding(.top, 10)
+            .padding(.top, 12)
 
             Divider()
 
@@ -350,26 +349,23 @@ struct OverviewCardContent: View {
                 ForEach(app.balances, id: \.id) { balance in
                     VStack(alignment: .leading, spacing: 4) {
                         HStack(alignment: .center, spacing: 8) {
-                            PaperProviderBadge(id: balance.id, name: balance.name, size: 20)
+                            PaperProviderBadge(id: balance.id, name: balance.name, size: 22)
 
                             Text(balance.name)
-                                .font(.subheadline)
-                                .fontWeight(.semibold)
+                                .font(.system(size: 13.5, weight: .semibold))
                                 .foregroundStyle(Color.primary)
 
                             Spacer()
 
                             Text(balance.money)
-                                .font(.subheadline)
-                                .fontWeight(.medium)
+                                .font(.system(size: 13.5, weight: .medium))
                                 .foregroundStyle(Color.primary)
 
                             let tint = percentageColor(for: balance.percent)
                             Text(balance.percentageLabel)
-                                .font(.caption2)
-                                .fontWeight(.bold)
+                                .font(.system(size: 12, weight: .bold, design: .rounded))
                                 .foregroundStyle(tint)
-                                .frame(minWidth: 32, alignment: .trailing)
+                                .frame(minWidth: 34, alignment: .trailing)
                         }
 
                         GeometryReader { proxy in
@@ -379,17 +375,17 @@ struct OverviewCardContent: View {
                                     .frame(width: proxy.size.width * min(max(balance.percent / 100, 0), 1))
                             }
                         }
-                        .frame(height: 5)
+                        .frame(height: 5.5)
 
                         if let pacing = balance.pacingMessage {
                             Text(pacing)
-                                .font(.system(size: 9.5, weight: .medium, design: .rounded))
+                                .font(.system(size: 11.5, weight: .medium, design: .rounded))
                                 .foregroundStyle(Color.secondary)
                                 .lineLimit(1)
                         }
                     }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 5)
                     .background(RoundedRectangle(cornerRadius: 7).fill(Color.primary.opacity(0.03)))
                 }
             }
@@ -400,24 +396,24 @@ struct OverviewCardContent: View {
             // Footer
             HStack(alignment: .center) {
                 Text("Last checked: \(relativeTimeString(for: app.lastRefresh ?? .distantPast))")
-                    .font(.caption2)
+                    .font(.system(size: 12))
                     .foregroundStyle(Color.secondary)
                 Spacer()
                 Text("Refreshes every 5 min")
-                    .font(.caption2)
+                    .font(.system(size: 12))
                     .foregroundStyle(Color.secondary)
             }
             .padding(.horizontal, 16)
-            .padding(.bottom, 8)
+            .padding(.bottom, 10)
         }
-        .frame(width: 330, alignment: .leading)
+        .frame(width: 340, alignment: .leading)
     }
 }
 
 @MainActor final class OverviewCard: NSView {
     init(app: APIBarApp) {
         let host = VibrantHost(rootView: OverviewCardContent(app: app))
-        super.init(frame: NSRect(x: 0, y: 0, width: 330, height: 175))
+        super.init(frame: NSRect(x: 0, y: 0, width: 340, height: 185))
         host.frame = bounds
         addSubview(host)
         let height = ceil(host.fittingSize.height)
@@ -435,7 +431,7 @@ struct OverviewCardContent: View {
 @MainActor final class BalanceCard: NSView {
     init(_ balance: Balance, status: String? = nil) {
         let host = VibrantHost(rootView: BalanceCardContent(balance: balance, status: status))
-        super.init(frame: NSRect(x: 0, y: 0, width: 330, height: 175))
+        super.init(frame: NSRect(x: 0, y: 0, width: 340, height: 185))
         host.frame = bounds
         addSubview(host)
         let height = ceil(host.fittingSize.height)
@@ -683,7 +679,8 @@ struct OnboardingView: View {
     private var welcomeStep: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Track Your Usage, Automatically")
-                .font(.headline)
+                .font(.title3)
+                .fontWeight(.bold)
 
             VStack(alignment: .leading, spacing: 14) {
                 featureRow(icon: "chart.bar.xaxis", title: "Live Credit Gauges", description: "Monitor remaining balance and automatic 100% baseline usage across Vertex AI, Fireworks, Cerebras, Google AI Studio, Refuseless, Lutheos, and Crowbot.")
@@ -697,7 +694,7 @@ struct OnboardingView: View {
             .shadow(color: Color.black.opacity(0.03), radius: 2, x: 0, y: 1)
 
             Text("Setup takes under a minute. Next, choose which providers you want to monitor.")
-                .font(.footnote)
+                .font(.subheadline)
                 .foregroundStyle(Color.secondary)
         }
     }
@@ -707,8 +704,8 @@ struct OnboardingView: View {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Select Providers to Monitor")
-                        .font(.headline)
-                        .fontWeight(.semibold)
+                        .font(.title3)
+                        .fontWeight(.bold)
                     Text("Choose which natively supported providers to track in API Bar.")
                         .font(.subheadline)
                         .foregroundStyle(Color.secondary)
@@ -735,26 +732,24 @@ struct OnboardingView: View {
                                 .font(.system(size: 16))
                                 .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
 
-                            PaperProviderBadge(id: provider.id, name: provider.name, size: 24)
+                            PaperProviderBadge(id: provider.id, name: provider.name, size: 28)
 
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(provider.name)
-                                    .font(.subheadline)
-                                    .fontWeight(.semibold)
+                                    .font(.system(size: 14.5, weight: .semibold))
                                     .foregroundStyle(Color.primary)
                                 Text(providerSubtitle(for: provider.id))
-                                    .font(.caption2)
+                                    .font(.system(size: 12))
                                     .foregroundStyle(Color.secondary)
                             }
                             Spacer()
 
                             if isSelected {
                                 Text("Selected")
-                                    .font(.caption2)
-                                    .fontWeight(.semibold)
+                                    .font(.system(size: 11.5, weight: .bold))
                                     .foregroundStyle(Color.accentColor)
-                                    .padding(.horizontal, 7)
-                                    .padding(.vertical, 2)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 3)
                                     .background(Capsule().fill(Color.accentColor.opacity(0.12)))
                             }
                         }
@@ -1027,17 +1022,17 @@ struct OnboardingView: View {
     }
 
     private func featureRow(icon: String, title: String, description: String) -> some View {
-        HStack(alignment: .top, spacing: 12) {
+        HStack(alignment: .top, spacing: 14) {
             Image(systemName: icon)
-                .font(.system(size: 18, weight: .semibold))
+                .font(.system(size: 20, weight: .semibold))
                 .foregroundStyle(Color.accentColor)
-                .frame(width: 24, height: 24)
-            VStack(alignment: .leading, spacing: 2) {
+                .frame(width: 26, height: 26)
+            VStack(alignment: .leading, spacing: 3) {
                 Text(title)
-                    .font(.subheadline)
+                    .font(.body)
                     .fontWeight(.semibold)
                 Text(description)
-                    .font(.caption)
+                    .font(.subheadline)
                     .foregroundStyle(Color.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -1073,9 +1068,9 @@ struct SettingsPane: View {
             HStack {
                 HStack(spacing: 10) {
                     Image(nsImage: BrandMark.appIconImage(size: 32)).resizable().frame(width: 32, height: 32)
-                    Text("API Bar").font(.title2).fontWeight(.semibold).foregroundStyle(Color.primary)
+                    Text("API Bar").font(.title2).fontWeight(.bold).foregroundStyle(Color.primary)
                     Text("v\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "") (\(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""))")
-                        .font(.footnote).foregroundStyle(Color.secondary)
+                        .font(.subheadline).foregroundStyle(Color.secondary)
                 }
                 Spacer()
                 Button {
@@ -1112,10 +1107,10 @@ struct SettingsPane: View {
                         .foregroundStyle(Color.accentColor)
                     VStack(alignment: .leading, spacing: 2) {
                         Text("API Bar v\(ver) is available!")
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
+                            .font(.headline)
+                            .fontWeight(.bold)
                         Text(updater.statusMessage)
-                            .font(.caption)
+                            .font(.subheadline)
                             .foregroundStyle(Color.secondary)
                     }
                     Spacer()
@@ -1130,19 +1125,26 @@ struct SettingsPane: View {
             }
 
             // MARK: - Preferences Card
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 14) {
+                Text("Preferences")
+                    .font(.title3)
+                    .fontWeight(.bold)
+                    .foregroundStyle(Color.primary)
+
                 Toggle("Start at Login", isOn: Binding(get: { login }, set: { _ in
                     app.toggleLogin(); login = SMAppService.mainApp.status == .enabled
                 }))
+                .font(.body)
                 .foregroundStyle(Color.primary)
 
                 Divider().opacity(0.6)
 
                 VStack(alignment: .leading, spacing: 4) {
                     Toggle("Merge provider icons", isOn: Binding(get: { app.mergeIcons }, set: { app.setMergeIcons($0) }))
+                        .font(.body)
                         .foregroundStyle(Color.primary)
                     Text("Use one menu-bar item and switch providers inside its menu.")
-                        .font(.footnote)
+                        .font(.subheadline)
                         .foregroundStyle(Color.secondary)
                 }
 
@@ -1151,7 +1153,7 @@ struct SettingsPane: View {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack {
                         Text("Sort Providers")
-                            .font(.subheadline)
+                            .font(.body)
                             .fontWeight(.medium)
                             .foregroundStyle(Color.primary)
                         Spacer()
@@ -1164,10 +1166,10 @@ struct SettingsPane: View {
                             }
                         }
                         .pickerStyle(.segmented)
-                        .frame(width: 260)
+                        .frame(width: 270)
                     }
                     Text("Rearrange providers manually or sort them automatically across menus and menu-bar items.")
-                        .font(.footnote)
+                        .font(.subheadline)
                         .foregroundStyle(Color.secondary)
                 }
             }
@@ -1177,21 +1179,21 @@ struct SettingsPane: View {
             .shadow(color: Color.black.opacity(0.03), radius: 2, x: 0, y: 1)
 
             // MARK: - iCloud Sync Card
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 14) {
                 HStack(alignment: .center, spacing: 8) {
                     Image(systemName: "icloud.fill")
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.system(size: 16, weight: .bold))
                         .foregroundStyle(Color.accentColor)
                     Text("iCloud Sync")
-                        .font(.headline)
+                        .font(.title3)
+                        .fontWeight(.bold)
                         .foregroundStyle(Color.primary)
                     Spacer()
                     if !icloud.isAvailable {
                         HStack(spacing: 4) {
-                            Circle().fill(Color.orange).frame(width: 5, height: 5)
+                            Circle().fill(Color.orange).frame(width: 6, height: 6)
                             Text("Unavailable")
-                                .font(.caption2)
-                                .fontWeight(.semibold)
+                                .font(.system(size: 11.5, weight: .bold))
                         }
                         .foregroundStyle(Color.orange)
                         .padding(.horizontal, 8)
@@ -1202,11 +1204,10 @@ struct SettingsPane: View {
                             if icloud.isSyncing {
                                 ProgressView().controlSize(.mini)
                             } else {
-                                Circle().fill(Color.green).frame(width: 5, height: 5)
+                                Circle().fill(Color.green).frame(width: 6, height: 6)
                             }
                             Text(icloud.isSyncing ? "Syncing…" : "Active")
-                                .font(.caption2)
-                                .fontWeight(.semibold)
+                                .font(.system(size: 11.5, weight: .bold))
                         }
                         .foregroundStyle(Color.green)
                         .padding(.horizontal, 8)
@@ -1214,8 +1215,7 @@ struct SettingsPane: View {
                         .background(Capsule().fill(Color.green.opacity(0.12)))
                     } else {
                         Text("Off")
-                            .font(.caption2)
-                            .fontWeight(.semibold)
+                            .font(.system(size: 11.5, weight: .bold))
                             .foregroundStyle(Color.secondary)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 3)
@@ -1228,12 +1228,12 @@ struct SettingsPane: View {
                         get: { icloud.isEnabled },
                         set: { app.setICloudSyncEnabled($0) }
                     ))
-                    .font(.subheadline)
+                    .font(.body)
                     .foregroundStyle(Color.primary)
                     .disabled(!icloud.isAvailable)
 
                     Text("Keep your providers, custom endpoints, baseline targets, and sessions synchronized across all your Macs via iCloud Drive.")
-                        .font(.footnote)
+                        .font(.subheadline)
                         .foregroundStyle(Color.secondary)
                 }
 
@@ -1245,11 +1245,11 @@ struct SettingsPane: View {
                             get: { icloud.isOpenCodeSyncEnabled },
                             set: { icloud.setOpenCodeSyncEnabled($0) }
                         ))
-                        .font(.subheadline)
+                        .font(.body)
                         .foregroundStyle(Color.primary)
 
                         Text("Syncs ~/.config/opencode/opencode.json across devices via iCloud Drive.")
-                            .font(.footnote)
+                            .font(.subheadline)
                             .foregroundStyle(Color.secondary)
                     }
 
@@ -1258,7 +1258,7 @@ struct SettingsPane: View {
                     HStack(alignment: .center) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(icloud.statusMessage)
-                                .font(.caption)
+                                .font(.subheadline)
                                 .foregroundStyle(Color.secondary)
                         }
                         Spacer()
@@ -1284,7 +1284,7 @@ struct SettingsPane: View {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .foregroundStyle(Color.orange)
                         Text("iCloud Drive is not available. Turn on iCloud Drive in macOS System Settings to synchronize across devices.")
-                            .font(.caption)
+                            .font(.subheadline)
                             .foregroundStyle(Color.secondary)
                     }
                     .padding(8)
@@ -1299,15 +1299,15 @@ struct SettingsPane: View {
             browserSessionCard
 
             // MARK: - Providers Card
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 14) {
                 HStack(alignment: .center) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Monitored Providers (\(app.balances.count))")
-                            .font(.headline)
-                            .fontWeight(.semibold)
+                            .font(.title3)
+                            .fontWeight(.bold)
                             .foregroundStyle(Color.primary)
                         Text("Drag ≡ to reorder. 100% baseline updates automatically from payments.")
-                            .font(.caption)
+                            .font(.subheadline)
                             .foregroundStyle(Color.secondary)
                     }
                     Spacer()
@@ -1366,23 +1366,22 @@ struct SettingsPane: View {
                                             return NSItemProvider(object: balance.id as NSString)
                                         }
 
-                                    PaperProviderBadge(id: balance.id, name: balance.name, size: 24)
+                                    PaperProviderBadge(id: balance.id, name: balance.name, size: 28)
 
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(balance.name)
-                                            .font(.subheadline)
-                                            .fontWeight(.semibold)
+                                            .font(.system(size: 14.5, weight: .semibold))
                                             .foregroundStyle(Color.primary)
                                         HStack(spacing: 5) {
                                             if app.isConnected(balance.id) {
-                                                Circle().fill(Color.green).frame(width: 5, height: 5)
+                                                Circle().fill(Color.green).frame(width: 6, height: 6)
                                             } else if app.inFlight.contains(balance.id) {
-                                                Circle().fill(Color.orange).frame(width: 5, height: 5)
+                                                Circle().fill(Color.orange).frame(width: 6, height: 6)
                                             } else {
-                                                Circle().fill(Color.secondary.opacity(0.4)).frame(width: 5, height: 5)
+                                                Circle().fill(Color.secondary.opacity(0.4)).frame(width: 6, height: 6)
                                             }
                                             Text(app.providerStatus[balance.id] ?? "Not connected")
-                                                .font(.caption2)
+                                                .font(.system(size: 12))
                                                 .foregroundStyle(app.isConnected(balance.id) ? Color.secondary : (app.inFlight.contains(balance.id) ? Color.orange : Color.secondary.opacity(0.8)))
                                         }
                                     }
@@ -1412,9 +1411,9 @@ struct SettingsPane: View {
                                         app.removeProvider(id: balance.id)
                                     } label: {
                                         Image(systemName: "trash")
-                                            .font(.system(size: 11))
+                                            .font(.system(size: 13))
                                             .foregroundStyle(Color.secondary)
-                                            .frame(width: 18, height: 18)
+                                            .frame(width: 22, height: 22)
                                             .contentShape(Rectangle())
                                     }
                                     .buttonStyle(.plain)
@@ -1424,14 +1423,14 @@ struct SettingsPane: View {
                                 if balance.dynamicEndpoint != nil {
                                     HStack(spacing: 8) {
                                         Image(systemName: "key.fill")
-                                            .font(.caption2)
+                                            .font(.caption)
                                             .foregroundStyle(Color.secondary)
                                         TextField("Admin API Key (Bearer token)", text: Binding(
                                             get: { balance.dynamicAuthHeader ?? "" },
                                             set: { app.setAuthHeader($0, for: balance.id) }
                                         ))
                                         .textFieldStyle(.roundedBorder)
-                                        .font(.system(.caption, design: .monospaced))
+                                        .font(.system(size: 12.5, design: .monospaced))
 
                                         Button("Paste Key") {
                                             if let clip = NSPasteboard.general.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines), !clip.isEmpty {
@@ -1682,8 +1681,7 @@ struct SettingsPane: View {
             HStack(spacing: 5) {
                 Circle().fill(Color.orange).frame(width: 6, height: 6)
                 Text("Action Required")
-                    .font(.caption2)
-                    .fontWeight(.semibold)
+                    .font(.system(size: 11.5, weight: .bold))
                     .foregroundStyle(Color.orange)
             }
             .padding(.horizontal, 8)
@@ -1693,8 +1691,7 @@ struct SettingsPane: View {
             HStack(spacing: 5) {
                 Circle().fill(Color.green).frame(width: 6, height: 6)
                 Text("Full Disk Access")
-                    .font(.caption2)
-                    .fontWeight(.semibold)
+                    .font(.system(size: 11.5, weight: .bold))
                     .foregroundStyle(Color.green)
             }
             .padding(.horizontal, 8)
@@ -1704,8 +1701,7 @@ struct SettingsPane: View {
             HStack(spacing: 5) {
                 Circle().fill(Color.blue).frame(width: 6, height: 6)
                 Text("Folder Access")
-                    .font(.caption2)
-                    .fontWeight(.semibold)
+                    .font(.system(size: 11.5, weight: .bold))
                     .foregroundStyle(Color.blue)
             }
             .padding(.horizontal, 8)
@@ -1722,11 +1718,11 @@ struct SettingsPane: View {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundStyle(Color.orange)
                     Text("\(app.browserName) session access requires macOS permission.")
-                        .font(.subheadline)
+                        .font(.headline)
                         .fontWeight(.semibold)
                 }
                 Text("If you already turned Full Disk Access ON in macOS System Settings, click Relaunch API Bar to apply. You can also use Folder Access Only for instant, permanent access without System Settings.")
-                    .font(.caption)
+                    .font(.subheadline)
                     .foregroundStyle(Color.secondary)
                 HStack(spacing: 8) {
                     Button(app.braveAccessKind == .fullDisk ? "Full Disk Access Granted ✓" : "Grant Full Disk Access") {
@@ -1803,13 +1799,14 @@ struct SettingsPane: View {
 
     @ViewBuilder
     private var browserSessionCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .center, spacing: 8) {
                 Image(systemName: "globe")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.system(size: 16, weight: .bold))
                     .foregroundStyle(Color.accentColor)
                 Text("\(app.browserName) Browser Session")
-                    .font(.headline)
+                    .font(.title3)
+                    .fontWeight(.bold)
                     .foregroundStyle(Color.primary)
                 Spacer()
                 browserAccessBadge
@@ -1820,11 +1817,11 @@ struct SettingsPane: View {
             HStack(alignment: .center) {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Active Profile")
-                        .font(.subheadline)
-                        .fontWeight(.medium)
+                        .font(.body)
+                        .fontWeight(.semibold)
                         .foregroundStyle(Color.primary)
                     Text(app.braveProfileStatus)
-                        .font(.caption)
+                        .font(.subheadline)
                         .foregroundStyle(app.isBraveAccessBlocked ? Color.orange : Color.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }

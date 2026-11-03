@@ -924,7 +924,7 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
     func menuWillOpen(_ menu: NSMenu) {
         if menu.identifier?.rawValue == "merged" {
             menu.removeAllItems()
-            menu.minimumWidth = 330
+            menu.minimumWidth = 340
             let card = NSMenuItem()
             let content = MergedMenuView(app: self)
             mergedMenuView = content
@@ -956,7 +956,7 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         guard let index = balances.firstIndex(where: { $0.id == menu.identifier?.rawValue }) else { return }
         let b = balances[index]
         menu.removeAllItems()
-        menu.minimumWidth = 330
+        menu.minimumWidth = 340
         let card = NSMenuItem(); card.view = BalanceCard(b,status:providerStatus[b.id]); menu.addItem(card)
         menu.addItem(.separator())
         if AppUpdater.shared.updateAvailable, let ver = AppUpdater.shared.latestVersion {
@@ -964,15 +964,6 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
             menu.addItem(.separator())
         }
         if let error = appError { disabled(menu, "Save error: \(error)") }
-        let detail = NSMenuItem(title: "Usage Details", action: nil, keyEquivalent: "")
-        detail.image = NSImage(systemSymbolName: "chart.bar", accessibilityDescription: nil)
-        let submenu = NSMenu()
-        if !b.account.isEmpty { disabled(submenu, b.account) }
-        disabled(submenu, "100% = \(b.baseline.formatted(.currency(code: "USD")))")
-        disabled(submenu, "Checked \(relativeTimeString(for: b.updated))")
-        if let expires = b.expires { disabled(submenu, "Expires \(expires)") }
-        disabled(submenu, "Calculated from last verified balance")
-        detail.submenu = submenu; menu.addItem(detail)
         action(menu, "Dashboard…", #selector(openBilling(_:)), index, "arrow.up.right.square")
         let refreshItem = action(menu, "Refresh", #selector(refreshSingleProvider(_:)), index, "arrow.clockwise")
         refreshItem.keyEquivalent = "r"

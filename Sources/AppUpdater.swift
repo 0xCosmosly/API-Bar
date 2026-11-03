@@ -372,13 +372,13 @@ struct SoftwareUpdateView: View {
 
                 VStack(alignment: .leading, spacing: 5) {
                     Text("A new version of API Bar is available!")
-                        .font(.headline)
+                        .font(.title3)
                         .fontWeight(.bold)
                         .foregroundStyle(Color.primary)
 
                     let newVer = updater.latestVersion ?? "latest"
                     Text("API Bar \(newVer) is now available — you have \(updater.currentVersion). Would you like to download it now?")
-                        .font(.subheadline)
+                        .font(.body)
                         .foregroundStyle(Color.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -394,13 +394,13 @@ struct SoftwareUpdateView: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Text("Release Notes:")
-                        .font(.subheadline)
+                        .font(.headline)
                         .fontWeight(.semibold)
                         .foregroundStyle(Color.primary)
                     Spacer()
                     if let title = updater.releaseTitle, !title.isEmpty {
                         Text(title)
-                            .font(.caption)
+                            .font(.subheadline)
                             .foregroundStyle(Color.secondary)
                     }
                 }
@@ -534,62 +534,61 @@ struct RichReleaseNotesView: View {
                 switch block.kind {
                 case .h1(let text):
                     Text(inlineMarkdown(text))
+                        .font(.title2)
+                        .fontWeight(.bold)
+                        .foregroundStyle(Color.primary)
+                        .padding(.top, 8)
+                case .h2(let text):
+                    Text(inlineMarkdown(text))
                         .font(.title3)
                         .fontWeight(.bold)
                         .foregroundStyle(Color.primary)
                         .padding(.top, 6)
-                case .h2(let text):
-                    Text(inlineMarkdown(text))
-                        .font(.headline)
-                        .fontWeight(.bold)
-                        .foregroundStyle(Color.primary)
-                        .padding(.top, 5)
                 case .h3(let text):
                     Text(inlineMarkdown(text))
-                        .font(.subheadline)
+                        .font(.headline)
                         .fontWeight(.semibold)
                         .foregroundStyle(Color.primary)
-                        .padding(.top, 4)
+                        .padding(.top, 5)
                 case .h4(let text):
                     Text(inlineMarkdown(text))
-                        .font(.footnote)
+                        .font(.subheadline)
                         .fontWeight(.bold)
                         .foregroundStyle(Color.primary)
-                        .padding(.top, 2)
+                        .padding(.top, 3)
                 case .divider:
                     Divider()
-                        .padding(.vertical, 4)
+                        .padding(.vertical, 5)
                 case .bullet(let indent, let text):
-                    HStack(alignment: .top, spacing: 6) {
+                    HStack(alignment: .top, spacing: 8) {
                         Text(indent > 0 ? "◦" : "•")
-                            .font(.system(size: 11, weight: .bold))
+                            .font(.system(size: 13, weight: .bold))
                             .foregroundStyle(Color.secondary)
-                            .frame(width: 10, alignment: .center)
+                            .frame(width: 12, alignment: .center)
                         Text(inlineMarkdown(text))
-                            .font(.system(.footnote, design: .default))
+                            .font(.system(size: 13.5, weight: .regular))
                             .foregroundStyle(Color.primary)
-                            .lineSpacing(3)
+                            .lineSpacing(3.5)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     .padding(.leading, CGFloat(indent) * 16)
                 case .numbered(let number, let text):
-                    HStack(alignment: .top, spacing: 6) {
+                    HStack(alignment: .top, spacing: 8) {
                         Text(number)
-                            .font(.footnote)
-                            .fontWeight(.medium)
+                            .font(.system(size: 13.5, weight: .semibold))
                             .foregroundStyle(Color.secondary)
-                            .frame(minWidth: 16, alignment: .leading)
+                            .frame(minWidth: 18, alignment: .leading)
                         Text(inlineMarkdown(text))
-                            .font(.system(.footnote, design: .default))
+                            .font(.system(size: 13.5, weight: .regular))
                             .foregroundStyle(Color.primary)
-                            .lineSpacing(3)
+                            .lineSpacing(3.5)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 case .paragraph(let text):
                     Text(inlineMarkdown(text))
-                        .font(.system(.footnote, design: .default))
+                        .font(.system(size: 13.5, weight: .regular))
                         .foregroundStyle(Color.primary)
-                        .lineSpacing(3)
+                        .lineSpacing(3.5)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
