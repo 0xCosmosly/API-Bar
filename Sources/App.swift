@@ -441,7 +441,38 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         }
         do {
             try FileManager.default.createDirectory(at: output.deletingLastPathComponent(), withIntermediateDirectories: true)
-            let diagnostics: [String: Any] = ["appName": Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "", "bundleID": Bundle.main.bundleIdentifier ?? "", "activationPolicy": NSApp.activationPolicy().rawValue, "buttonFrames": items.map { NSStringFromRect($0.button?.frame ?? .zero) }, "windowFrames": items.map { NSStringFromRect($0.button?.window?.frame ?? .zero) }, "statusItemCount": items.count, "mergeIcons": mergeIcons, "mergedProvider": mergedProvider, "autosaveNames": items.map { $0.autosaveName ?? "" }, "accessibilityIdentifiers": items.map { $0.button?.accessibilityIdentifier() ?? "" }, "accessibilityLabels": items.map { $0.button?.accessibilityLabel() ?? "" }, "accessibilityValues": items.map { $0.button?.accessibilityValue() as? String ?? "" }, "imageSizes": items.map { [Double($0.button?.image?.size.width ?? 0), Double($0.button?.image?.size.height ?? 0)] }, "imageTemplates": items.map { $0.button?.image?.isTemplate ?? false }, "titles": items.compactMap { $0.button?.title }, "fontNames": items.compactMap { $0.button?.font?.fontName }, "fontSizes": items.compactMap { $0.button?.font?.pointSize }, "visible": items.map(\.isVisible), "loginStatus": String(describing: SMAppService.mainApp.status), "providerStatus": providerStatus, "backgroundRefreshFinished": lastRefresh != nil, "credentialPrompts": "explicit-connect-only", "menuTitles": items.compactMap { $0.menu?.items.map(\.title) }]
+            let diagnostics: [String: Any] = [
+                "appName": Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "",
+                "bundleID": Bundle.main.bundleIdentifier ?? "",
+                "braveAccessKind": braveAccessKind.rawValue,
+                "hasFullDiskAccess": BraveSessionImporter.hasFullDiskAccess(),
+                "fdaDebugLog": BraveSessionImporter.fdaDebugLog,
+                "isBraveAccessBlocked": isBraveAccessBlocked,
+                "selectedBraveProfileID": selectedBraveProfileID,
+                "braveProfileStatus": braveProfileStatus,
+                "availableProfilesCount": availableBraveProfiles.count,
+                "activationPolicy": NSApp.activationPolicy().rawValue,
+                "buttonFrames": items.map { NSStringFromRect($0.button?.frame ?? .zero) },
+                "windowFrames": items.map { NSStringFromRect($0.button?.window?.frame ?? .zero) },
+                "statusItemCount": items.count,
+                "mergeIcons": mergeIcons,
+                "mergedProvider": mergedProvider,
+                "autosaveNames": items.map { $0.autosaveName ?? "" },
+                "accessibilityIdentifiers": items.map { $0.button?.accessibilityIdentifier() ?? "" },
+                "accessibilityLabels": items.map { $0.button?.accessibilityLabel() ?? "" },
+                "accessibilityValues": items.map { $0.button?.accessibilityValue() as? String ?? "" },
+                "imageSizes": items.map { [Double($0.button?.image?.size.width ?? 0), Double($0.button?.image?.size.height ?? 0)] },
+                "imageTemplates": items.map { $0.button?.image?.isTemplate ?? false },
+                "titles": items.compactMap { $0.button?.title },
+                "fontNames": items.compactMap { $0.button?.font?.fontName },
+                "fontSizes": items.compactMap { $0.button?.font?.pointSize },
+                "visible": items.map(\.isVisible),
+                "loginStatus": String(describing: SMAppService.mainApp.status),
+                "providerStatus": providerStatus,
+                "backgroundRefreshFinished": lastRefresh != nil,
+                "credentialPrompts": "explicit-connect-only",
+                "menuTitles": items.compactMap { $0.menu?.items.map(\.title) }
+            ]
             if let data = try? JSONSerialization.data(withJSONObject: diagnostics, options: .prettyPrinted) { try? data.write(to: output, options: .atomic) }
         } catch { }
     }
@@ -599,6 +630,17 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
                     timer.invalidate()
                     self.fdaPollTimer = nil
                 }
+            }
+        }
+    }
+
+    func relaunchApp() {
+        let bundleURL = Bundle.main.bundleURL
+        let config = NSWorkspace.OpenConfiguration()
+        config.createsNewApplicationInstance = true
+        NSWorkspace.shared.openApplication(at: bundleURL, configuration: config) { _, _ in
+            DispatchQueue.main.async {
+                NSApp.terminate(nil)
             }
         }
     }

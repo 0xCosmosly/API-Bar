@@ -127,44 +127,83 @@ enum BraveSessionImporter {
         case blocked = "Action Required"
     }
 
+    static nonisolated(unsafe) var fdaDebugLog: [String] = []
+
     static func hasFullDiskAccess() -> Bool {
+        fdaDebugLog.removeAll()
         // 1. Test standard macOS locations requiring Full Disk Access
+        let safariBookmarks = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Safari/Bookmarks.plist")
+        do {
+            let h = try FileHandle(forReadingFrom: safariBookmarks)
+            try h.close()
+            fdaDebugLog.append("safariBookmarks: true")
+            return true
+        } catch {
+            fdaDebugLog.append("safariBookmarks error: \(error.localizedDescription)")
+        }
+
         let safariCloudTabs = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Safari/CloudTabs.db")
-        if (try? FileHandle(forReadingFrom: safariCloudTabs)) != nil {
+        do {
+            let h = try FileHandle(forReadingFrom: safariCloudTabs)
+            try h.close()
+            fdaDebugLog.append("safariCloudTabs: true")
             return true
+        } catch {
+            fdaDebugLog.append("safariCloudTabs error: \(error.localizedDescription)")
         }
+
         let userTCC = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/com.apple.TCC/TCC.db")
-        if (try? FileHandle(forReadingFrom: userTCC)) != nil {
+        do {
+            let h = try FileHandle(forReadingFrom: userTCC)
+            try h.close()
+            fdaDebugLog.append("userTCC: true")
             return true
+        } catch {
+            fdaDebugLog.append("userTCC error: \(error.localizedDescription)")
         }
+
         // 2. Test reading Local State in Brave default root
         let localState = defaultBrowserRoot.appendingPathComponent("Local State")
-        if let handle = try? FileHandle(forReadingFrom: localState) {
-            try? handle.close()
+        do {
+            let h = try FileHandle(forReadingFrom: localState)
+            try h.close()
+            fdaDebugLog.append("localState: true")
             return true
+        } catch {
+            fdaDebugLog.append("localState (\(localState.path)) error: \(error.localizedDescription)")
         }
+
         // 3. Test direct access to Brave cookie database
         for prof in ["Default", "Profile 1", "Profile 2", "Profile 3", "Profile 4", "Profile 5"] {
             for suffix in ["Network/Cookies", "Cookies"] {
                 let cookieFile = defaultBrowserRoot.appendingPathComponent(prof).appendingPathComponent(suffix)
                 if FileManager.default.fileExists(atPath: cookieFile.path) {
-                    if let handle = try? FileHandle(forReadingFrom: cookieFile) {
-                        try? handle.close()
+                    do {
+                        let h = try FileHandle(forReadingFrom: cookieFile)
+                        try h.close()
+                        fdaDebugLog.append("cookieFile: \(cookieFile.lastPathComponent) true")
                         return true
+                    } catch {
+                        fdaDebugLog.append("cookieFile (\(cookieFile.path)) error: \(error.localizedDescription)")
                     }
                 }
             }
         }
+
         // 4. Test direct access to Brave root directory
         var isDir: ObjCBool = false
         if FileManager.default.fileExists(atPath: defaultBrowserRoot.path, isDirectory: &isDir), isDir.boolValue {
             do {
                 let contents = try FileManager.default.contentsOfDirectory(atPath: defaultBrowserRoot.path)
+                fdaDebugLog.append("contentsOfDirectory: \(contents.count) items")
                 return !contents.isEmpty
             } catch {
-                return false
+                fdaDebugLog.append("contentsOfDirectory error: \(error.localizedDescription)")
             }
+        } else {
+            fdaDebugLog.append("defaultBrowserRoot does not exist or not dir: \(defaultBrowserRoot.path)")
         }
+
         return false
     }
 

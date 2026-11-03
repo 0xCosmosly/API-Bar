@@ -1028,16 +1028,18 @@ struct SettingsPane: View {
                         HStack(spacing: 6) {
                             Image(systemName: "exclamationmark.triangle.fill")
                                 .foregroundStyle(Color.orange)
-                            Text("Brave profile access is blocked by macOS.")
+                            Text("Brave session access requires macOS permission.")
                                 .font(.subheadline)
                                 .fontWeight(.semibold)
                         }
-                        Text("Grant folder access or Full Disk Access so API Bar can read your session cookies.")
+                        Text("If you already turned Full Disk Access ON in macOS System Settings, click Relaunch API Bar to apply. You can also use Folder Access Only for instant, permanent access without System Settings.")
                             .font(.caption)
                             .foregroundStyle(Color.secondary)
                         HStack(spacing: 8) {
                             Button("Grant Full Disk Access") { app.openFullDiskAccessSettings() }
                                 .buttonStyle(.borderedProminent)
+                                .controlSize(.small)
+                            Button("Relaunch API Bar") { app.relaunchApp() }
                                 .controlSize(.small)
                             Button("Folder Access Only") { app.chooseBraveProfile() }
                                 .controlSize(.small)
@@ -1074,8 +1076,13 @@ struct SettingsPane: View {
 
                 Divider()
 
-                HStack {
-                    Button("Choose Brave Profile…") { app.chooseBraveProfile() }
+                HStack(spacing: 8) {
+                    Button("Grant Full Disk Access") { app.openFullDiskAccessSettings() }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                    Button("Folder Access Only") { app.chooseBraveProfile() }
+                        .controlSize(.small)
+                    Button("Relaunch API Bar") { app.relaunchApp() }
                         .controlSize(.small)
                     Spacer()
                     Button {
@@ -1163,6 +1170,10 @@ struct SettingsPane: View {
                                         .frame(width: 18, height: 18)
                                         .contentShape(Rectangle())
                                         .help("Drag to reorder \(balance.name)")
+                                        .onDrag {
+                                            self.draggedBalance = balance
+                                            return NSItemProvider(object: balance.id as NSString)
+                                        }
 
                                     Image(nsImage: ProviderIcon.image(balance.id))
                                         .resizable()
@@ -1246,11 +1257,6 @@ struct SettingsPane: View {
                             .padding(.horizontal, 10)
                             .padding(.vertical, 7)
                             .background(RoundedRectangle(cornerRadius: 8).fill(Color(NSColor.controlBackgroundColor).opacity(0.6)))
-                            .contentShape(Rectangle())
-                            .onDrag {
-                                self.draggedBalance = balance
-                                return NSItemProvider(object: balance.id as NSString)
-                            }
                             .onDrop(of: [UTType.text], delegate: ProviderDropDelegate(item: balance, app: app, draggedItem: $draggedBalance))
                         }
                     }
@@ -1464,6 +1470,9 @@ struct SettingsPane: View {
             ManageProvidersSheet(app: app)
         }
         .onAppear {
+            app.refreshBraveProfiles()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             app.refreshBraveProfiles()
         }
     }

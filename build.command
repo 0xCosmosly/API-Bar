@@ -29,7 +29,7 @@ for src,dst in [(".cache/APIBar","MacOS/APIBar"),("Resources/Info.plist","Info.p
     (app/"Contents"/dst).write_bytes((root/src).read_bytes())
 (app/"Contents/MacOS/APIBar").chmod(0o755)
 PYBUILD
-codesign --force --sign - --identifier app.apibar.APIBar "$APP"
+codesign --force --sign - -r='designated => identifier "app.apibar.APIBar"' "$APP"
 codesign --verify --strict "$APP"
 ditto -c -k --norsrc --noextattr --keepParent "$APP" "$PWD/APIBar-app.zip"
 ditto --norsrc --noextattr "$APP" "$PWD/API Bar.app"
