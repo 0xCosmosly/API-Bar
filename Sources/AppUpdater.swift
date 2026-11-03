@@ -28,7 +28,7 @@ public final class AppUpdater: ObservableObject {
     private var lastCheckedDate: Date?
 
     public var currentVersion: String {
-        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.5.1"
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.5.0"
     }
 
     public struct ReleaseInfo {
@@ -407,12 +407,15 @@ struct SoftwareUpdateView: View {
 
                 ScrollView {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text(updater.releaseNotes ?? "No release notes available.")
-                            .font(.system(.footnote, design: .default))
-                            .foregroundStyle(Color.primary)
-                            .lineSpacing(4)
-                            .textSelection(.enabled)
-                            .frame(maxWidth: .infinity, alignment: .topLeading)
+                        if let notes = updater.releaseNotes, !notes.isEmpty {
+                            RichReleaseNotesView(markdown: notes)
+                                .textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .topLeading)
+                        } else {
+                            Text("No release notes available.")
+                                .font(.system(.footnote, design: .default))
+                                .foregroundStyle(Color.secondary)
+                        }
                     }
                     .padding(14)
                 }
@@ -463,5 +466,135 @@ struct SoftwareUpdateView: View {
             .background(Color(NSColor.windowBackgroundColor))
         }
         .frame(minWidth: 540, minHeight: 440)
+    }
+}
+
+// MARK: - Rich Markdown Release Notes View
+
+struct RichReleaseNotesView: View {
+    let markdown: String
+
+    struct Block: Identifiable {
+        let id = UUID()
+        enum Kind {
+            case h1(String)
+            case h2(String)
+            case h3(String)
+            case h4(String)
+            case divider
+            case bullet(indent: Int, text: String)
+            case numbered(number: String, text: String)
+            case paragraph(String)
+        }
+        let kind: Kind
+    }
+
+    var blocks: [Block] {
+        var result: [Block] = []
+        let lines = markdown.components(separatedBy: "\n")
+        for rawLine in lines {
+            let trimmed = rawLine.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty { continue }
+
+            if trimmed.hasPrefix("#### ") {
+                result.append(Block(kind: .h4(String(trimmed.dropFirst(5)))))
+            } else if trimmed.hasPrefix("### ") {
+                result.append(Block(kind: .h3(String(trimmed.dropFirst(4)))))
+            } else if trimmed.hasPrefix("## ") {
+                result.append(Block(kind: .h2(String(trimmed.dropFirst(3)))))
+            } else if trimmed.hasPrefix("# ") {
+                result.append(Block(kind: .h1(String(trimmed.dropFirst(2)))))
+            } else if trimmed == "---" || trimmed == "***" || (trimmed.allSatisfy({ $0 == "-" || $0 == "_" }) && trimmed.count >= 3) {
+                result.append(Block(kind: .divider))
+            } else if let match = rawLine.range(of: #"^(\s*)([•\-\*])\s+"#, options: .regularExpression) {
+                let prefix = String(rawLine[match])
+                let leadingSpaces = prefix.prefix(while: { $0 == " " }).count
+                let indent = leadingSpaces >= 4 ? 2 : (leadingSpaces >= 2 ? 1 : 0)
+                let text = String(rawLine[match.upperBound...])
+                result.append(Block(kind: .bullet(indent: indent, text: text)))
+            } else if let numRange = trimmed.range(of: #"^\d+\.\s+"#, options: .regularExpression) {
+                let num = String(trimmed[numRange])
+                let text = String(trimmed[numRange.upperBound...])
+                result.append(Block(kind: .numbered(number: num, text: text)))
+            } else {
+                result.append(Block(kind: .paragraph(trimmed)))
+            }
+        }
+        return result
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ForEach(blocks) { block in
+                switch block.kind {
+                case .h1(let text):
+                    Text(inlineMarkdown(text))
+                        .font(.title3)
+                        .fontWeight(.bold)
+                        .foregroundStyle(Color.primary)
+                        .padding(.top, 6)
+                case .h2(let text):
+                    Text(inlineMarkdown(text))
+                        .font(.headline)
+                        .fontWeight(.bold)
+                        .foregroundStyle(Color.primary)
+                        .padding(.top, 5)
+                case .h3(let text):
+                    Text(inlineMarkdown(text))
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(Color.primary)
+                        .padding(.top, 4)
+                case .h4(let text):
+                    Text(inlineMarkdown(text))
+                        .font(.footnote)
+                        .fontWeight(.bold)
+                        .foregroundStyle(Color.primary)
+                        .padding(.top, 2)
+                case .divider:
+                    Divider()
+                        .padding(.vertical, 4)
+                case .bullet(let indent, let text):
+                    HStack(alignment: .top, spacing: 6) {
+                        Text(indent > 0 ? "◦" : "•")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(Color.secondary)
+                            .frame(width: 10, alignment: .center)
+                        Text(inlineMarkdown(text))
+                            .font(.system(.footnote, design: .default))
+                            .foregroundStyle(Color.primary)
+                            .lineSpacing(3)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(.leading, CGFloat(indent) * 16)
+                case .numbered(let number, let text):
+                    HStack(alignment: .top, spacing: 6) {
+                        Text(number)
+                            .font(.footnote)
+                            .fontWeight(.medium)
+                            .foregroundStyle(Color.secondary)
+                            .frame(minWidth: 16, alignment: .leading)
+                        Text(inlineMarkdown(text))
+                            .font(.system(.footnote, design: .default))
+                            .foregroundStyle(Color.primary)
+                            .lineSpacing(3)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                case .paragraph(let text):
+                    Text(inlineMarkdown(text))
+                        .font(.system(.footnote, design: .default))
+                        .foregroundStyle(Color.primary)
+                        .lineSpacing(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+
+    private func inlineMarkdown(_ text: String) -> AttributedString {
+        if let attr = try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)) {
+            return attr
+        }
+        return AttributedString(text)
     }
 }

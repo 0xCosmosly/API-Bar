@@ -229,6 +229,9 @@ API Bar includes an in-app updater that monitors GitHub Releases:
 4. Draft a release on GitHub matching tag `vX.Y.Z` and attach `APIBar-app.zip`.
 5. Running instances will automatically discover the update, show the changelog, and allow users to install it in place.
 
+> [!NOTE]
+> When updating GitHub multiple times in a single day, stay on the same release version (e.g. `v0.5.0`), updating the existing release notes and uploading the refreshed `APIBar-app.zip` via `gh release upload <tag> APIBar-app.zip --clobber` to prevent version number churn.
+
 ---
 
 ## ❓ FAQ
