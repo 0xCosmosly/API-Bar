@@ -115,10 +115,10 @@ enum ReadingValidation {
             return (url.host == "cloud.cerebras.ai" || url.host == "api.cerebras.ai") && (balance.account.isEmpty || r.account == balance.account)
         }
         if r.provider == "refuseless" {
-            return (url.host == "refuseless.com" || url.host == "api.refuseless.com" || url.host == "console.refuseless.com") && (balance.account.isEmpty || r.account == balance.account)
+            return (url.host == "refuseless.com" || url.host == "api.refuseless.com" || url.host == "console.refuseless.com") && (balance.account.isEmpty || balance.account.hasSuffix(" Account") || r.account == balance.account)
         }
         if r.provider == "lutheos" {
-            return (url.host == "lutheos.com" || url.host == "api.lutheos.com") && (balance.account.isEmpty || r.account == balance.account)
+            return (url.host == "lutheos.com" || url.host == "api.lutheos.com") && (balance.account.isEmpty || balance.account.hasSuffix(" Account") || r.account == balance.account)
         }
         if let endpoint = balance.dynamicEndpoint, let dynamicURL = URL(string: endpoint) {
             return url.host == dynamicURL.host

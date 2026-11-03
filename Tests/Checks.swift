@@ -198,6 +198,13 @@ import Security
         let (htmlBal, htmlBase, htmlAcct) = try LutheosProvider.parse(html: "<a class=\"drawer-balance\" href=\"/billing\"><span class=\"balance-label\">Balance</span><span class=\"balance-figure\">$42.50</span></a><script>\"email\":\"dev@lutheos.com\",\"balance\":42.5</script>")
         precondition(htmlBal == 42.50 && htmlBase == 50.0 && htmlAcct == "dev@lutheos.com")
 
+        // Test real Lutheos SvelteKit devalue payload with index dereferencing
+        let lutheosDevalue = "{\"type\":\"data\",\"nodes\":[{\"type\":\"data\",\"data\":[{\"siteOrigin\":1},\"https://lutheos.com\"]},{\"type\":\"data\",\"data\":[{\"user\":1,\"workspaces\":5,\"accountCredit\":9},{\"email\":3},\"Developer\",\"user@lutheos.com\",\"https://lh3.googleusercontent.com\",[6],{\"id\":7,\"name\":8,\"balance\":9},\"ws-id\",\"Personal\",8.981174]},{\"type\":\"data\",\"data\":[{\"balance\":1,\"creditedTotal\":3},8.981174,0,9]}]}"
+        let (devalBal, devalBase, devalAcct) = try LutheosProvider.parse(data: Data(lutheosDevalue.utf8), url: "https://lutheos.com/billing/__data.json")
+        precondition(devalBal == 8.981174, "Devalue balance must be 8.981174, got \(devalBal)")
+        precondition(devalBase == 9.0, "Devalue baseline must be 9.0, got \(devalBase)")
+        precondition(devalAcct == "user@lutheos.com", "Devalue account must be user@lutheos.com, got \(devalAcct)")
+
         // Real console payload: the RSC `balance`/`spentTotal` integers are
         // micro-dollars and the billing ledger reports cents. Reading the
         // micro-dollar balance as dollars produced a $24,947,613 total.

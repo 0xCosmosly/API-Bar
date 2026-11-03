@@ -1,5 +1,11 @@
 import AppKit
 
+let percentageYellowNSColor = NSColor(name: nil, dynamicProvider: { appearance in
+    appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        ? NSColor.systemYellow
+        : NSColor(srgbRed: 180/255.0, green: 120/255.0, blue: 0/255.0, alpha: 1.0)
+})
+
 func providerAccentNSColor(_ id: String) -> NSColor {
     switch id {
     case "vertex", "aistudio":
@@ -141,7 +147,13 @@ struct ProviderTabItem: Equatable {
                 )
                 let fillPath = NSBezierPath(roundedRect: fillRect, xRadius: barHeight / 2, yRadius: barHeight / 2)
                 let fillColor: NSColor
-                if tabItem.percent < 20 && tabItem.isLive {
+                if tabItem.percent >= 80 && tabItem.isLive {
+                    fillColor = NSColor.systemGreen
+                } else if tabItem.percent >= 20 && tabItem.isLive {
+                    fillColor = NSColor.secondaryLabelColor
+                } else if tabItem.percent >= 10 && tabItem.isLive {
+                    fillColor = percentageYellowNSColor
+                } else if tabItem.isLive {
                     fillColor = NSColor.systemRed
                 } else {
                     fillColor = accentColor

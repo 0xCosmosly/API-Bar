@@ -24,6 +24,18 @@ func providerAccentColor(_ id: String) -> Color {
     }
 }
 
+func percentageColor(for percent: Double) -> Color {
+    if percent >= 80 {
+        return Color.green
+    } else if percent >= 20 {
+        return Color(NSColor.secondaryLabelColor)
+    } else if percent >= 10 {
+        return Color(nsColor: percentageYellowNSColor)
+    } else {
+        return Color.red
+    }
+}
+
 // MARK: - Paper Design System Components
 
 struct PaperProviderBadge: View {
@@ -198,14 +210,13 @@ struct BalanceCardContent: View {
                 }
                 Spacer(minLength: 4)
                 if balance.baseline > 0 {
-                    let isLow = balance.percent < 20
-                    let tint = isLow ? Color.red : Color(NSColor.secondaryLabelColor)
+                    let tint = percentageColor(for: balance.percent)
                     Text(balance.percentageLabel)
                         .font(.system(size: 13, weight: .bold, design: .rounded))
                         .foregroundStyle(tint)
                         .padding(.horizontal, 7)
                         .padding(.vertical, 2)
-                        .background(Capsule().fill(tint.opacity(isLow ? 0.14 : 0.08)))
+                        .background(Capsule().fill(tint.opacity(balance.percent >= 80 || balance.percent < 20 ? 0.14 : 0.08)))
                 }
             }
             .padding(.horizontal, 16)
@@ -229,7 +240,7 @@ struct BalanceCardContent: View {
                 GeometryReader { proxy in
                     ZStack(alignment: .leading) {
                         Capsule().fill(Color.primary.opacity(0.08))
-                        Capsule().fill(balance.percent < 20 ? Color.red : providerAccentColor(balance.id))
+                        Capsule().fill(percentageColor(for: balance.percent))
                             .frame(width: proxy.size.width * min(max(balance.percent / 100, 0), 1))
                     }
                 }
@@ -306,14 +317,13 @@ struct OverviewCardContent: View {
                         .foregroundStyle(Color.secondary)
                     Spacer()
                     if totalBaseline > 0 {
-                        let isLow = totalPercent < 20
-                        let tint = isLow ? Color.red : Color(NSColor.secondaryLabelColor)
+                        let tint = percentageColor(for: totalPercent)
                         Text(aggregatePercentText)
                             .font(.system(size: 13, weight: .bold, design: .rounded))
                             .foregroundStyle(tint)
                             .padding(.horizontal, 7)
                             .padding(.vertical, 2)
-                            .background(Capsule().fill(tint.opacity(isLow ? 0.14 : 0.08)))
+                            .background(Capsule().fill(tint.opacity(totalPercent >= 80 || totalPercent < 20 ? 0.14 : 0.08)))
                     }
                 }
                 HStack {
@@ -346,8 +356,7 @@ struct OverviewCardContent: View {
                                 .fontWeight(.medium)
                                 .foregroundStyle(Color.primary)
 
-                            let isLow = balance.percent < 20
-                            let tint = isLow ? Color.red : Color(NSColor.secondaryLabelColor)
+                            let tint = percentageColor(for: balance.percent)
                             Text(balance.percentageLabel)
                                 .font(.caption2)
                                 .fontWeight(.bold)
@@ -358,7 +367,7 @@ struct OverviewCardContent: View {
                         GeometryReader { proxy in
                             ZStack(alignment: .leading) {
                                 Capsule().fill(Color.primary.opacity(0.08))
-                                Capsule().fill(balance.percent < 20 ? Color.red : providerAccentColor(balance.id))
+                                Capsule().fill(percentageColor(for: balance.percent))
                                     .frame(width: proxy.size.width * min(max(balance.percent / 100, 0), 1))
                             }
                         }

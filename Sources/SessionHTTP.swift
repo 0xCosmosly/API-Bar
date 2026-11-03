@@ -760,7 +760,7 @@ struct RefuselessProvider: BalanceProvider {
             throw ConnectorError.message("Could not parse Refuseless balance from website.")
         }
 
-        let resolvedAccount = !account.isEmpty ? account : (!parsed.account.isEmpty ? parsed.account : "Refuseless Account")
+        let resolvedAccount = (!account.isEmpty && !account.hasSuffix(" Account")) ? account : (!parsed.account.isEmpty ? parsed.account : "Refuseless Account")
 
         return Reading(
             provider: providerID,
@@ -799,7 +799,11 @@ struct LutheosProvider: BalanceProvider {
     }
 
     static func parse(json: Any) -> (remaining: Double, baseline: Double, account: String)? {
+        guard let root = json as? [String: Any] else { return nil }
+
         var email = ""
+        var remaining: Double? = nil
+        var baseline: Double? = nil
 
         func findEmail(in obj: Any) {
             if let dict = obj as? [String: Any] {
@@ -816,11 +820,10 @@ struct LutheosProvider: BalanceProvider {
                 for v in arr { findEmail(in: v) }
             }
         }
-        findEmail(in: json)
 
         func findBalance(in obj: Any) -> Double? {
             if let dict = obj as? [String: Any] {
-                for k in ["balance", "balance_usd", "credit_balance"] {
+                for k in ["accountCredit", "balance_usd", "credit_balance", "balance"] {
                     if let val = dict[k] {
                         if let d = val as? Double { return d }
                         if let i = val as? Int { return Double(i) }
@@ -835,14 +838,7 @@ struct LutheosProvider: BalanceProvider {
                 if let workspaces = dict["workspaces"] as? [[String: Any]], let first = workspaces.first {
                     if let b = first["balance"] as? Double { return b }
                     if let b = first["balance_usd"] as? Double { return b }
-                    if let b = first["balance"] as? Int { return Double(b) }
-                }
-                if let nodes = dict["nodes"] as? [[String: Any]] {
-                    for node in nodes {
-                        if let nodeData = node["data"] {
-                            if let b = findBalance(in: nodeData) { return b }
-                        }
-                    }
+                    if let b = first["balance_usd"] as? Int { return Double(b) }
                 }
                 for v in dict.values {
                     if let b = findBalance(in: v) { return b }
@@ -855,9 +851,98 @@ struct LutheosProvider: BalanceProvider {
             return nil
         }
 
-        if let balance = findBalance(in: json) {
-            let ref = PaymentReference.inferTier(for: balance)
-            return (remaining: balance, baseline: max(ref, balance), account: email)
+        func findBaseline(in obj: Any) -> Double? {
+            if let dict = obj as? [String: Any] {
+                for k in ["creditedTotal", "credited_total", "total_credited", "deposited_usd", "topup_total"] {
+                    if let val = dict[k] {
+                        if let d = val as? Double, d > 0 { return d }
+                        if let i = val as? Int, i > 0 { return Double(i) }
+                        if let s = val as? String, let d = Double(s), d > 0 { return d }
+                    }
+                }
+                if let spend = dict["lifetimeSpend"] as? Double, let bal = dict["balance"] as? Double, spend + bal > 0 {
+                    return spend + bal
+                }
+                for v in dict.values {
+                    if let b = findBaseline(in: v) { return b }
+                }
+            } else if let arr = obj as? [Any] {
+                for item in arr {
+                    if let b = findBaseline(in: item) { return b }
+                }
+            }
+            return nil
+        }
+
+        // Strategy A: SvelteKit devalue node array dereferencing
+        if let nodes = root["nodes"] as? [[String: Any]] {
+            func deref(_ val: Any, in data: [Any]) -> Any {
+                if let idx = val as? Int, idx >= 0 && idx < data.count {
+                    return data[idx]
+                }
+                return val
+            }
+
+            for node in nodes {
+                if let dataArr = node["data"] as? [Any], !dataArr.isEmpty {
+                    let rootObj = dataArr[0]
+                    if let dict = rootObj as? [String: Any] {
+                        if let uRef = dict["user"], let uDict = deref(uRef, in: dataArr) as? [String: Any] {
+                            if let eRef = uDict["email"], let e = deref(eRef, in: dataArr) as? String, e.contains("@") {
+                                email = e
+                            }
+                        }
+                        if let credRef = dict["accountCredit"] {
+                            let credVal = deref(credRef, in: dataArr)
+                            if let d = credVal as? Double { remaining = d }
+                            else if let i = credVal as? Int { remaining = Double(i) }
+                        }
+                        if let wsRef = dict["workspaces"], let wsArr = deref(wsRef, in: dataArr) as? [Any] {
+                            for wsItem in wsArr {
+                                let wsObj = deref(wsItem, in: dataArr)
+                                if let wsDict = wsObj as? [String: Any], let balRef = wsDict["balance"] {
+                                    let balVal = deref(balRef, in: dataArr)
+                                    if let d = balVal as? Double { remaining = d }
+                                    else if let i = balVal as? Int { remaining = Double(i) }
+                                }
+                            }
+                        }
+                        if let balRef = dict["balance"] {
+                            let balVal = deref(balRef, in: dataArr)
+                            if let d = balVal as? Double { remaining = d }
+                            else if let i = balVal as? Int { remaining = Double(i) }
+                        }
+                        if let credRef = dict["creditedTotal"] {
+                            let credVal = deref(credRef, in: dataArr)
+                            if let d = credVal as? Double, d > 0 { baseline = d }
+                            else if let i = credVal as? Int, i > 0 { baseline = Double(i) }
+                        }
+                        if let spendRef = dict["lifetimeSpend"] {
+                            let spendVal = deref(spendRef, in: dataArr)
+                            let spend: Double? = (spendVal as? Double) ?? (spendVal as? Int).map { Double($0) }
+                            if let s = spend, let bal = remaining, s + bal > 0 {
+                                if baseline == nil { baseline = s + bal }
+                            }
+                        }
+                    }
+                } else if let dict = node["data"] as? [String: Any] {
+                    findEmail(in: dict)
+                    if let b = findBalance(in: dict) { remaining = b }
+                    if let base = findBaseline(in: dict) { baseline = base }
+                }
+            }
+        }
+
+        // Strategy B: General object inspection
+        if remaining == nil {
+            findEmail(in: root)
+            remaining = findBalance(in: root)
+            baseline = findBaseline(in: root)
+        }
+
+        if let balance = remaining {
+            let base = baseline ?? PaymentReference.inferTier(for: balance)
+            return (remaining: balance, baseline: max(base, balance), account: email)
         }
         return nil
     }
@@ -866,34 +951,53 @@ struct LutheosProvider: BalanceProvider {
         let nsHtml = html as NSString
         let range = NSRange(location: 0, length: nsHtml.length)
 
-        // Pattern 1: balance-figure in drawer or billing card
-        let balanceFigureRegex = try? NSRegularExpression(pattern: #"class=["'][^"']*balance-figure[^"']*["']>\s*\$?([0-9][0-9,]*(?:\.[0-9]+)?)"#)
-        if let match = balanceFigureRegex?.firstMatch(in: html, range: range), match.numberOfRanges > 1 {
+        var balance: Double? = nil
+        var baseline: Double? = nil
+
+        // Pattern 1: <span class="sr ...">$8.98</span>
+        let srRegex = try? NSRegularExpression(pattern: #"<span class="sr[^"]*">\s*\$?([0-9][0-9,]*(?:\.[0-9]+)?)\s*</span>"#)
+        if let match = srRegex?.firstMatch(in: html, range: range), match.numberOfRanges > 1 {
             let rawStr = nsHtml.substring(with: match.range(at: 1)).replacingOccurrences(of: ",", with: "")
-            if let val = Double(rawStr) {
-                let ref = PaymentReference.inferTier(for: val)
-                return (remaining: val, baseline: max(ref, val), account: extractEmail(from: html))
+            if let val = Double(rawStr) { balance = val }
+        }
+
+        // Pattern 2: embedded SvelteKit serialized JSON accountCredit:8.98 or "balance":8.98
+        if balance == nil {
+            let jsonBalanceRegex = try? NSRegularExpression(pattern: #"(?:accountCredit|balance(?:_usd)?)"?\s*[:=]\s*([0-9]+(?:\.[0-9]+)?)"#)
+            if let match = jsonBalanceRegex?.firstMatch(in: html, range: range), match.numberOfRanges > 1 {
+                let rawStr = nsHtml.substring(with: match.range(at: 1))
+                if let val = Double(rawStr) { balance = val }
             }
         }
 
-        // Pattern 2: embedded SvelteKit serialized JSON
-        let jsonBalanceRegex = try? NSRegularExpression(pattern: #""balance(?:_usd)?"\s*:\s*([0-9]+(?:\.[0-9]+)?)"#)
-        if let match = jsonBalanceRegex?.firstMatch(in: html, range: range), match.numberOfRanges > 1 {
+        // Pattern 3: balance-figure in drawer or billing card
+        if balance == nil {
+            let balanceFigureRegex = try? NSRegularExpression(pattern: #"class=["'][^"']*balance-figure[^"']*["']>\s*\$?([0-9][0-9,]*(?:\.[0-9]+)?)"#)
+            if let match = balanceFigureRegex?.firstMatch(in: html, range: range), match.numberOfRanges > 1 {
+                let rawStr = nsHtml.substring(with: match.range(at: 1)).replacingOccurrences(of: ",", with: "")
+                if let val = Double(rawStr) { balance = val }
+            }
+        }
+
+        // Baseline Pattern 1: creditedTotal:9 or "creditedTotal":9
+        let credRegex = try? NSRegularExpression(pattern: #"creditedTotal"?\s*[:=]\s*([0-9]+(?:\.[0-9]+)?)"#)
+        if let match = credRegex?.firstMatch(in: html, range: range), match.numberOfRanges > 1 {
             let rawStr = nsHtml.substring(with: match.range(at: 1))
-            if let val = Double(rawStr) {
-                let ref = PaymentReference.inferTier(for: val)
-                return (remaining: val, baseline: max(ref, val), account: extractEmail(from: html))
+            if let val = Double(rawStr), val > 0 { baseline = val }
+        }
+
+        // Baseline Pattern 2: tone-credited amount
+        if baseline == nil {
+            let topupRegex = try? NSRegularExpression(pattern: #"tone-credited[^"']*">\s*\+\$([0-9][0-9,]*(?:\.[0-9]+)?)"#)
+            if let match = topupRegex?.firstMatch(in: html, range: range), match.numberOfRanges > 1 {
+                let rawStr = nsHtml.substring(with: match.range(at: 1)).replacingOccurrences(of: ",", with: "")
+                if let val = Double(rawStr), val > 0 { baseline = val }
             }
         }
 
-        // Pattern 3: Heading Balance followed by amount
-        let headingRegex = try? NSRegularExpression(pattern: #"(?s)Balance\s*</h2>.*?\$([0-9][0-9,]*(?:\.[0-9]+)?)"#)
-        if let match = headingRegex?.firstMatch(in: html, range: range), match.numberOfRanges > 1 {
-            let rawStr = nsHtml.substring(with: match.range(at: 1)).replacingOccurrences(of: ",", with: "")
-            if let val = Double(rawStr) {
-                let ref = PaymentReference.inferTier(for: val)
-                return (remaining: val, baseline: max(ref, val), account: extractEmail(from: html))
-            }
+        if let bal = balance {
+            let base = baseline ?? PaymentReference.inferTier(for: bal)
+            return (remaining: bal, baseline: max(base, bal), account: extractEmail(from: html))
         }
 
         throw ConnectorError.message("Could not parse Lutheos balance from website.")
@@ -966,7 +1070,7 @@ struct LutheosProvider: BalanceProvider {
         }
 
         try? await http.persist()
-        let resolvedAccount = !account.isEmpty ? account : (!parsed.account.isEmpty ? parsed.account : "Lutheos Account")
+        let resolvedAccount = (!account.isEmpty && !account.hasSuffix(" Account")) ? account : (!parsed.account.isEmpty ? parsed.account : "Lutheos Account")
 
         return Reading(
             provider: providerID,

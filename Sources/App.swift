@@ -817,7 +817,7 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
     }
     func apply(_ r: Reading) {
         guard ReadingValidation.valid(r,balances:balances), let i = balances.firstIndex(where:{$0.id == r.provider}) else { providerStatus[r.provider] = "A balance from a different account or source was rejected."; return }
-        if balances[i].account.isEmpty { balances[i].account = r.account }
+        if balances[i].account.isEmpty || balances[i].account.hasSuffix(" Account") { balances[i].account = r.account }
         let oldRemaining = balances[i].remaining
         balances[i].remaining = r.remaining; balances[i].updated = Date(); balances[i].live = true; balances[i].expires = r.expires
         if r.provider == "refuseless" || r.provider == "lutheos" {
