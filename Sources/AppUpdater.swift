@@ -28,7 +28,7 @@ public final class AppUpdater: ObservableObject {
     private var lastCheckedDate: Date?
 
     public var currentVersion: String {
-        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.4.9"
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.5.0"
     }
 
     public struct ReleaseInfo {
@@ -285,11 +285,30 @@ public final class AppUpdater: ObservableObject {
 
             installStatusText = "Replacing application bundle…"
             let backupURL = destURL.deletingLastPathComponent().appendingPathComponent("APIBar-backup-\(UUID().uuidString).app")
+            var didBackup = false
             if FileManager.default.fileExists(atPath: destURL.path) {
-                _ = try? FileManager.default.moveItem(at: destURL, to: backupURL)
+                try FileManager.default.moveItem(at: destURL, to: backupURL)
+                didBackup = true
             }
-            try FileManager.default.copyItem(at: newAppBundle, to: destURL)
-            _ = try? FileManager.default.removeItem(at: backupURL)
+
+            do {
+                try FileManager.default.copyItem(at: newAppBundle, to: destURL)
+                if didBackup {
+                    _ = try? FileManager.default.removeItem(at: backupURL)
+                }
+            } catch {
+                if didBackup && FileManager.default.fileExists(atPath: backupURL.path) {
+                    _ = try? FileManager.default.moveItem(at: backupURL, to: destURL)
+                }
+                throw error
+            }
+
+            // Strip any quarantine attribute to ensure Gatekeeper permits in-place relaunch
+            let xattr = Process()
+            xattr.executableURL = URL(fileURLWithPath: "/usr/bin/xattr")
+            xattr.arguments = ["-dr", "com.apple.quarantine", destURL.path]
+            try? xattr.run()
+            xattr.waitUntilExit()
 
             installStatusText = "Relaunching API Bar…"
             let relaunch = Process()
