@@ -198,7 +198,7 @@ public final class AppUpdater: ObservableObject {
         }
     }
 
-    public static func isVersion(_ v1: String, newerThan v2: String) -> Bool {
+    nonisolated public static func isVersion(_ v1: String, newerThan v2: String) -> Bool {
         let clean1 = v1.hasPrefix("v") ? String(v1.dropFirst()) : v1
         let clean2 = v2.hasPrefix("v") ? String(v2.dropFirst()) : v2
         let parts1 = clean1.split(separator: ".").compactMap { Int($0.filter { $0.isNumber }) }
@@ -443,6 +443,11 @@ struct SoftwareUpdateView: View {
                     }
                     .controlSize(.regular)
                 }
+
+                Button("View All Versions…") {
+                    NSApp.sendAction(NSSelectorFromString("showChangelog"), to: nil, from: nil)
+                }
+                .controlSize(.regular)
 
                 Spacer()
 

@@ -281,6 +281,7 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
     var appError: String?
     var settingsWindow: NSWindow?
     var onboardingWindow: NSWindow?
+    var changelogWindow: NSWindow?
     var mergedMenuView: MergedMenuView?
     /// Test/CLI harnesses set `APIBAR_DATA_DIR` so they never overwrite the
     /// user's real balance file.
@@ -946,6 +947,7 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
             if SMAppService.mainApp.status == .requiresApproval { disabled(menu, "Login item needs approval in System Settings") }
             action(menu, "Settings…", #selector(settings), 0, "gearshape").keyEquivalent = ","
             action(menu, "Check for Updates…", #selector(checkForUpdates), 0, "arrow.triangle.2.circlepath")
+            action(menu, "Changelog…", #selector(showChangelog), 0, "clock.arrow.circlepath")
             action(menu, "About API Bar…", #selector(about), 0, "info.circle")
             menu.addItem(.separator())
             action(menu, "Quit API Bar", #selector(quit), 0, "power").keyEquivalent = "q"
@@ -983,6 +985,7 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         if SMAppService.mainApp.status == .requiresApproval { disabled(menu, "Login item needs approval in System Settings") }
         action(menu, "Settings…", #selector(settings), index, "gearshape").keyEquivalent = ","
         action(menu, "Check for Updates…", #selector(checkForUpdates), index, "arrow.triangle.2.circlepath")
+        action(menu, "Changelog…", #selector(showChangelog), index, "clock.arrow.circlepath")
         action(menu, "About API Bar…", #selector(about), index, "info.circle")
         menu.addItem(.separator())
         action(menu, "Quit API Bar", #selector(quit), index, "power").keyEquivalent = "q"
@@ -1066,6 +1069,9 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         let openSettings = NSMenuItem(title: "Settings…", action: #selector(settings), keyEquivalent: ",")
         openSettings.target = self
         appMenu.addItem(openSettings)
+        let openChangelog = NSMenuItem(title: "Changelog…", action: #selector(showChangelog), keyEquivalent: "")
+        openChangelog.target = self
+        appMenu.addItem(openChangelog)
         appMenu.addItem(.separator())
         let hideItem = NSMenuItem(title: "Hide API Bar", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         appMenu.addItem(hideItem)
@@ -1172,10 +1178,31 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         guard let window = notification.object as? NSWindow else { return }
         if window === settingsWindow { settingsWindow = nil }
         if window === onboardingWindow { onboardingWindow = nil }
-        if settingsWindow == nil && onboardingWindow == nil {
+        if window === changelogWindow { changelogWindow = nil }
+        if settingsWindow == nil && onboardingWindow == nil && changelogWindow == nil {
             NSApp.setActivationPolicy(.accessory)
         }
         writeDiagnostics()
+    }
+    @objc func showChangelog() {
+        setupMainMenuIfNeeded()
+        NSApp.setActivationPolicy(.regular)
+        if let changelogWindow {
+            changelogWindow.deminiaturize(nil)
+            changelogWindow.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+        let window = ClosableWindow(contentRect: NSRect(x: 0, y: 0, width: 740, height: 580), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
+        window.minSize = NSSize(width: 600, height: 440)
+        window.title = "API Bar Changelog"
+        window.isReleasedWhenClosed = false
+        window.delegate = self
+        window.contentView = NSHostingView(rootView: ChangelogView())
+        window.center()
+        window.makeKeyAndOrderFront(nil)
+        changelogWindow = window
+        NSApp.activate(ignoringOtherApps: true)
     }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
     @objc func toggleLogin() {

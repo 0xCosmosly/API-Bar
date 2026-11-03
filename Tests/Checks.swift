@@ -290,6 +290,33 @@ import Security
         precondition(!AppUpdater.isVersion("0.4.7", newerThan: "0.4.7"))
         precondition(!AppUpdater.isVersion("0.4.6", newerThan: "0.4.7"))
         precondition(!AppUpdater.isVersion("0.3.9", newerThan: "0.4.0"))
+
+        // ChangelogManager checks: current version, previous versions, and selection
+        let changelog = ChangelogManager.shared
+        precondition(changelog.entries.count >= 4, "Changelog must include at least 4 built-in versions")
+        guard let entry050 = changelog.entries.first(where: { $0.version == "0.5.0" }),
+              let entry049 = changelog.entries.first(where: { $0.version == "0.4.9" }),
+              let entry048 = changelog.entries.first(where: { $0.version == "0.4.8" }),
+              let entry047 = changelog.entries.first(where: { $0.version == "0.4.7" }) else {
+            preconditionFailure("Built-in changelog missing 0.5.0, 0.4.9, 0.4.8, or 0.4.7")
+        }
+        precondition(entry050.isCurrent(currentVersion: "0.5.0") == true)
+        precondition(entry050.isPrevious(currentVersion: "0.5.0") == false)
+        precondition(entry049.isCurrent(currentVersion: "0.5.0") == false)
+        precondition(entry049.isPrevious(currentVersion: "0.5.0") == true)
+        precondition(entry050.isNewer(currentVersion: "0.4.9") == true)
+        precondition(entry048.isPrevious(currentVersion: "0.5.0") == true)
+        precondition(entry047.isPrevious(currentVersion: "0.5.0") == true)
+        precondition(!entry050.highlights.isEmpty, "0.5.0 highlights must not be empty")
+        precondition(!entry049.notes.isEmpty, "0.4.9 notes must not be empty")
+
+        changelog.select(version: "0.4.9")
+        precondition(changelog.selectedVersion == "0.4.9")
+        precondition(changelog.selectedEntry?.version == "0.4.9")
+        changelog.select(version: "0.5.0")
+        precondition(changelog.selectedVersion == "0.5.0")
+
+        print("Passed: ChangelogManager version history, current/previous tagging, and selection.")
         print("Passed: AppUpdater semver parsing, newer version detection, and release tagging.")
         print("Passed: Refuseless USD balance formatting, baseline calculations, and smaller-gauge token tracking.")
         print("Passed: Lutheos USD balance parsing, SvelteKit data traversal, baseline calculations, and validation.")

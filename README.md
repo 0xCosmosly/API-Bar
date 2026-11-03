@@ -45,6 +45,7 @@ API Bar lives in your macOS menu bar alongside your daily developer tools, conti
   - *Full Disk Access*: Automated, one-click access across all browser profiles and future browser updates.
 - **On-Device Apple Intelligence Extractor (AFM)**: Add any custom or unsupported provider in seconds. Paste a cURL command or JSON payload, and on-device heuristics automatically extract the balance and configure the client.
 - **Automatic 100% Baseline Ingestion**: Automatically detects payments, top-ups, and trial grants to calculate remaining percentage baseline.
+- **Full Version History & Changelog Viewer**: Browse current and previous version releases, detailed feature breakdowns, and migration notes natively inside the app with rich markdown formatting and offline caching.
 - **In-App Self-Updater**: Background update checks via GitHub Releases with native changelog presentation and one-click in-place installation.
 - **100% Private, Local & Sandboxed**: Zero telemetry, zero third-party proxy servers. Cookies and authentication tokens remain encrypted in your local macOS Keychain.
 
@@ -149,6 +150,7 @@ API Bar/
 │   ├── MenuUI.swift                 # SwiftUI views (Settings, Onboarding, Paper badges)
 │   ├── BrandMark.swift              # Custom vector graphics & icon renderers
 │   ├── ICloudSync.swift             # CloudKit / NSUbiquitousKeyValueStore engine
+│   ├── Changelog.swift              # Full version history & offline markdown changelog
 │   └── AppUpdater.swift             # GitHub Releases in-app self-updater
 └── Tests/
     ├── Checks.swift                 # Comprehensive unit & regression tests
@@ -165,6 +167,7 @@ API Bar/
 | `MenuUI.swift` | Interface & Paper tokens | Contains `PaperProviderBadge`, `PaperProminentButtonStyle`, `PaperWhiteButtonStyle`, `SettingsPane`, and `OnboardingView`. |
 | `AFMProviderExtractor.swift` | Parsing arbitrary endpoints | Uses regex and JSON traversal heuristics to identify currency amounts, remaining tokens, and consumption fields from cURL inputs. |
 | `ICloudSync.swift` | Cross-device state | Syncs encrypted session tokens, monitored provider sets, and baseline configurations via `NSUbiquitousKeyValueStore`. |
+| `Changelog.swift` | Version history & changelog | Multi-version changelog viewer (current and previous releases), offline caching, and remote release synchronization. |
 
 ---
 

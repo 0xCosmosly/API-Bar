@@ -1079,6 +1079,13 @@ struct SettingsPane: View {
                 }
                 Spacer()
                 Button {
+                    app.showChangelog()
+                } label: {
+                    Label("Changelog…", systemImage: "clock.arrow.circlepath")
+                }
+                .buttonStyle(PaperWhiteButtonStyle())
+
+                Button {
                     app.showOnboarding()
                 } label: {
                     Label("Welcome Tour…", systemImage: "sparkles")

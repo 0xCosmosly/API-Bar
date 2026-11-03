@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 
 @main struct UIInteractionChecks {
     @MainActor static func main() async throws {
@@ -404,6 +405,19 @@ import AppKit
         precondition(ICloudSync.shared.statusBadge == "Off")
         app.removeProvider(id: "togetherai")
 
+        // Test ChangelogView initialization, window presentation, and version switching
+        let changelogView = ChangelogView()
+        let hostingView = NSHostingView(rootView: changelogView)
+        hostingView.frame = NSRect(x: 0, y: 0, width: 720, height: 560)
+        hostingView.layoutSubtreeIfNeeded()
+
+        app.showChangelog()
+        precondition(app.changelogWindow != nil, "app.changelogWindow must be non-nil after showChangelog()")
+        precondition(app.changelogWindow?.title == "API Bar Changelog")
+        app.changelogWindow?.close()
+        precondition(app.changelogWindow == nil, "app.changelogWindow must be nil after close()")
+
+        print("Passed: Changelog window instantiation, version list presentation, and dismissal.")
         print("Passed: 900 tab clicks across icons/text/padding, canceled drags, accessibility actions, persistent selector, and Retina brand representations.")
         print("Passed: removeProvider, addProvider, menu order Dashboard -> Refresh -> Refresh All -> Start at Login -> Settings, relative checked time, and harnesses line removed.")
         print("Passed: AFM on-device extraction from cURL/JSON, dynamic provider registration, monogram rendering, and cleanup.")
