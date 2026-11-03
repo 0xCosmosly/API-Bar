@@ -17,6 +17,8 @@ func providerAccentColor(_ id: String) -> Color {
         return Color(red: 200/255.0, green: 16/255.0, blue: 46/255.0)  // Crimson Red #C8102E
     case "venice":
         return Color(red: 123/255.0, green: 31/255.0, blue: 162/255.0) // Venice Purple #7B1FA2
+    case "lutheos":
+        return Color(red: 173/255.0, green: 79/255.0, blue: 44/255.0)  // Lutheos Terracotta #AD4F2C
     default:
         return Color.accentColor
     }
@@ -238,22 +240,26 @@ struct BalanceCardContent: View {
             Divider()
 
             // Footer
-            HStack(alignment: .center) {
+            HStack(alignment: .center, spacing: 6) {
                 Text("Last checked: \(relativeTimeString(for: balance.updated))")
                     .font(.caption2)
                     .foregroundStyle(Color.secondary)
-                Spacer()
+                    .lineLimit(1)
+                    .layoutPriority(0)
+                Spacer(minLength: 6)
                 if !balance.account.isEmpty {
-                    Text("Account: \(balance.account)")
+                    Text(balance.account)
                         .font(.caption2)
                         .foregroundStyle(Color.secondary)
                         .lineLimit(1)
+                        .truncationMode(.middle)
+                        .layoutPriority(1)
                 }
             }
             .padding(.horizontal, 16)
             .padding(.bottom, 8)
         }
-        .frame(width: 310, alignment: .leading)
+        .frame(width: 330, alignment: .leading)
     }
 }
 
@@ -283,8 +289,8 @@ struct OverviewCardContent: View {
 
     var aggregatePercentText: String {
         guard totalBaseline > 0 else { return "—" }
-        let pct = Int(round((totalUsdRemaining / totalBaseline) * 100))
-        return "\(pct)%"
+        if totalPercent > 0 && totalPercent < 1 { return "<1%" }
+        return "\(Int(floor(totalPercent)))%"
     }
 
     var body: some View {
@@ -564,6 +570,7 @@ struct ManageProvidersSheet: View {
         case "aistudio": return "Google AI Studio Developer Quota"
         case "crowbot": return "Crowbot Chat & API Credits"
         case "refuseless": return "Refuseless Balance"
+        case "lutheos": return "Lutheos Private Inference Balance"
         default: return "API Balance & Credit Monitor"
         }
     }
@@ -655,7 +662,7 @@ struct OnboardingView: View {
                 .font(.headline)
 
             VStack(alignment: .leading, spacing: 14) {
-                featureRow(icon: "chart.bar.xaxis", title: "Live Credit Gauges", description: "Monitor remaining balance and automatic 100% baseline usage across Vertex AI, Fireworks, Cerebras, Google AI Studio, Refuseless, and Crowbot.")
+                featureRow(icon: "chart.bar.xaxis", title: "Live Credit Gauges", description: "Monitor remaining balance and automatic 100% baseline usage across Vertex AI, Fireworks, Cerebras, Google AI Studio, Refuseless, Lutheos, and Crowbot.")
                 featureRow(icon: "shield.checkered", title: "Zero API Key Hassle", description: "API Bar securely reads authenticated sessions from \(app.browserName) Browser directly on your device. No credentials ever leave your Mac.")
                 featureRow(icon: "menubar.rectangle", title: "Flexible Menu Bar Display", description: "View all providers in a single compact merged gauge or separate icons for each provider.")
                 featureRow(icon: "lock.shield", title: "100% Private & Local", description: "Zero telemetry or external servers. All credentials stay strictly in your local macOS Keychain.")
@@ -980,6 +987,7 @@ struct OnboardingView: View {
         case "aistudio": return "Google AI Studio Developer Quota"
         case "crowbot": return "Crowbot Chat & API Credits"
         case "refuseless": return "Refuseless Balance"
+        case "lutheos": return "Lutheos Private Inference Balance"
         default: return "API Balance & Credit Monitor"
         }
     }

@@ -531,6 +531,9 @@ enum BraveSessionImporter {
         case "refuseless":
             names = []
             domains = "('.refuseless.com','refuseless.com','api.refuseless.com','.api.refuseless.com','console.refuseless.com','.console.refuseless.com')"
+        case "lutheos":
+            names = []
+            domains = "('.lutheos.com','lutheos.com')"
         default:
             if let domain = cookieDomain, !domain.isEmpty {
                 let clean = domain.trimmingCharacters(in: CharacterSet(charactersIn: "."))
@@ -622,6 +625,8 @@ enum BraveSessionImporter {
                     sql = "SELECT host_key,name,encrypted_value,value,expires_utc FROM cookies WHERE host_key LIKE '%cerebras.ai'"
                 } else if provider == "refuseless" {
                     sql = "SELECT host_key,name,encrypted_value,value,expires_utc FROM cookies WHERE host_key LIKE '%refuseless.com'"
+                } else if provider == "lutheos" {
+                    sql = "SELECT host_key,name,encrypted_value,value,expires_utc FROM cookies WHERE host_key LIKE '%lutheos.com'"
                 } else {
                     sql = "SELECT host_key,name,encrypted_value,value,expires_utc FROM cookies WHERE host_key IN \(domains)"
                 }
@@ -649,7 +654,7 @@ enum BraveSessionImporter {
         }
         guard readableDatabases > 0 || blockedDatabases == 0 else { throw ConnectorError.message(accessError) }
         guard !encryptedRows.isEmpty else {
-            let name = provider == "crowbot" ? "Crowbot" : provider == "fireworks" ? "Fireworks" : provider == "aistudio" ? "Google AI Studio" : provider == "cerebras" ? "Cerebras" : provider == "refuseless" ? "Refuseless" : "Google Cloud"
+            let name = provider == "crowbot" ? "Crowbot" : provider == "fireworks" ? "Fireworks" : provider == "aistudio" ? "Google AI Studio" : provider == "cerebras" ? "Cerebras" : provider == "refuseless" ? "Refuseless" : provider == "lutheos" ? "Lutheos" : "Google Cloud"
             throw ConnectorError.message("No signed-in \(name) session was found in Brave. Sign in there, then connect again.")
         }
         // Keychain is queried only after confirming this provider has stored cookies.

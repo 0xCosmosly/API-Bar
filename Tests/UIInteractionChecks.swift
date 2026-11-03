@@ -37,13 +37,13 @@ import AppKit
         precondition(view.tabs === tabs, "Provider switch replaced the live click target")
         let reps = BrandMark.image().representations.compactMap { $0 as? NSBitmapImageRep }
         precondition(reps.map(\.pixelsWide) == [18, 36, 54] && BrandMark.image().isTemplate)
-        for (provider, rep) in [("mark", reps[0])] + ["overview", "vertex", "fireworks", "crowbot", "aistudio", "cerebras", "refuseless"].flatMap({ id in ProviderIcon.image(id).representations.compactMap { rep in (id, rep as! NSBitmapImageRep) } }) {
+        for (provider, rep) in [("mark", reps[0])] + ["overview", "vertex", "fireworks", "crowbot", "aistudio", "cerebras", "refuseless", "lutheos"].flatMap({ id in ProviderIcon.image(id).representations.compactMap { rep in (id, rep as! NSBitmapImageRep) } }) {
             var xs: [Int] = [], ys: [Int] = []
             for y in 0..<rep.pixelsHigh { for x in 0..<rep.pixelsWide {
                 if rep.colorAt(x: x, y: y)!.alphaComponent > 0.4 { xs.append(x); ys.append(y) }
             }}
             precondition(!xs.isEmpty && xs.max()! - xs.min()! > rep.pixelsWide * 7 / 10)
-            let minH = (provider == "fireworks" || provider == "refuseless") ? rep.pixelsHigh * 35 / 100 : rep.pixelsHigh * 6 / 10
+            let minH = (provider == "fireworks" || provider == "refuseless" || provider == "lutheos") ? rep.pixelsHigh * 35 / 100 : rep.pixelsHigh * 6 / 10
             precondition(!ys.isEmpty && ys.max()! - ys.min()! > minH, "Retina brand clipped by a mixed AppKit/CoreGraphics transform")
         }
         precondition(view.frame.height <= tabs.frame.height + 200, "Merged menu retained the empty credits footer")
@@ -89,6 +89,15 @@ import AppKit
             let overviewContent = OverviewCardContent(app: app)
             precondition(!overviewContent.totalSummaryText.contains("credits"), "Overview total must not count credits")
             precondition(overviewContent.totalUsdRemaining >= 50.0, "Overview total USD must include Refuseless dollar amount")
+
+            // Test 1-account overview percentage matching provider percentageLabel
+            let savedBalances = app.balances
+            let singleBal = Balance(id: "refuseless", name: "Refuseless", baseline: 25.0, remaining: 0.73313, updated: Date(), account: "user@example.com", live: true)
+            app.balances = [singleBal]
+            let singleOverview = OverviewCardContent(app: app)
+            precondition(singleOverview.aggregatePercentText == singleBal.percentageLabel, "Single account aggregate percent (\(singleOverview.aggregatePercentText)) must match provider percentageLabel (\(singleBal.percentageLabel))")
+            precondition(singleOverview.aggregatePercentText == "2%", "Expected 2% for 0.73/25, got \(singleOverview.aggregatePercentText)")
+            app.balances = savedBalances
         }
 
         // Test menu item ordering and titles in merged menu

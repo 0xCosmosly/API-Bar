@@ -29,6 +29,6 @@
 	<key>CFBundleIconFile</key>
 	<string>APIBarConverge</string>
 	<key>NSAppDataUsageDescription</key>
-	<string>API Bar reads your selected browser profile to connect your Google Cloud, Fireworks, Crowbot, Google AI Studio, Cerebras, Venice AI, and Refuseless sessions. Credentials stay in macOS Keychain.</string>
+	<string>API Bar reads your selected browser profile to connect your Google Cloud, Fireworks, Crowbot, Google AI Studio, Cerebras, Venice AI, Refuseless, and Lutheos sessions. Credentials stay in macOS Keychain.</string>
 </dict>
 </plist>

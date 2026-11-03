@@ -14,6 +14,8 @@ func providerAccentNSColor(_ id: String) -> NSColor {
         return NSColor(srgbRed: 200/255.0, green: 16/255.0, blue: 46/255.0, alpha: 1.0)  // Crimson Red #C8102E
     case "venice":
         return NSColor(srgbRed: 123/255.0, green: 31/255.0, blue: 162/255.0, alpha: 1.0) // Venice Purple #7B1FA2
+    case "lutheos":
+        return NSColor(srgbRed: 173/255.0, green: 79/255.0, blue: 44/255.0, alpha: 1.0)   // Lutheos Terracotta #AD4F2C
     default:
         return NSColor.systemBlue
     }

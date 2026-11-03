@@ -53,6 +53,7 @@ API Bar lives in your macOS menu bar alongside your daily developer tools, conti
 | **Cerebras** | Fast inference platform credits & usage tier | Dominant browser session (`auth_token`) | Tier quota / top-up |
 | **Google AI Studio** | Developer quota, token credits & project tiers | Dominant browser session (`__Secure-` auth) | Project allocation |
 | **Refuseless** | Prepaid USD balance & deposit ledger | Dominant browser session | Total deposits sum |
+| **Lutheos** | Private inference prepaid credit balance | Dominant browser session or Bearer key | Inferred top-up tier |
 | **Venice AI** | Consumption currency balances (USD & DIEM) | Dominant browser session or Bearer key | Inferred baseline |
 | **Crowbot** | Chat & API usage credits (microdollar precision) | Dominant browser session (`crowbot_session`) | Account quota |
 | **Custom / Any AI API** | OpenRouter, Groq, Together, DeepSeek, local endpoints | cURL / JSON via on-device AFM extractor | Custom reference |

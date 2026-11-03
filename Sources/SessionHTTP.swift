@@ -37,7 +37,7 @@ actor SessionHTTP {
                 return client
             }
         }
-        let provName = provider == "crowbot" ? "Crowbot" : provider == "fireworks" ? "Fireworks" : provider == "aistudio" ? "Google AI Studio" : provider == "cerebras" ? "Cerebras" : provider == "refuseless" ? "Refuseless" : "Google Cloud"
+        let provName = provider == "crowbot" ? "Crowbot" : provider == "fireworks" ? "Fireworks" : provider == "aistudio" ? "Google AI Studio" : provider == "cerebras" ? "Cerebras" : provider == "refuseless" ? "Refuseless" : provider == "lutheos" ? "Lutheos" : "Google Cloud"
         throw ConnectorError.message("Connect \(provName) in Settings first.")
     }
     static func connect(provider: String, cookieDomain: String? = nil, dynamicHost: String? = nil, interactive: Bool = false) throws -> SessionHTTP {
@@ -158,6 +158,7 @@ actor SessionHTTP {
         case "aistudio": allowed = ["aistudio.google.com", "alkalimakersuite-pa.clients6.google.com", "appsgenaiserver-pa.clients6.google.com", "generativelanguage.googleapis.com"].contains(host)
         case "cerebras": allowed = ["cloud.cerebras.ai", "api.cerebras.ai"].contains(host)
         case "refuseless": allowed = ["refuseless.com", "api.refuseless.com", "console.refuseless.com"].contains(host)
+        case "lutheos": allowed = ["lutheos.com", "api.lutheos.com"].contains(host)
         default: allowed = (dynamicHost != nil && host == dynamicHost)
         }
         guard url.scheme == "https", allowed else { throw ConnectorError.message("Refused to send the saved session to an unexpected host.") }
@@ -767,6 +768,212 @@ struct RefuselessProvider: BalanceProvider {
             currency: "USD",
             account: resolvedAccount,
             url: "https://refuseless.com/console",
+            expires: nil,
+            reference: parsed.baseline
+        )
+    }
+}
+
+struct LutheosProvider: BalanceProvider {
+    let providerID = "lutheos"
+    let http: SessionHTTP
+    let account: String
+
+    static func hasValidSession(cookies: [StoredCookie]) -> Bool {
+        return !cookies.isEmpty && cookies.contains(where: {
+            let n = $0.name.lowercased()
+            return n.contains("session") || n.contains("token") || n.contains("auth") || n.contains("lr_")
+        })
+    }
+
+    static func parse(data: Data, url: String) throws -> (remaining: Double, baseline: Double, account: String) {
+        if let json = try? JSONSerialization.jsonObject(with: data) {
+            if let parsed = parse(json: json) {
+                return parsed
+            }
+        }
+        if let html = String(data: data, encoding: .utf8) {
+            return try parse(html: html)
+        }
+        throw ConnectorError.message("Could not parse Lutheos balance from response.")
+    }
+
+    static func parse(json: Any) -> (remaining: Double, baseline: Double, account: String)? {
+        var email = ""
+
+        func findEmail(in obj: Any) {
+            if let dict = obj as? [String: Any] {
+                if let u = dict["user"] as? [String: Any], let e = u["email"] as? String, !e.isEmpty {
+                    email = e
+                    return
+                }
+                if let e = dict["email"] as? String, e.contains("@") {
+                    email = e
+                    return
+                }
+                for v in dict.values { findEmail(in: v) }
+            } else if let arr = obj as? [Any] {
+                for v in arr { findEmail(in: v) }
+            }
+        }
+        findEmail(in: json)
+
+        func findBalance(in obj: Any) -> Double? {
+            if let dict = obj as? [String: Any] {
+                for k in ["balance", "balance_usd", "credit_balance"] {
+                    if let val = dict[k] {
+                        if let d = val as? Double { return d }
+                        if let i = val as? Int { return Double(i) }
+                        if let s = val as? String, let d = Double(s) { return d }
+                    }
+                }
+                if let wallet = dict["wallet"] as? [String: Any] {
+                    if let b = wallet["balance_usd"] as? Double { return b }
+                    if let b = wallet["balance"] as? Double { return b }
+                    if let b = wallet["balance_usd"] as? Int { return Double(b) }
+                }
+                if let workspaces = dict["workspaces"] as? [[String: Any]], let first = workspaces.first {
+                    if let b = first["balance"] as? Double { return b }
+                    if let b = first["balance_usd"] as? Double { return b }
+                    if let b = first["balance"] as? Int { return Double(b) }
+                }
+                if let nodes = dict["nodes"] as? [[String: Any]] {
+                    for node in nodes {
+                        if let nodeData = node["data"] {
+                            if let b = findBalance(in: nodeData) { return b }
+                        }
+                    }
+                }
+                for v in dict.values {
+                    if let b = findBalance(in: v) { return b }
+                }
+            } else if let arr = obj as? [Any] {
+                for item in arr {
+                    if let b = findBalance(in: item) { return b }
+                }
+            }
+            return nil
+        }
+
+        if let balance = findBalance(in: json) {
+            let ref = PaymentReference.inferTier(for: balance)
+            return (remaining: balance, baseline: max(ref, balance), account: email)
+        }
+        return nil
+    }
+
+    static func parse(html: String) throws -> (remaining: Double, baseline: Double, account: String) {
+        let nsHtml = html as NSString
+        let range = NSRange(location: 0, length: nsHtml.length)
+
+        // Pattern 1: balance-figure in drawer or billing card
+        let balanceFigureRegex = try? NSRegularExpression(pattern: #"class=["'][^"']*balance-figure[^"']*["']>\s*\$?([0-9][0-9,]*(?:\.[0-9]+)?)"#)
+        if let match = balanceFigureRegex?.firstMatch(in: html, range: range), match.numberOfRanges > 1 {
+            let rawStr = nsHtml.substring(with: match.range(at: 1)).replacingOccurrences(of: ",", with: "")
+            if let val = Double(rawStr) {
+                let ref = PaymentReference.inferTier(for: val)
+                return (remaining: val, baseline: max(ref, val), account: extractEmail(from: html))
+            }
+        }
+
+        // Pattern 2: embedded SvelteKit serialized JSON
+        let jsonBalanceRegex = try? NSRegularExpression(pattern: #""balance(?:_usd)?"\s*:\s*([0-9]+(?:\.[0-9]+)?)"#)
+        if let match = jsonBalanceRegex?.firstMatch(in: html, range: range), match.numberOfRanges > 1 {
+            let rawStr = nsHtml.substring(with: match.range(at: 1))
+            if let val = Double(rawStr) {
+                let ref = PaymentReference.inferTier(for: val)
+                return (remaining: val, baseline: max(ref, val), account: extractEmail(from: html))
+            }
+        }
+
+        // Pattern 3: Heading Balance followed by amount
+        let headingRegex = try? NSRegularExpression(pattern: #"(?s)Balance\s*</h2>.*?\$([0-9][0-9,]*(?:\.[0-9]+)?)"#)
+        if let match = headingRegex?.firstMatch(in: html, range: range), match.numberOfRanges > 1 {
+            let rawStr = nsHtml.substring(with: match.range(at: 1)).replacingOccurrences(of: ",", with: "")
+            if let val = Double(rawStr) {
+                let ref = PaymentReference.inferTier(for: val)
+                return (remaining: val, baseline: max(ref, val), account: extractEmail(from: html))
+            }
+        }
+
+        throw ConnectorError.message("Could not parse Lutheos balance from website.")
+    }
+
+    private static func extractEmail(from html: String) -> String {
+        let regex = try? NSRegularExpression(pattern: #"[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+"#)
+        let nsHtml = html as NSString
+        if let matches = regex?.matches(in: html, range: NSRange(location: 0, length: nsHtml.length)) {
+            for match in matches {
+                let candidate = nsHtml.substring(with: match.range)
+                if !candidate.hasPrefix("support@") && !candidate.hasPrefix("help@") && !candidate.hasPrefix("sales@") && !candidate.contains("example.com") {
+                    return candidate
+                }
+            }
+        }
+        return ""
+    }
+
+    func fetchBalance() async throws -> Reading {
+        var latestParsed: (remaining: Double, baseline: Double, account: String)? = nil
+
+        // Try Strategy 1: Overview SvelteKit data endpoint
+        if let overviewURL = URL(string: "https://lutheos.com/overview/__data.json") {
+            if let (data, response) = try? await http.request(url: overviewURL, headers: [
+                "Accept": "application/json",
+                "x-sveltekit-invalidated": "100"
+            ]), response.statusCode == 200, !data.isEmpty {
+                if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   let type = json["type"] as? String, type == "redirect" {
+                    throw ConnectorError.message("Lutheos session expired. Reconnect in Settings.")
+                }
+                latestParsed = try? Self.parse(data: data, url: overviewURL.absoluteString)
+            }
+        }
+
+        // Try Strategy 2: Billing SvelteKit data endpoint
+        if latestParsed == nil, let billingURL = URL(string: "https://lutheos.com/billing/__data.json") {
+            if let (billData, billResp) = try? await http.request(url: billingURL, headers: [
+                "Accept": "application/json",
+                "x-sveltekit-invalidated": "100"
+            ]), billResp.statusCode == 200, !billData.isEmpty {
+                if let json = try? JSONSerialization.jsonObject(with: billData) as? [String: Any],
+                   let type = json["type"] as? String, type == "redirect" {
+                    throw ConnectorError.message("Lutheos session expired. Reconnect in Settings.")
+                }
+                latestParsed = try? Self.parse(data: billData, url: billingURL.absoluteString)
+            }
+        }
+
+        // Try Strategy 3: Rendered Billing HTML
+        if latestParsed == nil, let pageURL = URL(string: "https://lutheos.com/billing") {
+            let (htmlData, htmlResp) = try await http.request(url: pageURL, headers: [
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+            ])
+            guard htmlResp.statusCode == 200 else {
+                if htmlResp.statusCode == 303 || htmlResp.statusCode == 401 {
+                    throw ConnectorError.message("Lutheos session expired. Reconnect in Settings.")
+                }
+                throw ConnectorError.message("Lutheos returned HTTP \(htmlResp.statusCode).")
+            }
+            guard let html = String(data: htmlData, encoding: .utf8) else {
+                throw ConnectorError.message("Lutheos returned invalid HTML encoding.")
+            }
+            latestParsed = try Self.parse(html: html)
+        }
+
+        guard let parsed = latestParsed else {
+            throw ConnectorError.message("Could not parse Lutheos balance from website.")
+        }
+
+        try? await http.persist()
+        let resolvedAccount = !account.isEmpty ? account : (!parsed.account.isEmpty ? parsed.account : "Lutheos Account")
+
+        return Reading(
+            provider: providerID,
+            remaining: parsed.remaining,
+            currency: "USD",
+            account: resolvedAccount,
+            url: "https://lutheos.com/billing",
             expires: nil,
             reference: parsed.baseline
         )

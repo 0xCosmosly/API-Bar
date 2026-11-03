@@ -111,6 +111,16 @@ public enum AFMProviderExtractor {
             aliases: ["refuseless", "refuseless balance", "deepseek credits"]
         ),
         KnownProviderMeta(
+            id: "lutheos",
+            name: "Lutheos",
+            domain: "lutheos.com",
+            dashboardURL: "https://lutheos.com/billing",
+            endpoint: "https://lutheos.com/overview/__data.json",
+            jsonPath: "balance",
+            defaultBaseline: 0.0,
+            aliases: ["lutheos", "lutheos.com", "lutheos ai", "lutheos balance"]
+        ),
+        KnownProviderMeta(
             id: "crowbot",
             name: "Crowbot",
             domain: "crowbot.sh",

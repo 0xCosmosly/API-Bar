@@ -491,6 +491,7 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         if provider == "aistudio" { return try await AIStudioProvider(http: client, account: balance.account).fetchBalance() }
         if provider == "cerebras" { return try await CerebrasProvider(http: client, account: balance.account).fetchBalance() }
         if provider == "refuseless" { return try await RefuselessProvider(http: client, account: balance.account).fetchBalance() }
+        if provider == "lutheos" { return try await LutheosProvider(http: client, account: balance.account).fetchBalance() }
         if provider == "vertex" { return try await GoogleProvider(http:client,account:balance.account).fetchBalance() }
         if balance.dynamicEndpoint != nil {
             return try await DynamicProvider(http: client, balance: balance).fetchBalance()
@@ -524,6 +525,7 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
                 case "aistudio": provName = "Google AI Studio"
                 case "cerebras": provName = "Cerebras Cloud"
                 case "refuseless": provName = "Refuseless"
+                case "lutheos": provName = "Lutheos"
                 case "crowbot": provName = "Crowbot"
                 default: provName = balance.name
                 }
@@ -818,7 +820,7 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         if balances[i].account.isEmpty { balances[i].account = r.account }
         let oldRemaining = balances[i].remaining
         balances[i].remaining = r.remaining; balances[i].updated = Date(); balances[i].live = true; balances[i].expires = r.expires
-        if r.provider == "refuseless" {
+        if r.provider == "refuseless" || r.provider == "lutheos" {
             let ref = r.reference ?? r.remaining
             balances[i].baseline = ref
             providerStatus[r.provider] = "Connected · refreshes every 5 min"
@@ -874,7 +876,11 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
                     let usdRemaining = balances.reduce(0.0) { $0 + $1.remaining }
                     let usdBaseline = balances.reduce(0.0) { $0 + $1.baseline }
                     let totalPercent = usdBaseline > 0 ? max(0, usdRemaining / usdBaseline * 100) : 0
-                    let percentText = "\(Int(floor(totalPercent)))%"
+                    let percentText: String = {
+                        if usdBaseline <= 0 { return "—" }
+                        if totalPercent > 0 && totalPercent < 1 { return "<1%" }
+                        return "\(Int(floor(totalPercent)))%"
+                    }()
                     items[i].button?.title = percentText
                     items[i].button?.image = ProviderIcon.menuBarImage("overview")
                     let summary = usdRemaining.formatted(.currency(code: "USD"))
@@ -935,7 +941,7 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         let detail = NSMenuItem(title: "Usage Details", action: nil, keyEquivalent: "")
         detail.image = NSImage(systemSymbolName: "chart.bar", accessibilityDescription: nil)
         let submenu = NSMenu()
-        disabled(submenu, "Account: \(b.account)")
+        if !b.account.isEmpty { disabled(submenu, b.account) }
         disabled(submenu, "100% = \(b.baseline.formatted(.currency(code: "USD")))")
         disabled(submenu, "Checked \(relativeTimeString(for: b.updated))")
         if let expires = b.expires { disabled(submenu, "Expires \(expires)") }
@@ -996,6 +1002,7 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
             case "aistudio": provName = "Google AI Studio"
             case "cerebras": provName = "Cerebras Cloud"
             case "refuseless": provName = "Refuseless"
+            case "lutheos": provName = "Lutheos"
             case "crowbot": provName = "Crowbot"
             default: provName = balance.name
             }
@@ -1187,6 +1194,7 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         case "aistudio": return URL(string: "https://aistudio.google.com/app/plan_and_billing")!
         case "cerebras": return URL(string: "https://cloud.cerebras.ai/platform/")!
         case "refuseless": return URL(string: "https://refuseless.com/console")!
+        case "lutheos": return URL(string: "https://lutheos.com/billing")!
         default: return URL(string: "https://console.cloud.google.com/billing/\(b.account)/credits/all")!
         }
     }
@@ -1385,6 +1393,7 @@ enum ProviderIcon {
         case "vertex": (targetW, targetH) = (15.6, 14.8)
         case "aistudio": (targetW, targetH) = (16.0, 16.0)
         case "venice": (targetW, targetH) = (15.0, 15.0)
+        case "lutheos": (targetW, targetH) = (16.0, 12.4)
         default: (targetW, targetH) = (15.0, 13.8) // crowbot
         }
         let targetRect = CGRect(x: (18.0 - targetW) / 2.0, y: (18.0 - targetH) / 2.0, width: targetW, height: targetH)

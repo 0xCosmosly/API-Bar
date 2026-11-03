@@ -169,6 +169,35 @@ import Security
         let (paidBal, paidBase, paidAcct) = try RefuselessProvider.parse(html: "<p class=\"hm-balance-figure\">$15.50<span>USD</span></p><dl class=\"hm-balance-rows\"><div><dt>Top-ups</dt><dd>$20.00</dd></div></dl><script>\"email\":\"paid@refuseless.com\",\"balance\":15.5,\"depositedCents\":2000</script>")
         precondition(paidBal == 15.50 && paidBase == 20.0 && paidAcct == "paid@refuseless.com")
 
+        // Lutheos SvelteKit and HTML balance parsing checks
+        let lutheosCookie = StoredCookie(name: "__Secure-authjs.session-token", value: "lutheos-test-token", domain: "lutheos.com", expires: Date().addingTimeInterval(3600))
+        precondition(LutheosProvider.hasValidSession(cookies: [lutheosCookie]))
+
+        final class MockLutheosProtocol: URLProtocol, @unchecked Sendable {
+            override class func canInit(with request: URLRequest) -> Bool { true }
+            override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+            override func startLoading() {
+                let json = "{\"type\":\"data\",\"nodes\":[{\"type\":\"data\",\"data\":{\"user\":{\"email\":\"user@lutheos.com\"},\"workspaces\":[{\"id\":\"ws1\",\"balance\":18.25}]}},{\"type\":\"data\",\"data\":{\"balance\":18.25}}]}"
+                let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "application/json"])!
+                client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+                client?.urlProtocol(self, didLoad: Data(json.utf8))
+                client?.urlProtocolDidFinishLoading(self)
+            }
+            override func stopLoading() {}
+        }
+        let lutheosConfig = URLSessionConfiguration.ephemeral
+        lutheosConfig.protocolClasses = [MockLutheosProtocol.self]
+        let lutheosHTTP = SessionHTTP(provider: "lutheos", cookies: [lutheosCookie], configuration: lutheosConfig)
+        let lutheosReading = try await LutheosProvider(http: lutheosHTTP, account: "").fetchBalance()
+        precondition(lutheosReading.provider == "lutheos")
+        precondition(lutheosReading.remaining == 18.25, "Lutheos balance must be 18.25, got \(lutheosReading.remaining)")
+        precondition(lutheosReading.reference == 20.0, "Lutheos inferred tier baseline must be 20.0, got \(lutheosReading.reference ?? 0)")
+        precondition(lutheosReading.account == "user@lutheos.com")
+        precondition(ReadingValidation.valid(lutheosReading, balances: Balance.initial))
+
+        let (htmlBal, htmlBase, htmlAcct) = try LutheosProvider.parse(html: "<a class=\"drawer-balance\" href=\"/billing\"><span class=\"balance-label\">Balance</span><span class=\"balance-figure\">$42.50</span></a><script>\"email\":\"dev@lutheos.com\",\"balance\":42.5</script>")
+        precondition(htmlBal == 42.50 && htmlBase == 50.0 && htmlAcct == "dev@lutheos.com")
+
         // Real console payload: the RSC `balance`/`spentTotal` integers are
         // micro-dollars and the billing ledger reports cents. Reading the
         // micro-dollar balance as dollars produced a $24,947,613 total.
@@ -217,6 +246,7 @@ import Security
         precondition(!AppUpdater.isVersion("0.3.9", newerThan: "0.4.0"))
         print("Passed: AppUpdater semver parsing, newer version detection, and release tagging.")
         print("Passed: Refuseless USD balance formatting, baseline calculations, and smaller-gauge token tracking.")
+        print("Passed: Lutheos USD balance parsing, SvelteKit data traversal, baseline calculations, and validation.")
         print("Passed: percentages, sub-1% rounding, top-up display, wrong-account/source rejection, unconnected adapter, and persistence round-trip.")
         print("Passed: exact money parsing, zero balances, active/expired grants, added grants, and duplicate rejection.")
     }

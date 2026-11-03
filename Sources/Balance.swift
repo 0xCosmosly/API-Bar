@@ -47,7 +47,8 @@ struct Balance: Codable, Equatable {
         Balance(id: "crowbot", name: "Crowbot", baseline: 0, remaining: 0, updated: .distantPast, account: ""),
         Balance(id: "aistudio", name: "Google AI Studio", baseline: 0, remaining: 0, updated: .distantPast, account: ""),
         Balance(id: "cerebras", name: "Cerebras", baseline: 0, remaining: 0, updated: .distantPast, account: ""),
-        Balance(id: "refuseless", name: "Refuseless", baseline: 0, remaining: 0, updated: .distantPast, account: "")
+        Balance(id: "refuseless", name: "Refuseless", baseline: 0, remaining: 0, updated: .distantPast, account: ""),
+        Balance(id: "lutheos", name: "Lutheos", baseline: 0, remaining: 0, updated: .distantPast, account: "")
     ]
 }
 
@@ -115,6 +116,9 @@ enum ReadingValidation {
         }
         if r.provider == "refuseless" {
             return (url.host == "refuseless.com" || url.host == "api.refuseless.com" || url.host == "console.refuseless.com") && (balance.account.isEmpty || r.account == balance.account)
+        }
+        if r.provider == "lutheos" {
+            return (url.host == "lutheos.com" || url.host == "api.lutheos.com") && (balance.account.isEmpty || r.account == balance.account)
         }
         if let endpoint = balance.dynamicEndpoint, let dynamicURL = URL(string: endpoint) {
             return url.host == dynamicURL.host
