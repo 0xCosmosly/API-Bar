@@ -448,9 +448,9 @@ struct OnboardingView: View {
                 featureRow(icon: "menubar.rectangle", title: "Flexible Menu Bar Display", description: "View all providers in a single compact merged gauge or separate icons for each provider.")
                 featureRow(icon: "lock.shield", title: "100% Private & Local", description: "Zero telemetry or external servers. All credentials stay strictly in your local macOS Keychain.")
             }
-            .padding(14)
-            .background(RoundedRectangle(cornerRadius: 10).fill(Color(NSColor.controlBackgroundColor)))
-            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.primary.opacity(0.08), lineWidth: 1))
+            .padding(16)
+            .background(RoundedRectangle(cornerRadius: 12).fill(Color(NSColor.controlBackgroundColor)))
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.primary.opacity(0.06), lineWidth: 1))
 
             Text("Setup takes under a minute. Next, choose which providers you want to monitor.")
                 .font(.footnote)
@@ -696,9 +696,9 @@ struct OnboardingView: View {
                         .foregroundStyle(Color.secondary)
                 }
             }
-            .padding(14)
-            .background(RoundedRectangle(cornerRadius: 10).fill(Color(NSColor.controlBackgroundColor)))
-            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.primary.opacity(0.08), lineWidth: 1))
+            .padding(16)
+            .background(RoundedRectangle(cornerRadius: 12).fill(Color(NSColor.controlBackgroundColor)))
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.primary.opacity(0.06), lineWidth: 1))
 
             Text("You can change these options anytime from Settings in the menu bar.")
                 .font(.footnote)
@@ -871,9 +871,9 @@ struct SettingsPane: View {
                         .foregroundStyle(Color.secondary)
                 }
             }
-            .padding(14)
-            .background(RoundedRectangle(cornerRadius: 10).fill(Color(NSColor.controlBackgroundColor)))
-            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.primary.opacity(0.08), lineWidth: 1))
+            .padding(16)
+            .background(RoundedRectangle(cornerRadius: 12).fill(Color(NSColor.controlBackgroundColor)))
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.primary.opacity(0.06), lineWidth: 1))
 
             // MARK: - iCloud Sync Card
             VStack(alignment: .leading, spacing: 12) {
@@ -973,9 +973,9 @@ struct SettingsPane: View {
                     .background(RoundedRectangle(cornerRadius: 6).fill(Color.orange.opacity(0.10)))
                 }
             }
-            .padding(14)
-            .background(RoundedRectangle(cornerRadius: 10).fill(Color(NSColor.controlBackgroundColor)))
-            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.primary.opacity(0.08), lineWidth: 1))
+            .padding(16)
+            .background(RoundedRectangle(cornerRadius: 12).fill(Color(NSColor.controlBackgroundColor)))
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.primary.opacity(0.06), lineWidth: 1))
 
             // MARK: - Brave Browser Card
             VStack(alignment: .leading, spacing: 12) {
@@ -988,26 +988,43 @@ struct SettingsPane: View {
                         .foregroundStyle(Color.primary)
                     Spacer()
                     if app.isBraveAccessBlocked {
-                        Text("Action Required")
-                            .font(.caption2)
-                            .fontWeight(.semibold)
-                            .foregroundStyle(Color.orange)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Capsule().fill(Color.orange.opacity(0.15)))
+                        HStack(spacing: 5) {
+                            Circle().fill(Color.orange).frame(width: 6, height: 6)
+                            Text("Action Required")
+                                .font(.caption2)
+                                .fontWeight(.semibold)
+                                .foregroundStyle(Color.orange)
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Capsule().fill(Color.orange.opacity(0.12)))
+                    } else if app.braveAccessKind == .fullDisk {
+                        HStack(spacing: 5) {
+                            Circle().fill(Color.green).frame(width: 6, height: 6)
+                            Text("Full Disk Access")
+                                .font(.caption2)
+                                .fontWeight(.semibold)
+                                .foregroundStyle(Color.green)
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Capsule().fill(Color.green.opacity(0.12)))
                     } else {
-                        Text("Connected")
-                            .font(.caption2)
-                            .fontWeight(.semibold)
-                            .foregroundStyle(Color.green)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Capsule().fill(Color.green.opacity(0.15)))
+                        HStack(spacing: 5) {
+                            Circle().fill(Color.blue).frame(width: 6, height: 6)
+                            Text("Folder Access")
+                                .font(.caption2)
+                                .fontWeight(.semibold)
+                                .foregroundStyle(Color.blue)
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Capsule().fill(Color.blue.opacity(0.12)))
                     }
                 }
 
                 if app.isBraveAccessBlocked {
-                    VStack(alignment: .leading, spacing: 6) {
+                    VStack(alignment: .leading, spacing: 8) {
                         HStack(spacing: 6) {
                             Image(systemName: "exclamationmark.triangle.fill")
                                 .foregroundStyle(Color.orange)
@@ -1026,12 +1043,13 @@ struct SettingsPane: View {
                                 .controlSize(.small)
                         }
                     }
-                    .padding(10)
-                    .background(RoundedRectangle(cornerRadius: 8).fill(Color.orange.opacity(0.12)))
+                    .padding(12)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(Color.orange.opacity(0.10)))
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.orange.opacity(0.25), lineWidth: 1))
                 }
 
                 HStack(alignment: .center) {
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: 3) {
                         Text("Active Profile")
                             .font(.subheadline)
                             .fontWeight(.medium)
@@ -1077,9 +1095,9 @@ struct SettingsPane: View {
                     .disabled(!app.inFlight.isEmpty || app.balances.allSatisfy { app.isConnected($0.id) })
                 }
             }
-            .padding(14)
-            .background(RoundedRectangle(cornerRadius: 10).fill(Color(NSColor.controlBackgroundColor)))
-            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.primary.opacity(0.08), lineWidth: 1))
+            .padding(16)
+            .background(RoundedRectangle(cornerRadius: 12).fill(Color(NSColor.controlBackgroundColor)))
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.primary.opacity(0.06), lineWidth: 1))
 
             Divider()
 
@@ -1154,11 +1172,20 @@ struct SettingsPane: View {
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(balance.name)
                                             .font(.subheadline)
-                                            .fontWeight(.medium)
+                                            .fontWeight(.semibold)
                                             .foregroundStyle(Color.primary)
-                                        Text(app.providerStatus[balance.id] ?? "Not connected")
-                                            .font(.caption2)
-                                            .foregroundStyle(Color.secondary)
+                                        HStack(spacing: 5) {
+                                            if app.isConnected(balance.id) {
+                                                Circle().fill(Color.green).frame(width: 5, height: 5)
+                                            } else if app.inFlight.contains(balance.id) {
+                                                Circle().fill(Color.orange).frame(width: 5, height: 5)
+                                            } else {
+                                                Circle().fill(Color.secondary.opacity(0.4)).frame(width: 5, height: 5)
+                                            }
+                                            Text(app.providerStatus[balance.id] ?? "Not connected")
+                                                .font(.caption2)
+                                                .foregroundStyle(app.isConnected(balance.id) ? Color.secondary : (app.inFlight.contains(balance.id) ? Color.orange : Color.secondary.opacity(0.8)))
+                                        }
                                     }
 
                                     Spacer()

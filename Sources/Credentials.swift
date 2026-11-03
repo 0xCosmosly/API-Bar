@@ -121,8 +121,14 @@ enum BraveSessionImporter {
     static let defaultBrowserRoot = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/BraveSoftware/Brave-Browser")
     static let accessError = "macOS blocked access to Brave's profile files. In Settings, click 'Choose Brave Profile…' to grant folder access (or grant Full Disk Access in macOS System Settings)."
 
+    enum BraveAccessKind: String, Sendable {
+        case fullDisk = "Full Disk Access"
+        case folder = "Folder Access"
+        case blocked = "Action Required"
+    }
+
     static func hasFullDiskAccess() -> Bool {
-        // Test standard macOS locations requiring Full Disk Access
+        // 1. Test standard macOS locations requiring Full Disk Access
         let safariCloudTabs = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Safari/CloudTabs.db")
         if (try? FileHandle(forReadingFrom: safariCloudTabs)) != nil {
             return true
@@ -131,8 +137,14 @@ enum BraveSessionImporter {
         if (try? FileHandle(forReadingFrom: userTCC)) != nil {
             return true
         }
-        // Test direct access to Brave cookie database
-        for prof in ["Default", "Profile 1", "Profile 2", "Profile 3"] {
+        // 2. Test reading Local State in Brave default root
+        let localState = defaultBrowserRoot.appendingPathComponent("Local State")
+        if let handle = try? FileHandle(forReadingFrom: localState) {
+            try? handle.close()
+            return true
+        }
+        // 3. Test direct access to Brave cookie database
+        for prof in ["Default", "Profile 1", "Profile 2", "Profile 3", "Profile 4", "Profile 5"] {
             for suffix in ["Network/Cookies", "Cookies"] {
                 let cookieFile = defaultBrowserRoot.appendingPathComponent(prof).appendingPathComponent(suffix)
                 if FileManager.default.fileExists(atPath: cookieFile.path) {
@@ -143,17 +155,37 @@ enum BraveSessionImporter {
                 }
             }
         }
-        // Test direct access to Brave root directory
+        // 4. Test direct access to Brave root directory
         var isDir: ObjCBool = false
         if FileManager.default.fileExists(atPath: defaultBrowserRoot.path, isDirectory: &isDir), isDir.boolValue {
             do {
-                _ = try FileManager.default.contentsOfDirectory(atPath: defaultBrowserRoot.path)
-                return true
+                let contents = try FileManager.default.contentsOfDirectory(atPath: defaultBrowserRoot.path)
+                return !contents.isEmpty
             } catch {
                 return false
             }
         }
         return false
+    }
+
+    static func accessKind() -> BraveAccessKind {
+        if hasFullDiskAccess() {
+            return .fullDisk
+        }
+        let (root, accessing) = resolvedBrowserRoot()
+        defer { if accessing { root.stopAccessingSecurityScopedResource() } }
+        var isDir: ObjCBool = false
+        if FileManager.default.fileExists(atPath: root.path, isDirectory: &isDir), isDir.boolValue {
+            if let entries = try? FileManager.default.contentsOfDirectory(atPath: root.path), !entries.isEmpty {
+                return .folder
+            }
+        }
+        if UserDefaults.standard.data(forKey: profileBookmarkKey) != nil ||
+           UserDefaults.standard.data(forKey: rootBookmarkKey) != nil ||
+           UserDefaults.standard.string(forKey: "BraveProfilePath") != nil {
+            return .folder
+        }
+        return .blocked
     }
 
     static func resolvedBrowserRoot() -> (url: URL, accessing: Bool) {
@@ -199,21 +231,7 @@ enum BraveSessionImporter {
     }
 
     static func isAccessBlocked() -> Bool {
-        if hasFullDiskAccess() {
-            return false
-        }
-        let (root, accessing) = resolvedBrowserRoot()
-        defer { if accessing { root.stopAccessingSecurityScopedResource() } }
-        var isDir: ObjCBool = false
-        if !FileManager.default.fileExists(atPath: root.path, isDirectory: &isDir) || !isDir.boolValue {
-            return false
-        }
-        do {
-            _ = try FileManager.default.contentsOfDirectory(atPath: root.path)
-            return false
-        } catch {
-            return true
-        }
+        return accessKind() == .blocked
     }
 
     static func availableProfiles() -> [BraveProfile] {
@@ -468,8 +486,6 @@ enum BraveSessionImporter {
         do {
             return try decryptCookieRows(encryptedRows, version: version, key: key)
         } catch {
-            cachedPassword = nil
-            KeychainVault.clear("brave_safe_storage_key")
             if interactive {
                 if let freshPassword = try? safeStoragePassword(interactive: true, forceFresh: true),
                    let freshKey = deriveSafeStorageKey(from: freshPassword),
@@ -491,18 +507,20 @@ enum BraveSessionImporter {
     }
 
     private static func decryptCookieRows(_ rows: [(String, String, Data, String, Double)], version: Int, key: [UInt8]) throws -> [StoredCookie] {
-        return try rows.map { host, name, blob, plain, expiry in
+        var results: [StoredCookie] = []
+        for (host, name, blob, plain, expiry) in rows {
             let value: String
-            if !plain.isEmpty { value = plain }
-            else {
-                guard blob.starts(with: Data("v10".utf8)) else { throw ConnectorError.message("This Brave cookie encryption format is not supported.") }
+            if !plain.isEmpty {
+                value = plain
+            } else {
+                guard blob.starts(with: Data("v10".utf8)) else { continue }
                 let input = Data(blob.dropFirst(3)), iv = [UInt8](repeating: 32, count: 16)
                 var output = [UInt8](repeating: 0, count: input.count + 16), moved = 0
                 let capacity = output.count
                 let status = key.withUnsafeBytes { k in iv.withUnsafeBytes { v in input.withUnsafeBytes { raw in
                     CCCrypt(CCOperation(kCCDecrypt), CCAlgorithm(kCCAlgorithmAES), CCOptions(kCCOptionPKCS7Padding), k.baseAddress, key.count, v.baseAddress, raw.baseAddress, input.count, &output, capacity, &moved)
                 }}}
-                guard status == kCCSuccess else { throw ConnectorError.message("Brave session decryption failed. No credentials were imported.") }
+                guard status == kCCSuccess else { continue }
                 var decrypted = Data(output.prefix(moved))
                 if version >= 24 && decrypted.count > 32 {
                     let digestHost = Data(SHA256.hash(data: Data(host.utf8)))
@@ -512,15 +530,21 @@ enum BraveSessionImporter {
 
                     if decrypted.starts(with: digestHost) || decrypted.starts(with: digestClean) || decrypted.starts(with: digestDotted) {
                         decrypted = decrypted.dropFirst(32)
+                    } else if let s = String(data: decrypted.dropFirst(32), encoding: .utf8), !s.isEmpty {
+                        decrypted = decrypted.dropFirst(32)
                     } else if String(data: decrypted, encoding: .utf8) == nil {
-                        throw ConnectorError.message("The saved cookie did not match its provider domain.")
+                        continue
                     }
                 }
-                guard let string = String(data: decrypted, encoding: .utf8), !string.isEmpty else { throw ConnectorError.message("The saved session could not be decoded.") }
+                guard let string = String(data: decrypted, encoding: .utf8), !string.isEmpty else { continue }
                 value = string
             }
-            return StoredCookie(name: name, value: value, domain: host, expires: expiry > 0 ? Date(timeIntervalSince1970: expiry / 1_000_000 - 11_644_473_600) : nil)
+            results.append(StoredCookie(name: name, value: value, domain: host, expires: expiry > 0 ? Date(timeIntervalSince1970: expiry / 1_000_000 - 11_644_473_600) : nil))
         }
+        guard !results.isEmpty else {
+            throw ConnectorError.message("Could not decode any valid cookies for this provider.")
+        }
+        return results
     }
     private static nonisolated(unsafe) var cachedPassword: Data?
     static func discoverGoogleBillingAccount() -> String? {
@@ -649,12 +673,24 @@ enum BraveSessionImporter {
             }
         }
         let context = LAContext(); context.interactionNotAllowed = !interactive
-        let query: [String:Any] = [kSecClass as String:kSecClassGenericPassword,kSecAttrService as String:"Brave Safe Storage",kSecReturnData as String:true,kSecMatchLimit as String:kSecMatchLimitOne,kSecUseAuthenticationContext as String:context]
+        let query: [String:Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: "Brave Safe Storage",
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+            kSecUseAuthenticationContext as String: context
+        ]
         var item: CFTypeRef?
-        let status = try KeychainVault.access(interactive:interactive) { SecItemCopyMatching(query as CFDictionary,&item) }
-        guard status == errSecSuccess, let value = item as? Data else { throw ConnectorError.message("Brave Safe Storage access was not granted (\(status)). Your session was not imported.") }
-        cachedPassword = value
-        try? KeychainVault.save(value, account: "brave_safe_storage_key", interactive: interactive)
-        return value
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        if status == errSecSuccess, let value = item as? Data {
+            cachedPassword = value
+            try? KeychainVault.save(value, account: "brave_safe_storage_key", interactive: interactive)
+            return value
+        }
+        if let stored = try? KeychainVault.load("brave_safe_storage_key"), !stored.isEmpty {
+            cachedPassword = stored
+            return stored
+        }
+        throw ConnectorError.message("Brave Safe Storage access was not granted (\(status)). Your session was not imported.")
     }
 }

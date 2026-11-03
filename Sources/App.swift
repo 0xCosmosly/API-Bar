@@ -216,7 +216,8 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
     }
     @Published var providerStatus: [String:String] = [:]
     @Published var isBraveInstalled: Bool = BraveSessionImporter.isBraveInstalled()
-    @Published var isBraveAccessBlocked: Bool = BraveSessionImporter.isAccessBlocked()
+    @Published var braveAccessKind: BraveSessionImporter.BraveAccessKind = BraveSessionImporter.accessKind()
+    @Published var isBraveAccessBlocked: Bool = (BraveSessionImporter.accessKind() == .blocked)
     @Published var availableBraveProfiles: [BraveProfile] = BraveSessionImporter.availableProfiles()
     @Published var selectedBraveProfileID: String = {
         let profiles = BraveSessionImporter.availableProfiles()
@@ -232,16 +233,20 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         if !BraveSessionImporter.isBraveInstalled() {
             return "Brave Browser was not found in Applications."
         }
-        if BraveSessionImporter.isAccessBlocked() {
-            return "macOS blocked access to Brave. Click 'Choose Brave Profile…' to grant access."
+        let kind = BraveSessionImporter.accessKind()
+        if kind == .blocked {
+            return "macOS blocked access to Brave. Grant Full Disk Access or choose your Brave profile folder."
         }
         let profiles = BraveSessionImporter.availableProfiles()
+        let profileName: String
         if let path = UserDefaults.standard.string(forKey: "BraveProfilePath") {
             let last = URL(fileURLWithPath: path).lastPathComponent
-            let name = profiles.first(where: { $0.id == last })?.displayName ?? last
-            return "Selected \(name). Connect each provider below."
+            profileName = profiles.first(where: { $0.id == last })?.displayName ?? last
+        } else {
+            profileName = profiles.first?.displayName ?? "Default"
         }
-        return "Select the profile you use to sign in."
+        let accessDesc = (kind == .fullDisk) ? "Full Disk Access active" : "Folder access active"
+        return "\(accessDesc) · Selected profile: \(profileName)"
     }()
     var clients: [String:SessionHTTP] = [:]
     @Published var inFlight = Set<String>()
@@ -506,30 +511,34 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
     }
     func refreshBraveProfiles() {
         isBraveInstalled = BraveSessionImporter.isBraveInstalled()
-        isBraveAccessBlocked = BraveSessionImporter.isAccessBlocked()
+        braveAccessKind = BraveSessionImporter.accessKind()
+        isBraveAccessBlocked = (braveAccessKind == .blocked)
         availableBraveProfiles = BraveSessionImporter.availableProfiles()
         if !isBraveInstalled {
             braveProfileStatus = "Brave Browser was not found in Applications."
             return
         }
         if isBraveAccessBlocked {
-            braveProfileStatus = "macOS blocked access to Brave. Click 'Choose Brave Profile…' to grant access."
+            braveProfileStatus = "macOS blocked access to Brave. Grant Full Disk Access or choose your Brave profile folder."
             return
         }
+        let profileName: String
         if let path = UserDefaults.standard.string(forKey: "BraveProfilePath") {
             let last = URL(fileURLWithPath: path).lastPathComponent
             if availableBraveProfiles.contains(where: { $0.id == last }) {
                 selectedBraveProfileID = last
-                let name = availableBraveProfiles.first(where: { $0.id == last })?.displayName ?? last
-                braveProfileStatus = "Selected \(name). Connect each provider below."
-                return
+                profileName = availableBraveProfiles.first(where: { $0.id == last })?.displayName ?? last
+            } else {
+                profileName = availableBraveProfiles.first(where: { $0.id == selectedBraveProfileID })?.displayName ?? selectedBraveProfileID
             }
+        } else {
+            if !availableBraveProfiles.contains(where: { $0.id == selectedBraveProfileID }), let first = availableBraveProfiles.first {
+                selectedBraveProfileID = first.id
+            }
+            profileName = availableBraveProfiles.first(where: { $0.id == selectedBraveProfileID })?.displayName ?? selectedBraveProfileID
         }
-        if !availableBraveProfiles.contains(where: { $0.id == selectedBraveProfileID }), let first = availableBraveProfiles.first {
-            selectedBraveProfileID = first.id
-        }
-        let currentName = availableBraveProfiles.first(where: { $0.id == selectedBraveProfileID })?.displayName ?? selectedBraveProfileID
-        braveProfileStatus = "Selected \(currentName). Connect each provider below."
+        let accessDesc = (braveAccessKind == .fullDisk) ? "Full Disk Access active" : "Folder access active"
+        braveProfileStatus = "\(accessDesc) · Selected profile: \(profileName)"
     }
 
     func selectBraveProfile(id: String) {
@@ -598,6 +607,10 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         guard !inFlight.contains(provider) else { return }
         inFlight.insert(provider); providerStatus[provider] = "Connecting…"
         Task {
+            defer {
+                inFlight.remove(provider)
+                updateTitles()
+            }
             do {
                 // Only this explicit Settings action is allowed to display credential UI.
                 let b = balances.first(where: { $0.id == provider })
@@ -611,8 +624,19 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
                         try SessionHTTP.connect(provider: provider, cookieDomain: cookieDomain, dynamicHost: host, interactive: true)
                     }.value
                 }
-                let reading = try await fetch(provider,client:client)
-                clients[provider] = client; apply(reading)
+                let reading = try await withThrowingTaskGroup(of: Reading.self) { group in
+                    group.addTask { try await self.fetch(provider, client: client) }
+                    group.addTask {
+                        try await Task.sleep(nanoseconds: 15_000_000_000)
+                        throw ConnectorError.message("Connection timed out after 15 seconds.")
+                    }
+                    let res = try await group.next()!
+                    group.cancelAll()
+                    return res
+                }
+                clients[provider] = client
+                apply(reading)
+                providerStatus[provider] = "Connected · refreshes every 5 minutes"
             } catch {
                 providerStatus[provider] = error.localizedDescription
                 refreshBraveProfiles()
@@ -638,56 +662,81 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
                     alert("Could not connect", error.localizedDescription)
                 }
             }
-            inFlight.remove(provider); updateTitles()
         }
     }
     func connectAll() {
         Task {
-            var errors: [String] = []
-            for balance in balances {
-                guard !inFlight.contains(balance.id) else { continue }
-                inFlight.insert(balance.id); providerStatus[balance.id] = "Connecting…"
+            defer {
+                inFlight.removeAll()
                 updateTitles()
-                do {
-                    let host = balance.dynamicEndpoint.flatMap { URL(string: $0)?.host }
-                    let client: SessionHTTP
-                    if let auth = balance.dynamicAuthHeader, !auth.isEmpty {
-                        client = SessionHTTP(provider: balance.id, cookies: [], dynamicHost: host)
-                    } else {
-                        let cookieDomain = balance.dynamicCookieDomain
-                        client = try await Task.detached {
-                            try SessionHTTP.connect(provider: balance.id, cookieDomain: cookieDomain, dynamicHost: host, interactive: true)
-                        }.value
-                    }
-                    let reading = try await fetch(balance.id, client: client)
-                    clients[balance.id] = client; apply(reading)
-                } catch {
-                    providerStatus[balance.id] = error.localizedDescription
-                    errors.append("\(balance.name): \(error.localizedDescription)")
-                    openDashboard(balance)
-                }
-                inFlight.remove(balance.id); updateTitles()
             }
-            if !errors.isEmpty {
-                refreshBraveProfiles()
-                if isBraveAccessBlocked || errors.contains(where: { $0.contains("blocked access to Brave") }) {
-                    let alert = NSAlert()
-                    alert.icon = NSApp.applicationIconImage ?? BrandMark.appIconImage(size: 128)
-                    alert.messageText = "Brave Access Blocked by macOS"
-                    alert.informativeText = errors.joined(separator: "\n\n")
-                    alert.addButton(withTitle: "Grant Full Disk Access")
-                    alert.addButton(withTitle: "Folder Access Only")
-                    alert.addButton(withTitle: "Cancel")
-                    NSApp.activate(ignoringOtherApps: true)
-                    let response = alert.runModal()
-                    if response == .alertFirstButtonReturn {
-                        openFullDiskAccessSettings()
-                    } else if response == .alertSecondButtonReturn {
-                        chooseBraveProfile()
+            let targets = balances.filter { !isConnected($0.id) }
+            guard !targets.isEmpty else {
+                updateTitles()
+                return
+            }
+
+            for balance in targets {
+                inFlight.insert(balance.id)
+                providerStatus[balance.id] = "Connecting…"
+            }
+            updateTitles()
+
+            var errors: [String] = []
+            await withTaskGroup(of: (String, Result<Reading, Error>).self) { group in
+                for balance in targets {
+                    group.addTask { [balance] in
+                        do {
+                            let host = balance.dynamicEndpoint.flatMap { URL(string: $0)?.host }
+                            let client: SessionHTTP
+                            if let auth = balance.dynamicAuthHeader, !auth.isEmpty {
+                                client = SessionHTTP(provider: balance.id, cookies: [], dynamicHost: host)
+                            } else {
+                                let cookieDomain = balance.dynamicCookieDomain
+                                client = try SessionHTTP.connect(provider: balance.id, cookieDomain: cookieDomain, dynamicHost: host, interactive: false)
+                            }
+                            let reading = try await withThrowingTaskGroup(of: Reading.self) { fetchGroup in
+                                fetchGroup.addTask {
+                                    try await self.fetch(balance.id, client: client)
+                                }
+                                fetchGroup.addTask {
+                                    try await Task.sleep(nanoseconds: 12_000_000_000)
+                                    throw ConnectorError.message("Connection timed out after 12 seconds.")
+                                }
+                                let res = try await fetchGroup.next()!
+                                fetchGroup.cancelAll()
+                                return res
+                            }
+                            await MainActor.run {
+                                self.clients[balance.id] = client
+                            }
+                            return (balance.id, .success(reading))
+                        } catch {
+                            return (balance.id, .failure(error))
+                        }
                     }
-                } else {
-                    alert("Connect All", errors.joined(separator: "\n\n"))
                 }
+
+                for await (id, result) in group {
+                    inFlight.remove(id)
+                    switch result {
+                    case .success(let reading):
+                        apply(reading)
+                        providerStatus[id] = "Connected · refreshes every 5 minutes"
+                    case .failure(let error):
+                        providerStatus[id] = error.localizedDescription
+                        if let name = balances.first(where: { $0.id == id })?.name {
+                            errors.append("\(name): \(error.localizedDescription)")
+                        }
+                    }
+                    updateTitles()
+                }
+            }
+
+            refreshBraveProfiles()
+            writeDiagnostics()
+            if ICloudSync.shared.isEnabled {
+                Task { await ICloudSync.shared.syncNow() }
             }
         }
     }
