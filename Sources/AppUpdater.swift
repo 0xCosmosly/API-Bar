@@ -28,7 +28,7 @@ public final class AppUpdater: ObservableObject {
     private var lastCheckedDate: Date?
 
     public var currentVersion: String {
-        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.4.8"
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.4.9"
     }
 
     public struct ReleaseInfo {
