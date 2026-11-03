@@ -33,52 +33,33 @@ struct PaperProviderBadge: View {
     var cornerRadius: CGFloat = 6
 
     var monogram: String {
-        switch id {
-        case "vertex": return "VX"
-        case "fireworks": return "FW"
-        case "cerebras": return "CB"
-        case "aistudio": return "GS"
-        case "crowbot": return "CR"
-        case "refuseless": return "RF"
-        case "venice": return "VN"
-        default:
-            let words = name.split(separator: " ")
-            if words.count >= 2 {
-                return (String(words[0].prefix(1)) + String(words[1].prefix(1))).uppercased()
-            } else {
-                return String(name.prefix(2)).uppercased()
-            }
-        }
-    }
-
-    var brandColor: Color {
-        switch id {
-        case "vertex", "aistudio":
-            return Color(red: 26/255.0, green: 115/255.0, blue: 232/255.0) // Google Blue #1A73E8
-        case "cerebras":
-            return Color(red: 217/255.0, green: 56/255.0, blue: 30/255.0)  // Cerebras Red #D9381E
-        case "fireworks":
-            return Color(red: 212/255.0, green: 107/255.0, blue: 8/255.0)  // Fireworks Orange #D46B08
-        case "refuseless":
-            return Color(red: 19/255.0, green: 115/255.0, blue: 51/255.0)  // Refuseless Green #137333
-        case "venice":
-            return Color(red: 123/255.0, green: 31/255.0, blue: 162/255.0) // Venice Purple #7B1FA2
-        case "crowbot":
-            return Color(red: 66/255.0, green: 66/255.0, blue: 66/255.0)   // Crowbot Charcoal #424242
-        default:
-            return Color.accentColor
+        let words = name.split(separator: " ")
+        if words.count >= 2 {
+            return (String(words[0].prefix(1)) + String(words[1].prefix(1))).uppercased()
+        } else {
+            return String(name.prefix(2)).uppercased()
         }
     }
 
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: cornerRadius)
-                .fill(brandColor.opacity(0.14))
+                .fill(Color.white)
             RoundedRectangle(cornerRadius: cornerRadius)
-                .stroke(brandColor.opacity(0.25), lineWidth: 0.8)
-            Text(monogram)
-                .font(.system(size: size * 0.44, weight: .bold, design: .rounded))
-                .foregroundStyle(brandColor)
+                .stroke(Color(red: 209/255.0, green: 209/255.0, blue: 214/255.0), lineWidth: 0.8)
+
+            if ProviderIcon.hasMask(for: id) {
+                Image(nsImage: ProviderIcon.image(id))
+                    .renderingMode(.template)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .foregroundStyle(Color.black)
+                    .frame(width: size * 0.65, height: size * 0.65)
+            } else {
+                Text(monogram)
+                    .font(.system(size: size * 0.42, weight: .bold, design: .rounded))
+                    .foregroundStyle(Color.black)
+            }
         }
         .frame(width: size, height: size)
     }
@@ -110,7 +91,7 @@ struct PaperWhiteButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: 11, weight: .medium))
-            .foregroundStyle(isEnabled ? Color.primary : Color.secondary)
+            .foregroundStyle(isEnabled ? Color.primary : Color(NSColor.secondaryLabelColor))
             .padding(.horizontal, 10)
             .padding(.vertical, 5)
             .background(
@@ -119,9 +100,9 @@ struct PaperWhiteButtonStyle: ButtonStyle {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 6)
-                    .stroke(Color.primary.opacity(0.15), lineWidth: 1)
+                    .stroke(Color.primary.opacity(isEnabled ? 0.15 : 0.10), lineWidth: 1)
             )
-            .opacity(configuration.isPressed ? 0.75 : (isEnabled ? 1.0 : 0.5))
+            .opacity(configuration.isPressed ? 0.75 : 1.0)
             .contentShape(Rectangle())
     }
 }
@@ -144,7 +125,7 @@ struct PaperPillButtonStyle: ButtonStyle {
                 RoundedRectangle(cornerRadius: 6)
                     .stroke(tintColor.opacity(0.24), lineWidth: 0.5)
             )
-            .opacity(configuration.isPressed ? 0.75 : (isEnabled ? 1.0 : 0.5))
+            .opacity(configuration.isPressed ? 0.75 : 1.0)
             .contentShape(Rectangle())
     }
 }
@@ -156,14 +137,18 @@ struct PaperProminentButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: 12, weight: .semibold))
-            .foregroundStyle(Color.white)
+            .foregroundStyle(isEnabled ? Color.white : Color(NSColor.secondaryLabelColor))
             .padding(.horizontal, 12)
             .padding(.vertical, 5)
             .background(
                 RoundedRectangle(cornerRadius: 6)
-                    .fill(isEnabled ? tintColor : tintColor.opacity(0.5))
+                    .fill(isEnabled ? tintColor : Color(NSColor.separatorColor).opacity(0.35))
             )
-            .opacity(configuration.isPressed ? 0.8 : (isEnabled ? 1.0 : 0.5))
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(isEnabled ? Color.clear : Color.primary.opacity(0.12), lineWidth: 1)
+            )
+            .opacity(configuration.isPressed ? 0.8 : 1.0)
             .contentShape(Rectangle())
     }
 }
@@ -647,7 +632,7 @@ struct OnboardingView: View {
 
             VStack(alignment: .leading, spacing: 14) {
                 featureRow(icon: "chart.bar.xaxis", title: "Live Credit Gauges", description: "Monitor remaining balance and automatic 100% baseline usage across Vertex AI, Fireworks, Cerebras, Google AI Studio, Refuseless, and Crowbot.")
-                featureRow(icon: "shield.checkered", title: "Zero API Key Hassle", description: "API Bar securely reads authenticated sessions from Brave Browser directly on your device. No credentials ever leave your Mac.")
+                featureRow(icon: "shield.checkered", title: "Zero API Key Hassle", description: "API Bar securely reads authenticated sessions from \(app.browserName) Browser directly on your device. No credentials ever leave your Mac.")
                 featureRow(icon: "menubar.rectangle", title: "Flexible Menu Bar Display", description: "View all providers in a single compact merged gauge or separate icons for each provider.")
                 featureRow(icon: "lock.shield", title: "100% Private & Local", description: "Zero telemetry or external servers. All credentials stay strictly in your local macOS Keychain.")
             }
@@ -746,18 +731,61 @@ struct OnboardingView: View {
         }
     }
 
+    @ViewBuilder
+    private var braveStepPermissionNotice: some View {
+        if app.isBraveAccessBlocked {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(Color.orange)
+                    Text("\(app.browserName) session access requires macOS permission.")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                }
+                Text("Grant Full Disk Access or choose Folder Access Only for instant access.")
+                    .font(.caption)
+                    .foregroundStyle(Color.secondary)
+                HStack(spacing: 8) {
+                    Button(app.braveAccessKind == .fullDisk ? "Full Disk Access Granted ✓" : "Grant Full Disk Access") {
+                        app.openFullDiskAccessSettings()
+                    }
+                    .buttonStyle(PaperWhiteButtonStyle())
+                    .disabled(app.braveAccessKind == .fullDisk)
+
+                    Button(app.braveAccessKind == .folder ? "Folder Access Active ✓" : "Folder Access Only") {
+                        app.chooseBraveProfile()
+                    }
+                    .buttonStyle(PaperWhiteButtonStyle())
+                    .disabled(app.braveAccessKind == .folder)
+
+                    Divider()
+                        .frame(height: 16)
+                        .padding(.horizontal, 4)
+
+                    Button("Relaunch API Bar") {
+                        app.relaunchApp()
+                    }
+                    .buttonStyle(PaperWhiteButtonStyle())
+                }
+            }
+            .padding(10)
+            .background(RoundedRectangle(cornerRadius: 8).fill(Color.orange.opacity(0.10)))
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.orange.opacity(0.25), lineWidth: 1))
+        }
+    }
+
     private var braveStep: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Connect Your Brave Browser")
+            Text("Connect Your \(app.browserName) Browser")
                 .font(.headline)
-            Text("Select your Brave profile and connect your active provider sessions in one click.")
+            Text("Select your \(app.browserName) profile and connect your active provider sessions in one click.")
                 .font(.subheadline)
                 .foregroundStyle(Color.secondary)
 
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Brave Profile")
+                        Text("\(app.browserName) Profile")
                             .font(.subheadline)
                             .fontWeight(.medium)
                         Text(app.braveProfileStatus)
@@ -777,29 +805,7 @@ struct OnboardingView: View {
                     .frame(width: 180)
                 }
 
-                if app.isBraveAccessBlocked {
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack(spacing: 6) {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                                .foregroundStyle(Color.orange)
-                            Text("Brave session access requires macOS permission.")
-                                .font(.subheadline)
-                                .fontWeight(.semibold)
-                        }
-                        Text("Grant Full Disk Access or choose Folder Access Only for instant access.")
-                            .font(.caption)
-                            .foregroundStyle(Color.secondary)
-                        HStack(spacing: 8) {
-                            Button("Grant Full Disk Access") { app.openFullDiskAccessSettings() }
-                                .buttonStyle(PaperProminentButtonStyle())
-                            Button("Folder Access Only") { app.chooseBraveProfile() }
-                                .buttonStyle(PaperWhiteButtonStyle())
-                        }
-                    }
-                    .padding(10)
-                    .background(RoundedRectangle(cornerRadius: 8).fill(Color.orange.opacity(0.10)))
-                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.orange.opacity(0.25), lineWidth: 1))
-                }
+                braveStepPermissionNotice
 
                 Divider().opacity(0.6)
 
@@ -813,7 +819,7 @@ struct OnboardingView: View {
                             } else {
                                 Image(systemName: "arrow.triangle.2.circlepath")
                             }
-                            Text("Connect All from Brave")
+                            Text("Connect All from \(app.browserName)")
                         }
                     }
                     .buttonStyle(PaperProminentButtonStyle())
@@ -1202,132 +1208,7 @@ struct SettingsPane: View {
             .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.primary.opacity(0.08), lineWidth: 1))
             .shadow(color: Color.black.opacity(0.03), radius: 2, x: 0, y: 1)
 
-            // MARK: - Brave Browser Card
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(alignment: .center, spacing: 8) {
-                    Image(systemName: "globe")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(Color.accentColor)
-                    Text("Brave Browser Session")
-                        .font(.headline)
-                        .foregroundStyle(Color.primary)
-                    Spacer()
-                    if app.isBraveAccessBlocked {
-                        HStack(spacing: 5) {
-                            Circle().fill(Color.orange).frame(width: 6, height: 6)
-                            Text("Action Required")
-                                .font(.caption2)
-                                .fontWeight(.semibold)
-                                .foregroundStyle(Color.orange)
-                        }
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(Capsule().fill(Color.orange.opacity(0.12)))
-                    } else if app.braveAccessKind == .fullDisk {
-                        HStack(spacing: 5) {
-                            Circle().fill(Color.green).frame(width: 6, height: 6)
-                            Text("Full Disk Access")
-                                .font(.caption2)
-                                .fontWeight(.semibold)
-                                .foregroundStyle(Color.green)
-                        }
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(Capsule().fill(Color.green.opacity(0.12)))
-                    } else {
-                        HStack(spacing: 5) {
-                            Circle().fill(Color.blue).frame(width: 6, height: 6)
-                            Text("Folder Access")
-                                .font(.caption2)
-                                .fontWeight(.semibold)
-                                .foregroundStyle(Color.blue)
-                        }
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(Capsule().fill(Color.blue.opacity(0.12)))
-                    }
-                }
-
-                if app.isBraveAccessBlocked {
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack(spacing: 6) {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                                .foregroundStyle(Color.orange)
-                            Text("Brave session access requires macOS permission.")
-                                .font(.subheadline)
-                                .fontWeight(.semibold)
-                        }
-                        Text("If you already turned Full Disk Access ON in macOS System Settings, click Relaunch API Bar to apply. You can also use Folder Access Only for instant, permanent access without System Settings.")
-                            .font(.caption)
-                            .foregroundStyle(Color.secondary)
-                        HStack(spacing: 8) {
-                            Button("Grant Full Disk Access") { app.openFullDiskAccessSettings() }
-                                .buttonStyle(PaperProminentButtonStyle())
-                            Button("Folder Access Only") { app.chooseBraveProfile() }
-                                .buttonStyle(PaperWhiteButtonStyle())
-                            Button("Relaunch API Bar") { app.relaunchApp() }
-                                .buttonStyle(PaperWhiteButtonStyle())
-                        }
-                    }
-                    .padding(12)
-                    .background(RoundedRectangle(cornerRadius: 8).fill(Color.orange.opacity(0.10)))
-                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.orange.opacity(0.25), lineWidth: 1))
-                }
-
-                HStack(alignment: .center) {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("Active Profile")
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                            .foregroundStyle(Color.primary)
-                        Text(app.braveProfileStatus)
-                            .font(.caption)
-                            .foregroundStyle(app.isBraveAccessBlocked ? Color.orange : Color.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    Spacer()
-                    Picker("", selection: Binding(
-                        get: { app.selectedBraveProfileID },
-                        set: { app.selectBraveProfile(id: $0) }
-                    )) {
-                        ForEach(app.availableBraveProfiles) { profile in
-                            Text(profile.displayName).tag(profile.id)
-                        }
-                    }
-                    .pickerStyle(.menu)
-                    .frame(width: 180)
-                }
-
-                Divider().opacity(0.6)
-
-                HStack(spacing: 8) {
-                    Button("Grant Full Disk Access") { app.openFullDiskAccessSettings() }
-                        .buttonStyle(PaperProminentButtonStyle())
-                    Button("Folder Access Only") { app.chooseBraveProfile() }
-                        .buttonStyle(PaperWhiteButtonStyle())
-                    Button("Relaunch API Bar") { app.relaunchApp() }
-                        .buttonStyle(PaperWhiteButtonStyle())
-                    Spacer()
-                    Button {
-                        app.connectAll()
-                    } label: {
-                        HStack(spacing: 6) {
-                            if !app.inFlight.isEmpty {
-                                ProgressView().controlSize(.small)
-                            } else {
-                                Image(systemName: "arrow.triangle.2.circlepath")
-                            }
-                            Text("Connect All from Brave")
-                        }
-                    }
-                    .buttonStyle(PaperProminentButtonStyle())
-                    .disabled(!app.inFlight.isEmpty || app.balances.allSatisfy { app.isConnected($0.id) })
-                }
-            }
-            .padding(16)
-            .background(RoundedRectangle(cornerRadius: 12).fill(Color(NSColor.controlBackgroundColor)))
-            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.primary.opacity(0.08), lineWidth: 1))
-            .shadow(color: Color.black.opacity(0.03), radius: 2, x: 0, y: 1)
+            browserSessionCard
 
             // MARK: - Providers Card
             VStack(alignment: .leading, spacing: 12) {
@@ -1705,6 +1586,181 @@ struct SettingsPane: View {
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             app.refreshBraveProfiles()
         }
+    }
+
+    @ViewBuilder
+    private var browserAccessBadge: some View {
+        if app.isBraveAccessBlocked {
+            HStack(spacing: 5) {
+                Circle().fill(Color.orange).frame(width: 6, height: 6)
+                Text("Action Required")
+                    .font(.caption2)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(Color.orange)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(Capsule().fill(Color.orange.opacity(0.12)))
+        } else if app.braveAccessKind == .fullDisk {
+            HStack(spacing: 5) {
+                Circle().fill(Color.green).frame(width: 6, height: 6)
+                Text("Full Disk Access")
+                    .font(.caption2)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(Color.green)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(Capsule().fill(Color.green.opacity(0.12)))
+        } else {
+            HStack(spacing: 5) {
+                Circle().fill(Color.blue).frame(width: 6, height: 6)
+                Text("Folder Access")
+                    .font(.caption2)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(Color.blue)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(Capsule().fill(Color.blue.opacity(0.12)))
+        }
+    }
+
+    @ViewBuilder
+    private var browserBlockedWarning: some View {
+        if app.isBraveAccessBlocked {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(Color.orange)
+                    Text("\(app.browserName) session access requires macOS permission.")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                }
+                Text("If you already turned Full Disk Access ON in macOS System Settings, click Relaunch API Bar to apply. You can also use Folder Access Only for instant, permanent access without System Settings.")
+                    .font(.caption)
+                    .foregroundStyle(Color.secondary)
+                HStack(spacing: 8) {
+                    Button(app.braveAccessKind == .fullDisk ? "Full Disk Access Granted ✓" : "Grant Full Disk Access") {
+                        app.openFullDiskAccessSettings()
+                    }
+                    .buttonStyle(PaperWhiteButtonStyle())
+                    .disabled(app.braveAccessKind == .fullDisk)
+
+                    Button(app.braveAccessKind == .folder ? "Folder Access Active ✓" : "Folder Access Only") {
+                        app.chooseBraveProfile()
+                    }
+                    .buttonStyle(PaperWhiteButtonStyle())
+                    .disabled(app.braveAccessKind == .folder)
+
+                    Divider()
+                        .frame(height: 16)
+                        .padding(.horizontal, 4)
+
+                    Button("Relaunch API Bar") {
+                        app.relaunchApp()
+                    }
+                    .buttonStyle(PaperWhiteButtonStyle())
+                }
+            }
+            .padding(12)
+            .background(RoundedRectangle(cornerRadius: 8).fill(Color.orange.opacity(0.10)))
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.orange.opacity(0.25), lineWidth: 1))
+        }
+    }
+
+    @ViewBuilder
+    private var browserSessionActions: some View {
+        let allConnected = !app.inFlight.isEmpty || app.balances.allSatisfy { app.isConnected($0.id) }
+        HStack(spacing: 8) {
+            Button(app.braveAccessKind == .fullDisk ? "Full Disk Access Granted ✓" : "Grant Full Disk Access") {
+                app.openFullDiskAccessSettings()
+            }
+            .buttonStyle(PaperWhiteButtonStyle())
+            .disabled(app.braveAccessKind == .fullDisk)
+
+            Button(app.braveAccessKind == .folder ? "Folder Access Active ✓" : "Folder Access Only") {
+                app.chooseBraveProfile()
+            }
+            .buttonStyle(PaperWhiteButtonStyle())
+            .disabled(app.braveAccessKind == .folder)
+
+            Divider()
+                .frame(height: 16)
+                .padding(.horizontal, 4)
+
+            Button("Relaunch API Bar") {
+                app.relaunchApp()
+            }
+            .buttonStyle(PaperWhiteButtonStyle())
+
+            Spacer()
+
+            Button {
+                app.connectAll()
+            } label: {
+                HStack(spacing: 6) {
+                    if !app.inFlight.isEmpty {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                    }
+                    Text("Connect All from \(app.browserName)")
+                }
+            }
+            .buttonStyle(PaperProminentButtonStyle())
+            .disabled(allConnected)
+        }
+    }
+
+    @ViewBuilder
+    private var browserSessionCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .center, spacing: 8) {
+                Image(systemName: "globe")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Color.accentColor)
+                Text("\(app.browserName) Browser Session")
+                    .font(.headline)
+                    .foregroundStyle(Color.primary)
+                Spacer()
+                browserAccessBadge
+            }
+
+            browserBlockedWarning
+
+            HStack(alignment: .center) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Active Profile")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                        .foregroundStyle(Color.primary)
+                    Text(app.braveProfileStatus)
+                        .font(.caption)
+                        .foregroundStyle(app.isBraveAccessBlocked ? Color.orange : Color.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer()
+                Picker("", selection: Binding(
+                    get: { app.selectedBraveProfileID },
+                    set: { app.selectBraveProfile(id: $0) }
+                )) {
+                    ForEach(app.availableBraveProfiles) { profile in
+                        Text(profile.displayName).tag(profile.id)
+                    }
+                }
+                .pickerStyle(.menu)
+                .frame(width: 180)
+            }
+
+            Divider().opacity(0.6)
+
+            browserSessionActions
+        }
+        .padding(16)
+        .background(RoundedRectangle(cornerRadius: 12).fill(Color(NSColor.controlBackgroundColor)))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.primary.opacity(0.08), lineWidth: 1))
+        .shadow(color: Color.black.opacity(0.03), radius: 2, x: 0, y: 1)
     }
 
     private func runAddKnownProvider(_ meta: KnownProviderMeta) {

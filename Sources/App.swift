@@ -214,6 +214,7 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         writeDiagnostics()
         ICloudSync.shared.schedulePush()
     }
+    var browserName: String { BraveSessionImporter.currentBrowser.name }
     @Published var providerStatus: [String:String] = [:]
     @Published var isBraveInstalled: Bool = BraveSessionImporter.isBraveInstalled()
     @Published var braveAccessKind: BraveSessionImporter.BraveAccessKind = BraveSessionImporter.accessKind()
@@ -230,12 +231,13 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         return profiles.first?.id ?? "Default"
     }()
     @Published var braveProfileStatus: String = {
+        let browser = BraveSessionImporter.currentBrowser.name
         if !BraveSessionImporter.isBraveInstalled() {
-            return "Brave Browser was not found in Applications."
+            return "\(browser) was not found in Applications."
         }
         let kind = BraveSessionImporter.accessKind()
         if kind == .blocked {
-            return "macOS blocked access to Brave. Grant Full Disk Access or choose your Brave profile folder."
+            return "macOS blocked access to \(browser). Grant Full Disk Access or choose your \(browser) profile folder."
         }
         let profiles = BraveSessionImporter.availableProfiles()
         let profileName: String
@@ -546,11 +548,11 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         isBraveAccessBlocked = (braveAccessKind == .blocked)
         availableBraveProfiles = BraveSessionImporter.availableProfiles()
         if !isBraveInstalled {
-            braveProfileStatus = "Brave Browser was not found in Applications."
+            braveProfileStatus = "\(browserName) was not found in Applications."
             return
         }
         if isBraveAccessBlocked {
-            braveProfileStatus = "macOS blocked access to Brave. Grant Full Disk Access or choose your Brave profile folder."
+            braveProfileStatus = "macOS blocked access to \(browserName). Grant Full Disk Access or choose your \(browserName) profile folder."
             return
         }
         let profileName: String
@@ -587,8 +589,8 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
 
     func chooseBraveProfile() {
         let panel = NSOpenPanel()
-        panel.title = "Grant Access to Brave Browser"
-        panel.message = "Select your 'Brave-Browser' folder (or a profile folder like 'Default') to allow API Bar to import your sessions."
+        panel.title = "Grant Access to \(browserName) Browser"
+        panel.message = "Select your '\(browserName)' folder (or a profile folder like 'Default') to allow API Bar to import your sessions."
         panel.prompt = "Grant Access"
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
@@ -600,7 +602,10 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         if FileManager.default.fileExists(atPath: root.path) {
             panel.directoryURL = root
         } else {
-            panel.directoryURL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/BraveSoftware")
+            panel.directoryURL = FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent("Library/Application Support")
+                .appendingPathComponent(BraveSessionImporter.currentBrowser.appSupportRelativePath)
+                .deletingLastPathComponent()
         }
 
         NSApp.activate(ignoringOtherApps: true)
@@ -608,9 +613,9 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
             do {
                 try BraveSessionImporter.rememberProfile(url)
                 refreshBraveProfiles()
-                braveProfileStatus = "Access granted to Brave. Connect each provider below."
+                braveProfileStatus = "Access granted to \(browserName). Connect each provider below."
             } catch {
-                alert("Could not select Brave folder", error.localizedDescription)
+                alert("Could not select \(browserName) folder", error.localizedDescription)
             }
         }
     }
@@ -685,10 +690,10 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
                 if let b = balances.first(where: { $0.id == provider }) {
                     openDashboard(b)
                 }
-                if isBraveAccessBlocked || error.localizedDescription.contains("blocked access to Brave") {
+                if isBraveAccessBlocked || error.localizedDescription.contains("blocked access to") {
                     let alert = NSAlert()
                     alert.icon = NSApp.applicationIconImage ?? BrandMark.appIconImage(size: 128)
-                    alert.messageText = "Brave Access Blocked by macOS"
+                    alert.messageText = "\(browserName) Access Blocked by macOS"
                     alert.informativeText = error.localizedDescription
                     alert.addButton(withTitle: "Grant Full Disk Access")
                     alert.addButton(withTitle: "Folder Access Only")
@@ -1126,6 +1131,11 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         NSWorkspace.shared.open(url)
     }
     func openInBrave(_ url: URL) {
+        if let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: BraveSessionImporter.currentBrowser.bundleID) {
+            let config = NSWorkspace.OpenConfiguration()
+            NSWorkspace.shared.open([url], withApplicationAt: appURL, configuration: config, completionHandler: nil)
+            return
+        }
         openDefaultBrowser(url)
     }
     func setBaseline(for index: Int) {
@@ -1149,7 +1159,7 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         let a = NSAlert()
         a.icon = NSApp.applicationIconImage ?? BrandMark.appIconImage(size: 128)
         a.messageText = "Automatic credit detection"
-        a.informativeText = "Connect each provider from Settings after signing in to its billing page in Brave. Imported sessions are kept in macOS Keychain; background refresh does not need Brave or an open tab.\n\nFireworks balance detection has been verified. Google Cloud credit detection has been verified against its billing dashboard. Failed requests keep the last successful balance.\n\nOnly Connect can ask for Keychain approval. Rebuilding this locally signed app may require reconnecting."
+        a.informativeText = "Connect each provider from Settings after signing in to its billing page in \(browserName). Imported sessions are kept in macOS Keychain; background refresh does not need \(browserName) or an open tab.\n\nFireworks balance detection has been verified. Google Cloud credit detection has been verified against its billing dashboard. Failed requests keep the last successful balance.\n\nOnly Connect can ask for Keychain approval. Rebuilding this locally signed app may require reconnecting."
         a.addButton(withTitle: "Open Billing Pages"); a.addButton(withTitle: "Close")
         NSApp.activate(ignoringOtherApps: true)
         let result = a.runModal()
@@ -1290,6 +1300,10 @@ enum ProviderIcon {
         return image
     }
 
+    static func hasMask(for provider: String) -> Bool {
+        mask(for: provider) != nil
+    }
+
     static func image(_ provider: String) -> NSImage {
         if let cached = cache[provider] { return cached }
         if provider == "overview" {
@@ -1307,6 +1321,7 @@ enum ProviderIcon {
         case "cerebras": (targetW, targetH) = (14.5, 16.6)
         case "vertex": (targetW, targetH) = (15.6, 14.8)
         case "aistudio": (targetW, targetH) = (16.0, 16.0)
+        case "venice": (targetW, targetH) = (15.0, 15.0)
         default: (targetW, targetH) = (15.0, 13.8) // crowbot
         }
         let targetRect = CGRect(x: (18.0 - targetW) / 2.0, y: (18.0 - targetH) / 2.0, width: targetW, height: targetH)

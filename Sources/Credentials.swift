@@ -102,6 +102,66 @@ enum ProfileBookmark {
     }
 }
 
+struct SupportedBrowser: Equatable, Sendable {
+    let id: String
+    let name: String
+    let bundleID: String
+    let appSupportRelativePath: String
+    let keychainService: String
+    let keychainAccount: String
+
+    static let brave = SupportedBrowser(
+        id: "brave",
+        name: "Brave",
+        bundleID: "com.brave.Browser",
+        appSupportRelativePath: "BraveSoftware/Brave-Browser",
+        keychainService: "Brave Safe Storage",
+        keychainAccount: "Brave"
+    )
+    static let chrome = SupportedBrowser(
+        id: "chrome",
+        name: "Google Chrome",
+        bundleID: "com.google.Chrome",
+        appSupportRelativePath: "Google/Chrome",
+        keychainService: "Chrome Safe Storage",
+        keychainAccount: "Chrome"
+    )
+    static let arc = SupportedBrowser(
+        id: "arc",
+        name: "Arc",
+        bundleID: "company.thebrowser.Browser",
+        appSupportRelativePath: "Arc/User Data",
+        keychainService: "Arc Safe Storage",
+        keychainAccount: "Arc"
+    )
+    static let edge = SupportedBrowser(
+        id: "edge",
+        name: "Microsoft Edge",
+        bundleID: "com.microsoft.edgemac",
+        appSupportRelativePath: "Microsoft Edge",
+        keychainService: "Microsoft Edge Safe Storage",
+        keychainAccount: "Microsoft Edge"
+    )
+    static let vivaldi = SupportedBrowser(
+        id: "vivaldi",
+        name: "Vivaldi",
+        bundleID: "com.vivaldi.Vivaldi",
+        appSupportRelativePath: "Vivaldi",
+        keychainService: "Vivaldi Safe Storage",
+        keychainAccount: "Vivaldi"
+    )
+    static let chromium = SupportedBrowser(
+        id: "chromium",
+        name: "Chromium",
+        bundleID: "org.chromium.Chromium",
+        appSupportRelativePath: "Chromium",
+        keychainService: "Chromium Safe Storage",
+        keychainAccount: "Chromium"
+    )
+
+    static let all: [SupportedBrowser] = [brave, chrome, arc, edge, vivaldi, chromium]
+}
+
 struct BraveProfile: Identifiable, Hashable, Sendable {
     let id: String
     let name: String
@@ -118,8 +178,54 @@ struct BraveProfile: Identifiable, Hashable, Sendable {
 enum BraveSessionImporter {
     static let rootBookmarkKey = "BraveRootBookmark"
     static let profileBookmarkKey = "BraveProfileBookmark"
-    static let defaultBrowserRoot = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/BraveSoftware/Brave-Browser")
-    static let accessError = "macOS blocked access to Brave's profile files. In Settings, click 'Choose Brave Profile…' to grant folder access (or grant Full Disk Access in macOS System Settings)."
+
+    private static var _currentBrowser: SupportedBrowser? = nil
+
+    static var currentBrowser: SupportedBrowser {
+        get {
+            if let b = _currentBrowser { return b }
+            let b = detectDominantBrowser()
+            _currentBrowser = b
+            return b
+        }
+        set {
+            _currentBrowser = newValue
+            UserDefaults.standard.set(newValue.id, forKey: "ActiveBrowserID")
+        }
+    }
+
+    static func detectDominantBrowser() -> SupportedBrowser {
+        if let savedID = UserDefaults.standard.string(forKey: "ActiveBrowserID"),
+           let matched = SupportedBrowser.all.first(where: { $0.id == savedID }) {
+            return matched
+        }
+        if let defaultAppURL = NSWorkspace.shared.urlForApplication(toOpen: URL(string: "https://example.com")!),
+           let bundle = Bundle(url: defaultAppURL),
+           let bundleID = bundle.bundleIdentifier {
+            if let matched = SupportedBrowser.all.first(where: { $0.bundleID == bundleID }) {
+                return matched
+            }
+        }
+        for candidate in SupportedBrowser.all {
+            let root = FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent("Library/Application Support")
+                .appendingPathComponent(candidate.appSupportRelativePath)
+            var isDir: ObjCBool = false
+            if FileManager.default.fileExists(atPath: root.path, isDirectory: &isDir), isDir.boolValue {
+                return candidate
+            }
+        }
+        return .brave
+    }
+
+    static var defaultBrowserRoot: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support")
+            .appendingPathComponent(currentBrowser.appSupportRelativePath)
+    }
+    static var accessError: String {
+        "macOS blocked access to \(currentBrowser.name)'s profile files. In Settings, click 'Choose \(currentBrowser.name) Profile…' to grant folder access (or grant Full Disk Access in macOS System Settings)."
+    }
 
     enum BraveAccessKind: String, Sendable {
         case fullDisk = "Full Disk Access"
@@ -252,18 +358,28 @@ enum BraveSessionImporter {
     }
 
     static func isBraveInstalled() -> Bool {
-        if FileManager.default.fileExists(atPath: "/Applications/Brave Browser.app") {
+        if NSWorkspace.shared.urlForApplication(withBundleIdentifier: currentBrowser.bundleID) != nil {
             return true
         }
-        let userApp = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Applications/Brave Browser.app")
+        if FileManager.default.fileExists(atPath: "/Applications/\(currentBrowser.name).app") {
+            return true
+        }
+        if FileManager.default.fileExists(atPath: "/Applications/\(currentBrowser.name) Browser.app") {
+            return true
+        }
+        let userApp = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Applications/\(currentBrowser.name).app")
         if FileManager.default.fileExists(atPath: userApp.path) {
             return true
         }
-        if NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.brave.Browser") != nil {
+        let userBrowserApp = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Applications/\(currentBrowser.name) Browser.app")
+        if FileManager.default.fileExists(atPath: userBrowserApp.path) {
             return true
         }
         var isDir: ObjCBool = false
         if FileManager.default.fileExists(atPath: defaultBrowserRoot.path, isDirectory: &isDir) && isDir.boolValue {
+            return true
+        }
+        if FileManager.default.fileExists(atPath: "/Applications/Brave Browser.app") {
             return true
         }
         return false
@@ -344,8 +460,21 @@ enum BraveSessionImporter {
     static func rememberProfile(_ url: URL) throws {
         let chosen = url.standardizedFileURL
 
-        // 1. If user selected Brave-Browser folder or any folder containing Local State:
-        if chosen.lastPathComponent == "Brave-Browser" || FileManager.default.fileExists(atPath: chosen.appendingPathComponent("Local State").path) {
+        for candidate in SupportedBrowser.all {
+            let candidateDirName = URL(fileURLWithPath: candidate.appSupportRelativePath).lastPathComponent
+            if chosen.path.contains(candidate.appSupportRelativePath) || chosen.lastPathComponent == candidateDirName {
+                currentBrowser = candidate
+                break
+            }
+        }
+
+        // 1. If user selected browser root folder or any folder containing Local State:
+        let isRoot = chosen.lastPathComponent == URL(fileURLWithPath: currentBrowser.appSupportRelativePath).lastPathComponent ||
+                     chosen.lastPathComponent == "Brave-Browser" ||
+                     chosen.lastPathComponent == "Chrome" ||
+                     chosen.lastPathComponent == "User Data" ||
+                     FileManager.default.fileExists(atPath: chosen.appendingPathComponent("Local State").path)
+        if isRoot {
             let rootBookmark = try ProfileBookmark.create(chosen)
             UserDefaults.standard.set(rootBookmark, forKey: rootBookmarkKey)
             UserDefaults.standard.set(chosen.path, forKey: "BraveBrowserRootPath")
@@ -367,7 +496,11 @@ enum BraveSessionImporter {
             UserDefaults.standard.set(chosen.path, forKey: "BraveProfilePath")
 
             let parent = chosen.deletingLastPathComponent()
-            if parent.lastPathComponent == "Brave-Browser" || FileManager.default.fileExists(atPath: parent.appendingPathComponent("Local State").path) {
+            if parent.lastPathComponent == URL(fileURLWithPath: currentBrowser.appSupportRelativePath).lastPathComponent ||
+               parent.lastPathComponent == "Brave-Browser" ||
+               parent.lastPathComponent == "Chrome" ||
+               parent.lastPathComponent == "User Data" ||
+               FileManager.default.fileExists(atPath: parent.appendingPathComponent("Local State").path) {
                 if let rootBm = try? ProfileBookmark.create(parent) {
                     UserDefaults.standard.set(rootBm, forKey: rootBookmarkKey)
                     UserDefaults.standard.set(parent.path, forKey: "BraveBrowserRootPath")
@@ -376,7 +509,7 @@ enum BraveSessionImporter {
             return
         }
 
-        throw ConnectorError.message("Please select the 'Brave-Browser' folder or a profile folder (e.g. 'Default').")
+        throw ConnectorError.message("Please select the '\(currentBrowser.name)' folder or a profile folder (e.g. 'Default').")
     }
 
     static func read(provider: String, cookieDomain: String? = nil, interactive: Bool = false) throws -> [StoredCookie] {
@@ -704,9 +837,14 @@ enum BraveSessionImporter {
     }
 
     private static func safeStoragePassword(interactive: Bool, forceFresh: Bool = false) throws -> Data {
+        let storageKey = "\(currentBrowser.id)_safe_storage_key"
         if !forceFresh {
             if let cachedPassword { return cachedPassword }
-            if let stored = try? KeychainVault.load("brave_safe_storage_key"), !stored.isEmpty {
+            if let stored = try? KeychainVault.load(storageKey), !stored.isEmpty {
+                cachedPassword = stored
+                return stored
+            }
+            if currentBrowser.id == "brave", let stored = try? KeychainVault.load("brave_safe_storage_key"), !stored.isEmpty {
                 cachedPassword = stored
                 return stored
             }
@@ -714,7 +852,7 @@ enum BraveSessionImporter {
         let context = LAContext(); context.interactionNotAllowed = !interactive
         let query: [String:Any] = [
             kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: "Brave Safe Storage",
+            kSecAttrService as String: currentBrowser.keychainService,
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne,
             kSecUseAuthenticationContext as String: context
@@ -723,13 +861,17 @@ enum BraveSessionImporter {
         let status = SecItemCopyMatching(query as CFDictionary, &item)
         if status == errSecSuccess, let value = item as? Data {
             cachedPassword = value
-            try? KeychainVault.save(value, account: "brave_safe_storage_key", interactive: interactive)
+            try? KeychainVault.save(value, account: storageKey, interactive: interactive)
             return value
         }
-        if let stored = try? KeychainVault.load("brave_safe_storage_key"), !stored.isEmpty {
+        if let stored = try? KeychainVault.load(storageKey), !stored.isEmpty {
             cachedPassword = stored
             return stored
         }
-        throw ConnectorError.message("Brave Safe Storage access was not granted (\(status)). Your session was not imported.")
+        if currentBrowser.id == "brave", let stored = try? KeychainVault.load("brave_safe_storage_key"), !stored.isEmpty {
+            cachedPassword = stored
+            return stored
+        }
+        throw ConnectorError.message("\(currentBrowser.name) Safe Storage access was not granted (\(status)). Your session was not imported.")
     }
 }
