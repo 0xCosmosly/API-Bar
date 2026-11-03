@@ -28,7 +28,7 @@ public final class AppUpdater: ObservableObject {
     private var lastCheckedDate: Date?
 
     public var currentVersion: String {
-        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.5.0"
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.5.1"
     }
 
     public struct ReleaseInfo {
@@ -293,9 +293,6 @@ public final class AppUpdater: ObservableObject {
 
             do {
                 try FileManager.default.copyItem(at: newAppBundle, to: destURL)
-                if didBackup {
-                    _ = try? FileManager.default.removeItem(at: backupURL)
-                }
             } catch {
                 if didBackup && FileManager.default.fileExists(atPath: backupURL.path) {
                     _ = try? FileManager.default.moveItem(at: backupURL, to: destURL)
@@ -311,13 +308,36 @@ public final class AppUpdater: ObservableObject {
             xattr.waitUntilExit()
 
             installStatusText = "Relaunching API Bar…"
+            let pid = ProcessInfo.processInfo.processIdentifier
+            let escapedPath = destURL.path.replacingOccurrences(of: "'", with: "'\\''")
+            let escapedBackup = backupURL.path.replacingOccurrences(of: "'", with: "'\\''")
+
+            // Wait for this process to terminate before opening the new bundle.
+            // Main.swift enforces single-instance by checking NSRunningApplication,
+            // so opening before termination causes the new instance to activate this one and exit immediately.
+            let script = """
+            while /bin/kill -0 \(pid) 2>/dev/null; do
+                /bin/sleep 0.05
+            done
+            /bin/rm -rf '\(escapedBackup)' 2>/dev/null
+            /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f '\(escapedPath)' 2>/dev/null || true
+            /bin/sleep 0.1
+            /usr/bin/open '\(escapedPath)' || '\(escapedPath)/Contents/MacOS/APIBar' &
+            """
+
             let relaunch = Process()
-            relaunch.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-            relaunch.arguments = ["-n", destURL.path]
+            relaunch.executableURL = URL(fileURLWithPath: "/bin/sh")
+            relaunch.arguments = ["-c", script]
+            relaunch.standardInput = FileHandle.nullDevice
+            relaunch.standardOutput = FileHandle.nullDevice
+            relaunch.standardError = FileHandle.nullDevice
             try relaunch.run()
 
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                 NSApp.terminate(nil)
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                exit(0)
             }
         } catch {
             installStatusText = "Installation failed: \(error.localizedDescription)"

@@ -649,12 +649,24 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
 
     func relaunchApp() {
         let bundleURL = Bundle.main.bundleURL
-        let config = NSWorkspace.OpenConfiguration()
-        config.createsNewApplicationInstance = true
-        NSWorkspace.shared.openApplication(at: bundleURL, configuration: config) { _, _ in
-            DispatchQueue.main.async {
-                NSApp.terminate(nil)
-            }
+        let pid = ProcessInfo.processInfo.processIdentifier
+        let escapedPath = bundleURL.path.replacingOccurrences(of: "'", with: "'\\''")
+        let script = """
+        while /bin/kill -0 \(pid) 2>/dev/null; do
+            /bin/sleep 0.05
+        done
+        /bin/sleep 0.1
+        /usr/bin/open '\(escapedPath)'
+        """
+        let relaunch = Process()
+        relaunch.executableURL = URL(fileURLWithPath: "/bin/sh")
+        relaunch.arguments = ["-c", script]
+        relaunch.standardInput = FileHandle.nullDevice
+        relaunch.standardOutput = FileHandle.nullDevice
+        relaunch.standardError = FileHandle.nullDevice
+        try? relaunch.run()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            NSApp.terminate(nil)
         }
     }
 

@@ -243,6 +243,10 @@ import Security
         let lowerRefuseless = Balance(id: "refuseless", name: "Refuseless", baseline: 100, remaining: 25.0, updated: Date(), account: "Test")
         precondition(lowerRefuseless.percent < testRefuseless.percent, "Percent must get smaller with less tokens")
         // AppUpdater version comparison and formatting checks
+        precondition(AppUpdater.isVersion("0.5.1", newerThan: "0.5.0"))
+        precondition(AppUpdater.isVersion("v0.5.1", newerThan: "v0.5.0"))
+        precondition(!AppUpdater.isVersion("0.5.1", newerThan: "0.5.1"))
+        precondition(!AppUpdater.isVersion("0.5.0", newerThan: "0.5.1"))
         precondition(AppUpdater.isVersion("0.5.0", newerThan: "0.4.9"))
         precondition(AppUpdater.isVersion("v0.5.0", newerThan: "v0.4.9"))
         precondition(!AppUpdater.isVersion("0.5.0", newerThan: "0.5.0"))
