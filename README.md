@@ -93,6 +93,12 @@ flowchart LR
 | <img src="docs/images/onboarding.png" width="420" alt="API Bar Onboarding" /> | <img src="docs/images/settings.png" width="420" alt="API Bar Settings & Sync" /> |
 | *Select your providers, connect your browser in one click, and choose your menu bar style.* | *Manage tracked endpoints, configure iCloud & OpenCode syncing, and inspect live connection status.* |
 
+<p align="center">
+  <img src="docs/images/changelog.png" width="620" alt="API Bar Multi-Version Changelog Viewer" />
+  <br/>
+  <em><b>Native Changelog & Version History:</b> Inspect current and previous releases, key feature highlights, and release notes with instant offline availability.</em>
+</p>
+
 ---
 
 ## 🛠️ Getting Started
