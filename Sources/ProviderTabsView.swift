@@ -146,19 +146,7 @@ struct ProviderTabItem: Equatable {
                     height: barHeight
                 )
                 let fillPath = NSBezierPath(roundedRect: fillRect, xRadius: barHeight / 2, yRadius: barHeight / 2)
-                let fillColor: NSColor
-                if tabItem.percent >= 80 && tabItem.isLive {
-                    fillColor = NSColor.systemGreen
-                } else if tabItem.percent >= 20 && tabItem.isLive {
-                    fillColor = NSColor.secondaryLabelColor
-                } else if tabItem.percent >= 10 && tabItem.isLive {
-                    fillColor = percentageYellowNSColor
-                } else if tabItem.isLive {
-                    fillColor = NSColor.systemRed
-                } else {
-                    fillColor = accentColor
-                }
-                fillColor.setFill()
+                accentColor.setFill()
                 fillPath.fill()
             }
         }

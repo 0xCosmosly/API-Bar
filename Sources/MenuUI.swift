@@ -240,7 +240,7 @@ struct BalanceCardContent: View {
                 GeometryReader { proxy in
                     ZStack(alignment: .leading) {
                         Capsule().fill(Color.primary.opacity(0.08))
-                        Capsule().fill(percentageColor(for: balance.percent))
+                        Capsule().fill(providerAccentColor(balance.id))
                             .frame(width: proxy.size.width * min(max(balance.percent / 100, 0), 1))
                     }
                 }
@@ -367,7 +367,7 @@ struct OverviewCardContent: View {
                         GeometryReader { proxy in
                             ZStack(alignment: .leading) {
                                 Capsule().fill(Color.primary.opacity(0.08))
-                                Capsule().fill(percentageColor(for: balance.percent))
+                                Capsule().fill(providerAccentColor(balance.id))
                                     .frame(width: proxy.size.width * min(max(balance.percent / 100, 0), 1))
                             }
                         }
