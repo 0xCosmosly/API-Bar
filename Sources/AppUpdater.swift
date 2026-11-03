@@ -7,8 +7,10 @@ public final class AppUpdater: ObservableObject {
     public static let shared = AppUpdater()
 
     public static let repoOwner = "0xCosmosly"
-    public static let repoName = "api-bar"
+    public static let repoName = "API-Bar"
     public static let latestReleaseEndpoint = "https://api.github.com/repos/\(repoOwner)/\(repoName)/releases/latest"
+    public static let fallbackFeedEndpoint = "https://github.com/\(repoOwner)/\(repoName)/releases.atom"
+    public static let latestHtmlEndpoint = "https://github.com/\(repoOwner)/\(repoName)/releases/latest"
 
     @Published public var isChecking: Bool = false
     @Published public var updateAvailable: Bool = false
@@ -26,10 +28,135 @@ public final class AppUpdater: ObservableObject {
     private var lastCheckedDate: Date?
 
     public var currentVersion: String {
-        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.4.7"
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.4.8"
+    }
+
+    public struct ReleaseInfo {
+        public let version: String
+        public let title: String
+        public let notes: String
+        public let releaseURL: URL?
+        public let downloadURL: URL?
     }
 
     public init() {}
+
+    public func fetchReleaseInfo() async throws -> ReleaseInfo {
+        // Strategy 1: Try GitHub REST API
+        if let apiURL = URL(string: Self.latestReleaseEndpoint) {
+            var req = URLRequest(url: apiURL)
+            req.setValue("application/vnd.github.v3+json", forHTTPHeaderField: "Accept")
+            req.setValue("APIBar-Updater/\(currentVersion)", forHTTPHeaderField: "User-Agent")
+            req.timeoutInterval = 8
+
+            if let (data, response) = try? await URLSession.shared.data(for: req),
+               let http = response as? HTTPURLResponse, http.statusCode == 200,
+               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let tagName = json["tag_name"] as? String {
+                let releaseVer = tagName.hasPrefix("v") ? String(tagName.dropFirst()) : tagName
+                let title = json["name"] as? String ?? "API Bar v\(releaseVer)"
+                let notes = json["body"] as? String ?? "No release notes provided."
+                let htmlUrlStr = json["html_url"] as? String
+                let releaseHtmlURL = htmlUrlStr.flatMap { URL(string: $0) }
+
+                var zipURL: URL? = nil
+                if let assets = json["assets"] as? [[String: Any]] {
+                    for asset in assets {
+                        if let name = asset["name"] as? String, name.hasSuffix(".zip"),
+                           let download = asset["browser_download_url"] as? String,
+                           let assetURL = URL(string: download) {
+                            zipURL = assetURL
+                            break
+                        }
+                    }
+                }
+                return ReleaseInfo(
+                    version: releaseVer,
+                    title: title,
+                    notes: notes,
+                    releaseURL: releaseHtmlURL,
+                    downloadURL: zipURL ?? URL(string: "https://github.com/\(Self.repoOwner)/\(Self.repoName)/releases/download/\(tagName)/APIBar-app.zip")
+                )
+            }
+        }
+
+        // Strategy 2: GitHub Releases Atom Feed (resilient to GitHub REST API 403 rate limits)
+        if let feedURL = URL(string: Self.fallbackFeedEndpoint) {
+            var req = URLRequest(url: feedURL)
+            req.setValue("application/atom+xml, text/xml", forHTTPHeaderField: "Accept")
+            req.setValue("APIBar-Updater/\(currentVersion)", forHTTPHeaderField: "User-Agent")
+            req.timeoutInterval = 8
+
+            if let (data, response) = try? await URLSession.shared.data(for: req),
+               let http = response as? HTTPURLResponse, http.statusCode == 200,
+               let text = String(data: data, encoding: .utf8),
+               let entryStart = text.range(of: "<entry>"),
+               let entryEnd = text.range(of: "</entry>", range: entryStart.upperBound..<text.endIndex) {
+                let entryText = String(text[entryStart.upperBound..<entryEnd.lowerBound])
+
+                if let tagRange = entryText.range(of: #"releases/tag/([^"'\s]+)"#, options: .regularExpression) {
+                    let matchedTagUrl = String(entryText[tagRange])
+                    let tag = matchedTagUrl.components(separatedBy: "/").last ?? ""
+                    if !tag.isEmpty {
+                        var title = "API Bar \(tag)"
+                        if let titleStart = entryText.range(of: "<title>"),
+                           let titleEnd = entryText.range(of: "</title>", range: titleStart.upperBound..<entryText.endIndex) {
+                            title = String(entryText[titleStart.upperBound..<titleEnd.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
+                        }
+
+                        var notes = ""
+                        if let contentStart = entryText.range(of: #"<content[^>]*>"#, options: .regularExpression),
+                           let contentEnd = entryText.range(of: "</content>", range: contentStart.upperBound..<entryText.endIndex) {
+                            let rawContent = String(entryText[contentStart.upperBound..<contentEnd.lowerBound])
+                            notes = rawContent
+                                .replacingOccurrences(of: "&lt;", with: "<")
+                                .replacingOccurrences(of: "&gt;", with: ">")
+                                .replacingOccurrences(of: "&amp;", with: "&")
+                                .replacingOccurrences(of: "&quot;", with: "\"")
+                                .replacingOccurrences(of: "&#39;", with: "'")
+                                .replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
+                                .trimmingCharacters(in: .whitespacesAndNewlines)
+                        }
+
+                        let cleanVer = tag.hasPrefix("v") ? String(tag.dropFirst()) : tag
+                        let htmlURL = URL(string: "https://github.com/\(Self.repoOwner)/\(Self.repoName)/releases/tag/\(tag)")
+                        let downloadURL = URL(string: "https://github.com/\(Self.repoOwner)/\(Self.repoName)/releases/download/\(tag)/APIBar-app.zip")
+                        return ReleaseInfo(
+                            version: cleanVer,
+                            title: title,
+                            notes: notes.isEmpty ? "No release notes provided." : notes,
+                            releaseURL: htmlURL,
+                            downloadURL: downloadURL
+                        )
+                    }
+                }
+            }
+        }
+
+        // Strategy 3: GitHub /releases/latest web redirect
+        if let latestWebURL = URL(string: Self.latestHtmlEndpoint) {
+            var req = URLRequest(url: latestWebURL)
+            req.setValue("APIBar-Updater/\(currentVersion)", forHTTPHeaderField: "User-Agent")
+            req.timeoutInterval = 8
+
+            if let (_, response) = try? await URLSession.shared.data(for: req),
+               let finalURL = response.url {
+                let tag = finalURL.lastPathComponent
+                if tag.hasPrefix("v") || tag.first?.isNumber == true {
+                    let cleanVer = tag.hasPrefix("v") ? String(tag.dropFirst()) : tag
+                    return ReleaseInfo(
+                        version: cleanVer,
+                        title: "API Bar v\(cleanVer)",
+                        notes: "Latest release available at \(finalURL.absoluteString)",
+                        releaseURL: finalURL,
+                        downloadURL: URL(string: "https://github.com/\(Self.repoOwner)/\(Self.repoName)/releases/download/\(tag)/APIBar-app.zip")
+                    )
+                }
+            }
+        }
+
+        throw ConnectorError.message("Could not retrieve latest release from GitHub. Please check your internet connection or try again later.")
+    }
 
     public func checkForUpdates(manual: Bool = false) async {
         guard !isChecking else { return }
@@ -42,68 +169,18 @@ public final class AppUpdater: ObservableObject {
             lastCheckedDate = Date()
         }
 
-        guard let url = URL(string: Self.latestReleaseEndpoint) else { return }
-        var req = URLRequest(url: url)
-        req.setValue("application/vnd.github.v3+json", forHTTPHeaderField: "Accept")
-        req.setValue("APIBar-Updater/\(currentVersion)", forHTTPHeaderField: "User-Agent")
-        req.timeoutInterval = 15
-
         do {
-            let (data, response) = try await URLSession.shared.data(for: req)
-            guard let http = response as? HTTPURLResponse else {
-                if manual { showAlert("Update Check Failed", "Could not connect to GitHub to check for updates.") }
-                return
-            }
-
-            if http.statusCode == 404 {
-                // No releases published yet on this repository
-                self.updateAvailable = false
-                self.statusMessage = "You're running v\(currentVersion). No new releases are available."
-                if manual {
-                    showAlert("You're Up to Date", "API Bar v\(currentVersion) is currently the latest version.")
-                }
-                return
-            }
-
-            guard http.statusCode == 200 else {
-                if manual { showAlert("Update Check Failed", "GitHub returned status HTTP \(http.statusCode).") }
-                return
-            }
-
-            guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let tagName = json["tag_name"] as? String else {
-                if manual { showAlert("Update Check Failed", "Could not parse release details from GitHub.") }
-                return
-            }
-
-            let releaseVer = tagName.hasPrefix("v") ? String(tagName.dropFirst()) : tagName
-            let title = json["name"] as? String ?? "API Bar v\(releaseVer)"
-            let notes = json["body"] as? String ?? "No release notes provided."
-            let htmlUrlStr = json["html_url"] as? String
-            let releaseHtmlURL = htmlUrlStr.flatMap { URL(string: $0) }
-
-            var zipURL: URL? = nil
-            if let assets = json["assets"] as? [[String: Any]] {
-                for asset in assets {
-                    if let name = asset["name"] as? String, name.hasSuffix(".zip"),
-                       let download = asset["browser_download_url"] as? String,
-                       let assetURL = URL(string: download) {
-                        zipURL = assetURL
-                        break
-                    }
-                }
-            }
-
-            let isNewer = Self.isVersion(releaseVer, newerThan: currentVersion)
-            self.latestVersion = releaseVer
-            self.releaseTitle = title
-            self.releaseNotes = notes
-            self.releaseURL = releaseHtmlURL
-            self.downloadURL = zipURL
+            let release = try await fetchReleaseInfo()
+            let isNewer = Self.isVersion(release.version, newerThan: currentVersion)
+            self.latestVersion = release.version
+            self.releaseTitle = release.title
+            self.releaseNotes = release.notes
+            self.releaseURL = release.releaseURL
+            self.downloadURL = release.downloadURL
             self.updateAvailable = isNewer
 
             if isNewer {
-                self.statusMessage = "Update available: v\(releaseVer)"
+                self.statusMessage = "Update available: v\(release.version)"
                 if manual {
                     showUpdateWindow()
                 }
