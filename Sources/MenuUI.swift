@@ -272,6 +272,11 @@ struct OverviewCardContent: View {
         app.balances.reduce(0.0) { $0 + $1.baseline }
     }
 
+    var totalPercent: Double {
+        guard totalBaseline > 0 else { return 0 }
+        return (totalUsdRemaining / totalBaseline) * 100
+    }
+
     var totalSummaryText: String {
         totalUsdRemaining.formatted(.currency(code: "USD"))
     }
@@ -295,12 +300,14 @@ struct OverviewCardContent: View {
                         .foregroundStyle(Color.secondary)
                     Spacer()
                     if totalBaseline > 0 {
+                        let isLow = totalPercent < 20
+                        let tint = isLow ? Color.red : Color(NSColor.secondaryLabelColor)
                         Text(aggregatePercentText)
                             .font(.system(size: 13, weight: .bold, design: .rounded))
-                            .foregroundStyle(Color.accentColor)
+                            .foregroundStyle(tint)
                             .padding(.horizontal, 7)
                             .padding(.vertical, 2)
-                            .background(Capsule().fill(Color.accentColor.opacity(0.12)))
+                            .background(Capsule().fill(tint.opacity(isLow ? 0.14 : 0.08)))
                     }
                 }
                 HStack {
