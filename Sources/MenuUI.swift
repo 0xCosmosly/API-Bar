@@ -24,6 +24,150 @@ func providerAccentColor(_ id: String) -> Color {
     }
 }
 
+// MARK: - Paper Design System Components
+
+struct PaperProviderBadge: View {
+    let id: String
+    let name: String
+    var size: CGFloat = 24
+    var cornerRadius: CGFloat = 6
+
+    var monogram: String {
+        switch id {
+        case "vertex": return "VX"
+        case "fireworks": return "FW"
+        case "cerebras": return "CB"
+        case "aistudio": return "GS"
+        case "crowbot": return "CR"
+        case "refuseless": return "RF"
+        case "venice": return "VN"
+        default:
+            let words = name.split(separator: " ")
+            if words.count >= 2 {
+                return (String(words[0].prefix(1)) + String(words[1].prefix(1))).uppercased()
+            } else {
+                return String(name.prefix(2)).uppercased()
+            }
+        }
+    }
+
+    var brandColor: Color {
+        switch id {
+        case "vertex", "aistudio":
+            return Color(red: 26/255.0, green: 115/255.0, blue: 232/255.0) // Google Blue #1A73E8
+        case "cerebras":
+            return Color(red: 217/255.0, green: 56/255.0, blue: 30/255.0)  // Cerebras Red #D9381E
+        case "fireworks":
+            return Color(red: 212/255.0, green: 107/255.0, blue: 8/255.0)  // Fireworks Orange #D46B08
+        case "refuseless":
+            return Color(red: 19/255.0, green: 115/255.0, blue: 51/255.0)  // Refuseless Green #137333
+        case "venice":
+            return Color(red: 123/255.0, green: 31/255.0, blue: 162/255.0) // Venice Purple #7B1FA2
+        case "crowbot":
+            return Color(red: 66/255.0, green: 66/255.0, blue: 66/255.0)   // Crowbot Charcoal #424242
+        default:
+            return Color.accentColor
+        }
+    }
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: cornerRadius)
+                .fill(brandColor.opacity(0.14))
+            RoundedRectangle(cornerRadius: cornerRadius)
+                .stroke(brandColor.opacity(0.25), lineWidth: 0.8)
+            Text(monogram)
+                .font(.system(size: size * 0.44, weight: .bold, design: .rounded))
+                .foregroundStyle(brandColor)
+        }
+        .frame(width: size, height: size)
+    }
+}
+
+struct PaperCard<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            content
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color(NSColor.controlBackgroundColor))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(0.03), radius: 2, x: 0, y: 1)
+    }
+}
+
+struct PaperWhiteButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 11, weight: .medium))
+            .foregroundStyle(isEnabled ? Color.primary : Color.secondary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(Color(NSColor.controlBackgroundColor))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(Color.primary.opacity(0.15), lineWidth: 1)
+            )
+            .opacity(configuration.isPressed ? 0.75 : (isEnabled ? 1.0 : 0.5))
+            .contentShape(Rectangle())
+    }
+}
+
+struct PaperPillButtonStyle: ButtonStyle {
+    var tintColor: Color = .accentColor
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(tintColor)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(tintColor.opacity(0.12))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(tintColor.opacity(0.24), lineWidth: 0.5)
+            )
+            .opacity(configuration.isPressed ? 0.75 : (isEnabled ? 1.0 : 0.5))
+            .contentShape(Rectangle())
+    }
+}
+
+struct PaperProminentButtonStyle: ButtonStyle {
+    var tintColor: Color = .accentColor
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(Color.white)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 5)
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(isEnabled ? tintColor : tintColor.opacity(0.5))
+            )
+            .opacity(configuration.isPressed ? 0.8 : (isEnabled ? 1.0 : 0.5))
+            .contentShape(Rectangle())
+    }
+}
+
 // Adapted from CodexBar's MIT-licensed MenuCardView.swift layout:
 // 310pt width, 20pt horizontal inset, headline/subheadline header,
 // 4pt header lines, 12pt columns, 6pt metric spacing, and a 6pt progress bar.
@@ -35,10 +179,7 @@ struct BalanceCardContent: View {
         VStack(alignment: .leading, spacing: 10) {
             // Header
             HStack(alignment: .center, spacing: 8) {
-                Image(nsImage: ProviderIcon.image(balance.id))
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(width: 20, height: 20)
+                PaperProviderBadge(id: balance.id, name: balance.name, size: 24)
 
                 VStack(alignment: .leading, spacing: 1) {
                     Text(balance.name)
@@ -178,10 +319,7 @@ struct OverviewCardContent: View {
                 ForEach(app.balances, id: \.id) { balance in
                     VStack(alignment: .leading, spacing: 4) {
                         HStack(alignment: .center, spacing: 8) {
-                            Image(nsImage: ProviderIcon.image(balance.id))
-                                .resizable()
-                                .aspectRatio(contentMode: .fit)
-                                .frame(width: 16, height: 16)
+                            PaperProviderBadge(id: balance.id, name: balance.name, size: 20)
 
                             Text(balance.name)
                                 .font(.subheadline)
@@ -308,6 +446,7 @@ struct ManageProvidersSheet: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Select Providers to Add")
                         .font(.headline)
+                        .fontWeight(.semibold)
                     Text("Choose which natively supported providers to monitor in API Bar.")
                         .font(.subheadline)
                         .foregroundStyle(Color.secondary)
@@ -316,13 +455,13 @@ struct ManageProvidersSheet: View {
                 Button(allSelected ? "Deselect All" : "Select All") {
                     toggleSelectAll()
                 }
-                .controlSize(.small)
+                .buttonStyle(PaperWhiteButtonStyle())
             }
 
-            Divider()
+            Divider().opacity(0.6)
 
             ScrollView(.vertical, showsIndicators: false) {
-                VStack(spacing: 6) {
+                VStack(spacing: 8) {
                     ForEach(Balance.initial, id: \.id) { provider in
                         let isSelected = app.balances.contains(where: { $0.id == provider.id })
                         Button {
@@ -337,15 +476,12 @@ struct ManageProvidersSheet: View {
                                     .font(.system(size: 16))
                                     .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
 
-                                Image(nsImage: ProviderIcon.image(provider.id))
-                                    .resizable()
-                                    .aspectRatio(contentMode: .fit)
-                                    .frame(width: 20, height: 20)
+                                PaperProviderBadge(id: provider.id, name: provider.name, size: 24)
 
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(provider.name)
                                         .font(.subheadline)
-                                        .fontWeight(.medium)
+                                        .fontWeight(.semibold)
                                         .foregroundStyle(Color.primary)
                                     Text(providerSubtitle(for: provider.id))
                                         .font(.caption2)
@@ -354,14 +490,25 @@ struct ManageProvidersSheet: View {
                                 Spacer()
 
                                 if isSelected {
-                                    Image(systemName: "checkmark")
-                                        .font(.caption.bold())
+                                    Text("Selected")
+                                        .font(.caption2)
+                                        .fontWeight(.semibold)
                                         .foregroundStyle(Color.accentColor)
+                                        .padding(.horizontal, 7)
+                                        .padding(.vertical, 2)
+                                        .background(Capsule().fill(Color.accentColor.opacity(0.12)))
                                 }
                             }
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 7)
-                            .background(RoundedRectangle(cornerRadius: 8).fill(isSelected ? Color.accentColor.opacity(0.08) : Color(NSColor.controlBackgroundColor)))
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(isSelected ? Color.accentColor.opacity(0.06) : Color.primary.opacity(0.025))
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .stroke(isSelected ? Color.accentColor.opacity(0.25) : Color.primary.opacity(0.06), lineWidth: 1)
+                            )
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
@@ -369,7 +516,7 @@ struct ManageProvidersSheet: View {
                 }
             }
 
-            Divider()
+            Divider().opacity(0.6)
 
             HStack {
                 Text("\(app.balances.filter { b in Balance.initial.contains(where: { $0.id == b.id }) }.count) of \(Balance.initial.count) native providers selected")
@@ -379,12 +526,11 @@ struct ManageProvidersSheet: View {
                 Button("Done") {
                     dismiss()
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.regular)
+                .buttonStyle(PaperProminentButtonStyle())
             }
         }
         .padding(20)
-        .frame(width: 460, height: 420)
+        .frame(width: 480, height: 440)
     }
 
     private func toggleSelectAll() {
@@ -468,15 +614,14 @@ struct OnboardingView: View {
                     Button("Back") {
                         withAnimation(.easeInOut(duration: 0.2)) { step -= 1 }
                     }
-                    .controlSize(.regular)
+                    .buttonStyle(PaperWhiteButtonStyle())
                 }
                 Spacer()
                 if step < 3 {
                     Button("Continue") {
                         withAnimation(.easeInOut(duration: 0.2)) { step += 1 }
                     }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.regular)
+                    .buttonStyle(PaperProminentButtonStyle())
                 } else {
                     Button("Finish Setup") {
                         if login && SMAppService.mainApp.status != .enabled {
@@ -484,8 +629,7 @@ struct OnboardingView: View {
                         }
                         onFinish()
                     }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.regular)
+                    .buttonStyle(PaperProminentButtonStyle())
                 }
             }
             .padding(.horizontal, 24)
@@ -509,7 +653,8 @@ struct OnboardingView: View {
             }
             .padding(16)
             .background(RoundedRectangle(cornerRadius: 12).fill(Color(NSColor.controlBackgroundColor)))
-            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.primary.opacity(0.06), lineWidth: 1))
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.primary.opacity(0.08), lineWidth: 1))
+            .shadow(color: Color.black.opacity(0.03), radius: 2, x: 0, y: 1)
 
             Text("Setup takes under a minute. Next, choose which providers you want to monitor.")
                 .font(.footnote)
@@ -523,6 +668,7 @@ struct OnboardingView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Select Providers to Monitor")
                         .font(.headline)
+                        .fontWeight(.semibold)
                     Text("Choose which natively supported providers to track in API Bar.")
                         .font(.subheadline)
                         .foregroundStyle(Color.secondary)
@@ -531,10 +677,10 @@ struct OnboardingView: View {
                 Button(allSelected ? "Deselect All" : "Select All") {
                     toggleSelectAll()
                 }
-                .controlSize(.small)
+                .buttonStyle(PaperWhiteButtonStyle())
             }
 
-            VStack(spacing: 6) {
+            VStack(spacing: 8) {
                 ForEach(Balance.initial, id: \.id) { provider in
                     let isSelected = app.balances.contains(where: { $0.id == provider.id })
                     Button {
@@ -549,15 +695,12 @@ struct OnboardingView: View {
                                 .font(.system(size: 16))
                                 .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
 
-                            Image(nsImage: ProviderIcon.image(provider.id))
-                                .resizable()
-                                .aspectRatio(contentMode: .fit)
-                                .frame(width: 20, height: 20)
+                            PaperProviderBadge(id: provider.id, name: provider.name, size: 24)
 
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(provider.name)
                                     .font(.subheadline)
-                                    .fontWeight(.medium)
+                                    .fontWeight(.semibold)
                                     .foregroundStyle(Color.primary)
                                 Text(providerSubtitle(for: provider.id))
                                     .font(.caption2)
@@ -566,14 +709,25 @@ struct OnboardingView: View {
                             Spacer()
 
                             if isSelected {
-                                Image(systemName: "checkmark")
-                                    .font(.caption.bold())
+                                Text("Selected")
+                                    .font(.caption2)
+                                    .fontWeight(.semibold)
                                     .foregroundStyle(Color.accentColor)
+                                    .padding(.horizontal, 7)
+                                    .padding(.vertical, 2)
+                                    .background(Capsule().fill(Color.accentColor.opacity(0.12)))
                             }
                         }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 7)
-                        .background(RoundedRectangle(cornerRadius: 8).fill(isSelected ? Color.accentColor.opacity(0.08) : Color(NSColor.controlBackgroundColor)))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(isSelected ? Color.accentColor.opacity(0.06) : Color.primary.opacity(0.025))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(isSelected ? Color.accentColor.opacity(0.25) : Color.primary.opacity(0.06), lineWidth: 1)
+                        )
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
@@ -600,7 +754,7 @@ struct OnboardingView: View {
                 .font(.subheadline)
                 .foregroundStyle(Color.secondary)
 
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 12) {
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Brave Profile")
@@ -624,20 +778,30 @@ struct OnboardingView: View {
                 }
 
                 if app.isBraveAccessBlocked {
-                    HStack {
-                        Text("Access is blocked by macOS permission.")
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundStyle(Color.orange)
+                            Text("Brave session access requires macOS permission.")
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                        }
+                        Text("Grant Full Disk Access or choose Folder Access Only for instant access.")
                             .font(.caption)
-                            .foregroundStyle(Color.orange)
-                        Spacer()
-                        Button("Grant Full Disk Access") { app.openFullDiskAccessSettings() }
-                            .buttonStyle(.borderedProminent)
-                            .controlSize(.small)
-                        Button("Folder Access Only") { app.chooseBraveProfile() }
-                            .controlSize(.small)
+                            .foregroundStyle(Color.secondary)
+                        HStack(spacing: 8) {
+                            Button("Grant Full Disk Access") { app.openFullDiskAccessSettings() }
+                                .buttonStyle(PaperProminentButtonStyle())
+                            Button("Folder Access Only") { app.chooseBraveProfile() }
+                                .buttonStyle(PaperWhiteButtonStyle())
+                        }
                     }
+                    .padding(10)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(Color.orange.opacity(0.10)))
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.orange.opacity(0.25), lineWidth: 1))
                 }
 
-                Divider()
+                Divider().opacity(0.6)
 
                 HStack {
                     Button {
@@ -652,8 +816,7 @@ struct OnboardingView: View {
                             Text("Connect All from Brave")
                         }
                     }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.regular)
+                    .buttonStyle(PaperProminentButtonStyle())
                     .disabled(!app.inFlight.isEmpty)
 
                     Spacer()
@@ -664,19 +827,18 @@ struct OnboardingView: View {
                         .foregroundStyle(Color.secondary)
                 }
             }
-            .padding(12)
-            .background(RoundedRectangle(cornerRadius: 10).fill(Color(NSColor.controlBackgroundColor)))
-            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.primary.opacity(0.08), lineWidth: 1))
+            .padding(14)
+            .background(RoundedRectangle(cornerRadius: 12).fill(Color(NSColor.controlBackgroundColor)))
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.primary.opacity(0.08), lineWidth: 1))
+            .shadow(color: Color.black.opacity(0.03), radius: 2, x: 0, y: 1)
 
             VStack(spacing: 6) {
                 ForEach(app.balances, id: \.id) { balance in
                     HStack(spacing: 10) {
-                        Image(nsImage: ProviderIcon.image(balance.id))
-                            .resizable()
-                            .aspectRatio(contentMode: .fit)
-                            .frame(width: 16, height: 16)
+                        PaperProviderBadge(id: balance.id, name: balance.name, size: 22)
                         Text(balance.name)
                             .font(.subheadline)
+                            .fontWeight(.medium)
                         Spacer()
                         if app.isConnected(balance.id) {
                             Image(systemName: "checkmark.circle.fill")
@@ -692,7 +854,8 @@ struct OnboardingView: View {
                     }
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
-                    .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.03)))
+                    .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.025)))
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.primary.opacity(0.06), lineWidth: 1))
                 }
             }
         }
@@ -848,7 +1011,7 @@ struct SettingsPane: View {
                 } label: {
                     Label("Welcome Tour…", systemImage: "sparkles")
                 }
-                .controlSize(.small)
+                .buttonStyle(PaperWhiteButtonStyle())
 
                 Button {
                     Task { await updater.checkForUpdates(manual: true) }
@@ -859,7 +1022,7 @@ struct SettingsPane: View {
                         Label(updater.updateAvailable ? "Update Available!" : "Check for Updates…", systemImage: updater.updateAvailable ? "arrow.down.circle.fill" : "arrow.triangle.2.circlepath")
                     }
                 }
-                .controlSize(.small)
+                .buttonStyle(PaperWhiteButtonStyle())
                 .disabled(updater.isChecking || updater.isInstalling)
             }
 
@@ -880,8 +1043,7 @@ struct SettingsPane: View {
                     Button("View Release Notes & Install…") {
                         updater.showUpdateWindow()
                     }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
+                    .buttonStyle(PaperProminentButtonStyle())
                 }
                 .padding(12)
                 .background(RoundedRectangle(cornerRadius: 10).fill(Color.accentColor.opacity(0.10)))
@@ -895,7 +1057,7 @@ struct SettingsPane: View {
                 }))
                 .foregroundStyle(Color.primary)
 
-                Divider()
+                Divider().opacity(0.6)
 
                 VStack(alignment: .leading, spacing: 4) {
                     Toggle("Merge provider icons", isOn: Binding(get: { app.mergeIcons }, set: { app.setMergeIcons($0) }))
@@ -905,7 +1067,7 @@ struct SettingsPane: View {
                         .foregroundStyle(Color.secondary)
                 }
 
-                Divider()
+                Divider().opacity(0.6)
 
                 VStack(alignment: .leading, spacing: 6) {
                     HStack {
@@ -932,12 +1094,13 @@ struct SettingsPane: View {
             }
             .padding(16)
             .background(RoundedRectangle(cornerRadius: 12).fill(Color(NSColor.controlBackgroundColor)))
-            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.primary.opacity(0.06), lineWidth: 1))
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.primary.opacity(0.08), lineWidth: 1))
+            .shadow(color: Color.black.opacity(0.03), radius: 2, x: 0, y: 1)
 
             // MARK: - iCloud Sync Card
             VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .center, spacing: 8) {
-                    Image(systemName: "icloud")
+                    Image(systemName: "icloud.fill")
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(Color.accentColor)
                     Text("iCloud Sync")
@@ -945,37 +1108,39 @@ struct SettingsPane: View {
                         .foregroundStyle(Color.primary)
                     Spacer()
                     if !icloud.isAvailable {
-                        Text("Unavailable")
-                            .font(.caption2)
-                            .fontWeight(.semibold)
-                            .foregroundStyle(Color.orange)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Capsule().fill(Color.orange.opacity(0.15)))
+                        HStack(spacing: 4) {
+                            Circle().fill(Color.orange).frame(width: 5, height: 5)
+                            Text("Unavailable")
+                                .font(.caption2)
+                                .fontWeight(.semibold)
+                        }
+                        .foregroundStyle(Color.orange)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Capsule().fill(Color.orange.opacity(0.12)))
                     } else if icloud.isEnabled {
                         HStack(spacing: 4) {
                             if icloud.isSyncing {
                                 ProgressView().controlSize(.mini)
                             } else {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .font(.caption2)
+                                Circle().fill(Color.green).frame(width: 5, height: 5)
                             }
                             Text(icloud.isSyncing ? "Syncing…" : "Active")
                                 .font(.caption2)
                                 .fontWeight(.semibold)
                         }
                         .foregroundStyle(Color.green)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Capsule().fill(Color.green.opacity(0.15)))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Capsule().fill(Color.green.opacity(0.12)))
                     } else {
                         Text("Off")
                             .font(.caption2)
                             .fontWeight(.semibold)
                             .foregroundStyle(Color.secondary)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Capsule().fill(Color.secondary.opacity(0.15)))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(Capsule().fill(Color.secondary.opacity(0.12)))
                     }
                 }
 
@@ -994,7 +1159,7 @@ struct SettingsPane: View {
                 }
 
                 if icloud.isEnabled {
-                    Divider()
+                    Divider().opacity(0.6)
 
                     HStack(alignment: .center) {
                         VStack(alignment: .leading, spacing: 2) {
@@ -1015,7 +1180,7 @@ struct SettingsPane: View {
                                 Text("Sync Now")
                             }
                         }
-                        .controlSize(.small)
+                        .buttonStyle(PaperWhiteButtonStyle())
                         .disabled(icloud.isSyncing || !icloud.isAvailable)
                     }
                 }
@@ -1034,7 +1199,8 @@ struct SettingsPane: View {
             }
             .padding(16)
             .background(RoundedRectangle(cornerRadius: 12).fill(Color(NSColor.controlBackgroundColor)))
-            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.primary.opacity(0.06), lineWidth: 1))
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.primary.opacity(0.08), lineWidth: 1))
+            .shadow(color: Color.black.opacity(0.03), radius: 2, x: 0, y: 1)
 
             // MARK: - Brave Browser Card
             VStack(alignment: .leading, spacing: 12) {
@@ -1096,12 +1262,11 @@ struct SettingsPane: View {
                             .foregroundStyle(Color.secondary)
                         HStack(spacing: 8) {
                             Button("Grant Full Disk Access") { app.openFullDiskAccessSettings() }
-                                .buttonStyle(.borderedProminent)
-                                .controlSize(.small)
-                            Button("Relaunch API Bar") { app.relaunchApp() }
-                                .controlSize(.small)
+                                .buttonStyle(PaperProminentButtonStyle())
                             Button("Folder Access Only") { app.chooseBraveProfile() }
-                                .controlSize(.small)
+                                .buttonStyle(PaperWhiteButtonStyle())
+                            Button("Relaunch API Bar") { app.relaunchApp() }
+                                .buttonStyle(PaperWhiteButtonStyle())
                         }
                     }
                     .padding(12)
@@ -1133,16 +1298,15 @@ struct SettingsPane: View {
                     .frame(width: 180)
                 }
 
-                Divider()
+                Divider().opacity(0.6)
 
                 HStack(spacing: 8) {
                     Button("Grant Full Disk Access") { app.openFullDiskAccessSettings() }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.small)
+                        .buttonStyle(PaperProminentButtonStyle())
                     Button("Folder Access Only") { app.chooseBraveProfile() }
-                        .controlSize(.small)
+                        .buttonStyle(PaperWhiteButtonStyle())
                     Button("Relaunch API Bar") { app.relaunchApp() }
-                        .controlSize(.small)
+                        .buttonStyle(PaperWhiteButtonStyle())
                     Spacer()
                     Button {
                         app.connectAll()
@@ -1156,52 +1320,52 @@ struct SettingsPane: View {
                             Text("Connect All from Brave")
                         }
                     }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.regular)
+                    .buttonStyle(PaperProminentButtonStyle())
                     .disabled(!app.inFlight.isEmpty || app.balances.allSatisfy { app.isConnected($0.id) })
                 }
             }
             .padding(16)
             .background(RoundedRectangle(cornerRadius: 12).fill(Color(NSColor.controlBackgroundColor)))
-            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.primary.opacity(0.06), lineWidth: 1))
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.primary.opacity(0.08), lineWidth: 1))
+            .shadow(color: Color.black.opacity(0.03), radius: 2, x: 0, y: 1)
 
-            Divider()
+            // MARK: - Providers Card
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .center) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Monitored Providers (\(app.balances.count))")
+                            .font(.headline)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(Color.primary)
+                        Text("Drag ≡ to reorder. 100% baseline updates automatically from payments.")
+                            .font(.caption)
+                            .foregroundStyle(Color.secondary)
+                    }
+                    Spacer()
 
-            // MARK: - Providers Header (Pinned)
-            HStack(alignment: .center) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Monitored Providers (\(app.balances.count))")
-                        .font(.headline)
-                        .foregroundStyle(Color.primary)
-                    Text("Drag ≡ to reorder. 100% baseline updates automatically from payments.")
-                        .font(.caption)
-                        .foregroundStyle(Color.secondary)
-                }
-                Spacer()
-
-                Button(allNativeSelected ? "Deselect All" : "Select All") {
-                    if allNativeSelected {
-                        for b in Balance.initial { app.removeProvider(id: b.id) }
-                    } else {
-                        for b in Balance.initial {
-                            if !app.balances.contains(where: { $0.id == b.id }) {
-                                app.addProvider(b)
+                    Button(allNativeSelected ? "Deselect All" : "Select All") {
+                        if allNativeSelected {
+                            for b in Balance.initial { app.removeProvider(id: b.id) }
+                        } else {
+                            for b in Balance.initial {
+                                if !app.balances.contains(where: { $0.id == b.id }) {
+                                    app.addProvider(b)
+                                }
                             }
                         }
                     }
-                }
-                .controlSize(.small)
+                    .buttonStyle(PaperWhiteButtonStyle())
 
-                Button {
-                    showManageProvidersSheet = true
-                } label: {
-                    Label("Select Providers…", systemImage: "checklist")
+                    Button {
+                        showManageProvidersSheet = true
+                    } label: {
+                        Label("Select Providers…", systemImage: "checklist")
+                    }
+                    .buttonStyle(PaperWhiteButtonStyle())
                 }
-                .controlSize(.small)
-            }
 
-            // MARK: - Providers List
-            VStack(alignment: .leading, spacing: 8) {
+                // MARK: - Providers List
+                VStack(alignment: .leading, spacing: 8) {
                     if app.balances.isEmpty {
                         VStack(spacing: 12) {
                             Image(systemName: "tray")
@@ -1213,8 +1377,7 @@ struct SettingsPane: View {
                             Button("Select Providers to Add…") {
                                 showManageProvidersSheet = true
                             }
-                            .buttonStyle(.borderedProminent)
-                            .controlSize(.regular)
+                            .buttonStyle(PaperProminentButtonStyle())
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 28)
@@ -1234,10 +1397,7 @@ struct SettingsPane: View {
                                             return NSItemProvider(object: balance.id as NSString)
                                         }
 
-                                    Image(nsImage: ProviderIcon.image(balance.id))
-                                        .resizable()
-                                        .aspectRatio(contentMode: .fit)
-                                        .frame(width: 20, height: 20)
+                                    PaperProviderBadge(id: balance.id, name: balance.name, size: 24)
 
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(balance.name)
@@ -1263,19 +1423,21 @@ struct SettingsPane: View {
                                     Button("100%: \(balance.baseline.formatted(.currency(code: "USD")))") {
                                         app.setBaseline(for: index)
                                     }
-                                    .controlSize(.small)
+                                    .buttonStyle(PaperPillButtonStyle(tintColor: .accentColor))
                                     .fixedSize(horizontal: true, vertical: false)
                                     .help("Click to edit the 100% baseline reference for \(balance.name)")
 
-                                    Button("Connect") { app.connect(balance.id) }
-                                        .controlSize(.small)
-                                        .disabled(app.inFlight.contains(balance.id) || app.isConnected(balance.id))
-                                        .fixedSize(horizontal: true, vertical: false)
-
-                                    Button("Disconnect") { app.disconnect(balance.id) }
-                                        .controlSize(.small)
-                                        .disabled(app.inFlight.contains(balance.id) || !app.isConnected(balance.id))
-                                        .fixedSize(horizontal: true, vertical: false)
+                                    if app.isConnected(balance.id) {
+                                        Button("Disconnect") { app.disconnect(balance.id) }
+                                            .buttonStyle(PaperPillButtonStyle(tintColor: .red))
+                                            .disabled(app.inFlight.contains(balance.id))
+                                            .fixedSize(horizontal: true, vertical: false)
+                                    } else {
+                                        Button("Connect") { app.connect(balance.id) }
+                                            .buttonStyle(PaperWhiteButtonStyle())
+                                            .disabled(app.inFlight.contains(balance.id))
+                                            .fixedSize(horizontal: true, vertical: false)
+                                    }
 
                                     Button {
                                         app.removeProvider(id: balance.id)
@@ -1307,223 +1469,232 @@ struct SettingsPane: View {
                                                 app.setAuthHeader(clip, for: balance.id)
                                             }
                                         }
-                                        .controlSize(.small)
+                                        .buttonStyle(PaperWhiteButtonStyle())
                                     }
                                     .padding(.leading, 38)
                                     .padding(.top, 2)
                                 }
                             }
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 7)
-                            .background(RoundedRectangle(cornerRadius: 8).fill(Color(NSColor.controlBackgroundColor).opacity(0.6)))
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.025)))
+                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.primary.opacity(0.06), lineWidth: 1))
                             .onDrop(of: [UTType.text], delegate: ProviderDropDelegate(item: balance, app: app, draggedItem: $draggedBalance))
                         }
                     }
+                }
+            }
+            .padding(16)
+            .background(RoundedRectangle(cornerRadius: 12).fill(Color(NSColor.controlBackgroundColor)))
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.primary.opacity(0.08), lineWidth: 1))
+            .shadow(color: Color.black.opacity(0.03), radius: 2, x: 0, y: 1)
 
-                    // AFM / Custom Provider Section
-                    Divider().padding(.vertical, 4)
-
-                    DisclosureGroup(isExpanded: $showAFMPanel) {
-                        VStack(alignment: .leading, spacing: 10) {
-                            HStack(spacing: 8) {
-                                Picker("", selection: $selectedKnownProviderID) {
-                                    ForEach(AFMProviderExtractor.verifiedProviders) { meta in
-                                        Text(meta.name).tag(meta.id)
-                                    }
+            // MARK: - AFM / Custom Provider Card
+            VStack(alignment: .leading, spacing: 10) {
+                DisclosureGroup(isExpanded: $showAFMPanel) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack(spacing: 8) {
+                            Picker("", selection: $selectedKnownProviderID) {
+                                ForEach(AFMProviderExtractor.verifiedProviders) { meta in
+                                    Text(meta.name).tag(meta.id)
                                 }
-                                .labelsHidden()
-                                .frame(maxWidth: 220)
+                            }
+                            .labelsHidden()
+                            .frame(maxWidth: 220)
 
-                                Button("Add") {
-                                    if let meta = AFMProviderExtractor.verifiedProviders.first(where: { $0.id == selectedKnownProviderID }) {
-                                        runAddKnownProvider(meta)
-                                    }
+                            Button("Add") {
+                                if let meta = AFMProviderExtractor.verifiedProviders.first(where: { $0.id == selectedKnownProviderID }) {
+                                    runAddKnownProvider(meta)
                                 }
-                                .buttonStyle(.bordered)
-                                .disabled(app.balances.contains(where: { $0.id == selectedKnownProviderID }) || isAnalyzingAFM)
                             }
+                            .buttonStyle(PaperWhiteButtonStyle())
+                            .disabled(app.balances.contains(where: { $0.id == selectedKnownProviderID }) || isAnalyzingAFM)
+                        }
 
-                            HStack(alignment: .center, spacing: 6) {
-                                Text("Use Apple's local AI model to add an unsupported provider.")
-                                    .font(.footnote)
-                                    .foregroundStyle(Color.primary)
+                        HStack(alignment: .center, spacing: 6) {
+                            Text("Use Apple's local AI model to add an unsupported provider.")
+                                .font(.footnote)
+                                .foregroundStyle(Color.primary)
 
-                                Text("alpha")
-                                    .font(.caption2)
-                                    .fontWeight(.semibold)
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 2)
-                                    .background(Color.blue.opacity(0.18))
-                                    .foregroundStyle(Color.blue)
-                                    .clipShape(Capsule())
-                            }
-                            .padding(.top, 2)
+                            Text("alpha")
+                                .font(.caption2)
+                                .fontWeight(.semibold)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Color.blue.opacity(0.18))
+                                .foregroundStyle(Color.blue)
+                                .clipShape(Capsule())
+                        }
+                        .padding(.top, 2)
 
-                            HStack(spacing: 8) {
-                                TextField("Provider name (e.g. Venice, Groq, OpenRouter…)", text: $providerNameInput)
-                                    .textFieldStyle(.roundedBorder)
-                                    .onSubmit {
-                                        runAutoAdd()
-                                    }
-
-                                Button {
+                        HStack(spacing: 8) {
+                            TextField("Provider name (e.g. Venice, Groq, OpenRouter…)", text: $providerNameInput)
+                                .textFieldStyle(.roundedBorder)
+                                .onSubmit {
                                     runAutoAdd()
-                                } label: {
-                                    if isAnalyzingAFM {
-                                        ProgressView().controlSize(.small)
-                                        Text("Detecting…")
-                                    } else {
-                                        Label("Add and open", systemImage: "arrow.up.right.square")
-                                    }
                                 }
-                                .buttonStyle(.borderedProminent)
-                                .disabled(providerNameInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isAnalyzingAFM)
-                            }
 
-                            if let success = afmSuccessMessage {
-                                HStack(spacing: 6) {
-                                    Image(systemName: "checkmark.circle.fill").foregroundStyle(Color.green)
-                                    Text(success).font(.footnote).foregroundStyle(Color.primary)
+                            Button {
+                                runAutoAdd()
+                            } label: {
+                                if isAnalyzingAFM {
+                                    ProgressView().controlSize(.small)
+                                    Text("Detecting…")
+                                } else {
+                                    Label("Add and open", systemImage: "arrow.up.right.square")
                                 }
-                                .padding(8)
-                                .background(Color.green.opacity(0.12))
-                                .cornerRadius(6)
                             }
+                            .buttonStyle(PaperProminentButtonStyle())
+                            .disabled(providerNameInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isAnalyzingAFM)
+                        }
 
-                            if let error = afmError {
-                                HStack(spacing: 6) {
-                                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Color.red)
-                                    Text(error).font(.footnote).foregroundStyle(Color.red)
+                        if let success = afmSuccessMessage {
+                            HStack(spacing: 6) {
+                                Image(systemName: "checkmark.circle.fill").foregroundStyle(Color.green)
+                                Text(success).font(.footnote).foregroundStyle(Color.primary)
+                            }
+                            .padding(8)
+                            .background(Color.green.opacity(0.12))
+                            .cornerRadius(6)
+                        }
+
+                        if let error = afmError {
+                            HStack(spacing: 6) {
+                                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Color.red)
+                                Text(error).font(.footnote).foregroundStyle(Color.red)
+                            }
+                            .padding(6)
+                        }
+
+                        DisclosureGroup("Advanced: Paste cURL or JSON response directly", isExpanded: $showRawInput) {
+                            VStack(alignment: .leading, spacing: 8) {
+                                TextEditor(text: $afmInput)
+                                    .font(.system(.footnote, design: .monospaced))
+                                    .frame(height: 50)
+                                    .padding(4)
+                                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.25), lineWidth: 1))
+
+                                Button("Analyze with AFM") {
+                                    runRawInputAdd()
                                 }
-                                .padding(6)
-                            }
+                                .buttonStyle(PaperProminentButtonStyle())
+                                .disabled(afmInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isAnalyzingAFM)
 
-                            DisclosureGroup("Advanced: Paste cURL or JSON response directly", isExpanded: $showRawInput) {
-                                VStack(alignment: .leading, spacing: 8) {
-                                    TextEditor(text: $afmInput)
-                                        .font(.system(.footnote, design: .monospaced))
-                                        .frame(height: 50)
-                                        .padding(4)
-                                        .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.25), lineWidth: 1))
+                                if afmDraft != nil {
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        Text("Detected Configuration")
+                                            .font(.subheadline)
+                                            .fontWeight(.semibold)
+                                            .foregroundStyle(Color.primary)
 
-                                    Button("Analyze with AFM") {
-                                        runRawInputAdd()
-                                    }
-                                    .disabled(afmInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isAnalyzingAFM)
-
-                                    if afmDraft != nil {
-                                        VStack(alignment: .leading, spacing: 8) {
-                                            Text("Detected Configuration")
-                                                .font(.subheadline)
-                                                .fontWeight(.semibold)
-                                                .foregroundStyle(Color.primary)
-
-                                            Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 6) {
-                                                GridRow {
-                                                    Text("Name:").font(.footnote).foregroundStyle(Color.primary)
-                                                    TextField("Provider Name", text: Binding(
-                                                        get: { afmDraft?.name ?? "" },
-                                                        set: { afmDraft?.name = $0 }
-                                                    ))
+                                        Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 6) {
+                                            GridRow {
+                                                Text("Name:").font(.footnote).foregroundStyle(Color.primary)
+                                                TextField("Provider Name", text: Binding(
+                                                    get: { afmDraft?.name ?? "" },
+                                                    set: { afmDraft?.name = $0 }
+                                                ))
+                                                .textFieldStyle(.roundedBorder)
+                                            }
+                                            GridRow {
+                                                Text("Endpoint:").font(.footnote).foregroundStyle(Color.primary)
+                                                TextField("Endpoint URL", text: Binding(
+                                                    get: { afmDraft?.endpoint ?? "" },
+                                                    set: { afmDraft?.endpoint = $0 }
+                                                ))
+                                                .textFieldStyle(.roundedBorder)
+                                            }
+                                            GridRow {
+                                                Text("JSON Key:").font(.footnote).foregroundStyle(Color.primary)
+                                                TextField("JSON Path", text: Binding(
+                                                    get: { afmDraft?.jsonPath ?? "" },
+                                                    set: { afmDraft?.jsonPath = $0 }
+                                                ))
+                                                .textFieldStyle(.roundedBorder)
+                                            }
+                                            GridRow {
+                                                Text("Balance:").font(.footnote).foregroundStyle(Color.primary)
+                                                HStack {
+                                                    TextField("Detected Balance", value: Binding(
+                                                        get: { afmDraft?.detectedBalance ?? 0 },
+                                                        set: { afmDraft?.detectedBalance = $0 }
+                                                    ), format: .number)
                                                     .textFieldStyle(.roundedBorder)
-                                                }
-                                                GridRow {
-                                                    Text("Endpoint:").font(.footnote).foregroundStyle(Color.primary)
-                                                    TextField("Endpoint URL", text: Binding(
-                                                        get: { afmDraft?.endpoint ?? "" },
-                                                        set: { afmDraft?.endpoint = $0 }
-                                                    ))
+                                                    .frame(width: 80)
+                                                    Text("100% Baseline:").font(.footnote).foregroundStyle(Color.primary)
+                                                    TextField("100% Baseline", value: Binding(
+                                                        get: { afmDraft?.baseline ?? 0 },
+                                                        set: { afmDraft?.baseline = $0 }
+                                                    ), format: .number)
                                                     .textFieldStyle(.roundedBorder)
-                                                }
-                                                GridRow {
-                                                    Text("JSON Key:").font(.footnote).foregroundStyle(Color.primary)
-                                                    TextField("JSON Path", text: Binding(
-                                                        get: { afmDraft?.jsonPath ?? "" },
-                                                        set: { afmDraft?.jsonPath = $0 }
-                                                    ))
-                                                    .textFieldStyle(.roundedBorder)
-                                                }
-                                                GridRow {
-                                                    Text("Balance:").font(.footnote).foregroundStyle(Color.primary)
-                                                    HStack {
-                                                        TextField("Detected Balance", value: Binding(
-                                                            get: { afmDraft?.detectedBalance ?? 0 },
-                                                            set: { afmDraft?.detectedBalance = $0 }
-                                                        ), format: .number)
-                                                        .textFieldStyle(.roundedBorder)
-                                                        .frame(width: 80)
-                                                        Text("100% Baseline:").font(.footnote).foregroundStyle(Color.primary)
-                                                        TextField("100% Baseline", value: Binding(
-                                                            get: { afmDraft?.baseline ?? 0 },
-                                                            set: { afmDraft?.baseline = $0 }
-                                                        ), format: .number)
-                                                        .textFieldStyle(.roundedBorder)
-                                                        .frame(width: 80)
-                                                    }
-                                                }
-                                                GridRow {
-                                                    Text("API Key:").font(.footnote).foregroundStyle(Color.primary)
-                                                    TextField("Bearer Token / Key (optional)", text: Binding(
-                                                        get: { afmDraft?.authHeader ?? "" },
-                                                        set: { afmDraft?.authHeader = $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
-                                                    ))
-                                                    .textFieldStyle(.roundedBorder)
+                                                    .frame(width: 80)
                                                 }
                                             }
-
-                                            HStack {
-                                                Button("Save & Add to API Bar") {
-                                                    if let finalDraft = afmDraft {
-                                                        app.addCustomProvider(finalDraft)
-                                                        withAnimation {
-                                                            showRawInput = false
-                                                            afmInput = ""
-                                                            afmDraft = nil
-                                                        }
-                                                    }
-                                                }
-                                                .buttonStyle(.borderedProminent)
+                                            GridRow {
+                                                Text("API Key:").font(.footnote).foregroundStyle(Color.primary)
+                                                TextField("Bearer Token / Key (optional)", text: Binding(
+                                                    get: { afmDraft?.authHeader ?? "" },
+                                                    set: { afmDraft?.authHeader = $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
+                                                ))
+                                                .textFieldStyle(.roundedBorder)
                                             }
-                                            .padding(.top, 4)
                                         }
-                                        .padding(10)
-                                        .background(Color.primary.opacity(0.04))
-                                        .cornerRadius(8)
+
+                                        HStack {
+                                            Button("Save & Add to API Bar") {
+                                                if let finalDraft = afmDraft {
+                                                    app.addCustomProvider(finalDraft)
+                                                    withAnimation {
+                                                        showRawInput = false
+                                                        afmInput = ""
+                                                        afmDraft = nil
+                                                    }
+                                                }
+                                            }
+                                            .buttonStyle(PaperProminentButtonStyle())
+                                        }
+                                        .padding(.top, 4)
                                     }
+                                    .padding(10)
+                                    .background(Color.primary.opacity(0.04))
+                                    .cornerRadius(8)
                                 }
-                                .padding(.top, 4)
                             }
-                            .font(.footnote)
-                            .foregroundStyle(Color.primary)
+                            .padding(.top, 4)
                         }
-                        .padding(12)
-                        .background(RoundedRectangle(cornerRadius: 10).fill(Color(NSColor.controlBackgroundColor)))
-                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.primary.opacity(0.08), lineWidth: 1))
-                        .padding(.top, 4)
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "plus.circle")
-                                .font(.subheadline)
-                            Text("Add Custom / Unsupported Provider (Apple Local AI)")
-                                .font(.subheadline)
-                                .fontWeight(.medium)
-                        }
-                        .foregroundStyle(Color.secondary)
+                        .font(.footnote)
+                        .foregroundStyle(Color.primary)
                     }
+                    .padding(.top, 4)
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "sparkles")
+                            .font(.subheadline)
+                            .foregroundStyle(Color.accentColor)
+                        Text("Add Custom / Unsupported Provider (Apple Local AI)")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                    }
+                    .foregroundStyle(Color.primary)
                 }
-                .padding(.horizontal, 2)
+            }
+            .padding(16)
+            .background(RoundedRectangle(cornerRadius: 12).fill(Color(NSColor.controlBackgroundColor)))
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.primary.opacity(0.08), lineWidth: 1))
+            .shadow(color: Color.black.opacity(0.03), radius: 2, x: 0, y: 1)
 
-                Divider()
+            Divider().opacity(0.6)
 
-                HStack {
-                    Text("100% reference is automatic from your last payment or grant. Click reference to customize.")
-                        .font(.caption)
-                        .foregroundStyle(Color.secondary)
-                    Spacer()
-                }
+            HStack {
+                Text("100% reference is automatic from your last payment or grant. Click reference to customize.")
+                    .font(.caption)
+                    .foregroundStyle(Color.secondary)
+                Spacer()
+            }
             }
             .padding(20)
         }
+        .background(Color(NSColor.windowBackgroundColor))
         .frame(minWidth: 560, maxWidth: .infinity, minHeight: 620, maxHeight: .infinity, alignment: .topLeading)
         .sheet(isPresented: $showManageProvidersSheet) {
             ManageProvidersSheet(app: app)
