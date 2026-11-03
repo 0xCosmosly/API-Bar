@@ -290,14 +290,15 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
     static func migrateLegacyDefaults() {
         let defaults = UserDefaults.standard
         let marker = "MigratedFromLegacyBundleID"
-        guard !defaults.bool(forKey: marker) && !defaults.bool(forKey: "MigratedFromLegacyBundleID") else { return }
+        guard !defaults.bool(forKey: marker) else { return }
         defer { defaults.set(true, forKey: marker) }
 
-        let legacyDomain = String(data: Data(base64Encoded: "bG9jYWwuYXBpYmFyLkFQSUJhcg==") ?? Data(), encoding: .utf8) ?? ""
-        guard !legacyDomain.isEmpty,
-              let legacy = UserDefaults.standard.persistentDomain(forName: legacyDomain), !legacy.isEmpty else { return }
-        for (key, value) in legacy where key != marker && defaults.object(forKey: key) == nil {
-            defaults.set(value, forKey: key)
+        for legacyDomain in ["local.apibar.APIBar", "app.apibar.legacy"] {
+            if let legacy = UserDefaults.standard.persistentDomain(forName: legacyDomain), !legacy.isEmpty {
+                for (key, value) in legacy where key != marker && defaults.object(forKey: key) == nil {
+                    defaults.set(value, forKey: key)
+                }
+            }
         }
     }
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
