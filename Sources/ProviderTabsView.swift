@@ -2,20 +2,18 @@ import AppKit
 
 func providerAccentNSColor(_ id: String) -> NSColor {
     switch id {
-    case "vertex":
+    case "vertex", "aistudio":
         return NSColor(srgbRed: 26/255.0, green: 115/255.0, blue: 232/255.0, alpha: 1.0) // Google Blue #1A73E8
     case "fireworks":
-        return NSColor(srgbRed: 101/255.0, green: 29/255.0, blue: 255/255.0, alpha: 1.0) // Fireworks Violet #651DFF
+        return NSColor(srgbRed: 212/255.0, green: 100/255.0, blue: 0/255.0, alpha: 1.0)   // Deep Orange #D46400
     case "crowbot":
-        return NSColor(srgbRed: 0/255.0, green: 220/255.0, blue: 130/255.0, alpha: 1.0)  // Crowbot Green #00DC82
-    case "aistudio":
-        return NSColor(srgbRed: 14/255.0, green: 165/255.0, blue: 233/255.0, alpha: 1.0) // Gemini Cyan #0EA5E9
+        return NSColor(srgbRed: 13/255.0, green: 115/255.0, blue: 60/255.0, alpha: 1.0)  // Deep Emerald #0D733C
     case "cerebras":
-        return NSColor(srgbRed: 240/255.0, green: 91/255.0, blue: 41/255.0, alpha: 1.0)  // Cerebras Orange #F05B29
+        return NSColor(srgbRed: 220/255.0, green: 50/255.0, blue: 30/255.0, alpha: 1.0)  // Cerebras Red-Orange #DC321E
     case "refuseless":
         return NSColor(srgbRed: 200/255.0, green: 16/255.0, blue: 46/255.0, alpha: 1.0)  // Crimson Red #C8102E
     case "venice":
-        return NSColor(srgbRed: 138/255.0, green: 43/255.0, blue: 226/255.0, alpha: 1.0) // Venice Purple #8A2BE2
+        return NSColor(srgbRed: 123/255.0, green: 31/255.0, blue: 162/255.0, alpha: 1.0) // Venice Purple #7B1FA2
     default:
         return NSColor.systemBlue
     }
@@ -141,7 +139,7 @@ struct ProviderTabItem: Equatable {
                 )
                 let fillPath = NSBezierPath(roundedRect: fillRect, xRadius: barHeight / 2, yRadius: barHeight / 2)
                 let fillColor: NSColor
-                if tabItem.percent < 10 && tabItem.isLive {
+                if tabItem.percent < 20 && tabItem.isLive {
                     fillColor = NSColor.systemRed
                 } else {
                     fillColor = accentColor

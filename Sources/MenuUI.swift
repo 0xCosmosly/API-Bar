@@ -5,20 +5,18 @@ import UniformTypeIdentifiers
 
 func providerAccentColor(_ id: String) -> Color {
     switch id {
-    case "vertex":
+    case "vertex", "aistudio":
         return Color(red: 26/255.0, green: 115/255.0, blue: 232/255.0) // Google Blue #1A73E8
     case "fireworks":
-        return Color(red: 101/255.0, green: 29/255.0, blue: 255/255.0) // Fireworks Violet #651DFF
+        return Color(red: 212/255.0, green: 100/255.0, blue: 0/255.0)   // Deep Orange #D46400
     case "crowbot":
-        return Color(red: 0/255.0, green: 220/255.0, blue: 130/255.0)  // Crowbot Green #00DC82
-    case "aistudio":
-        return Color(red: 14/255.0, green: 165/255.0, blue: 233/255.0) // Gemini Cyan #0EA5E9
+        return Color(red: 13/255.0, green: 115/255.0, blue: 60/255.0)  // Deep Emerald #0D733C
     case "cerebras":
-        return Color(red: 240/255.0, green: 91/255.0, blue: 41/255.0)  // Cerebras Orange #F05B29
+        return Color(red: 220/255.0, green: 50/255.0, blue: 30/255.0)  // Cerebras Red-Orange #DC321E
     case "refuseless":
         return Color(red: 200/255.0, green: 16/255.0, blue: 46/255.0)  // Crimson Red #C8102E
     case "venice":
-        return Color(red: 138/255.0, green: 43/255.0, blue: 226/255.0) // Venice Purple #8A2BE2
+        return Color(red: 123/255.0, green: 31/255.0, blue: 162/255.0) // Venice Purple #7B1FA2
     default:
         return Color.accentColor
     }
@@ -41,6 +39,10 @@ struct PaperProviderBadge: View {
         }
     }
 
+    var accent: Color {
+        providerAccentColor(id)
+    }
+
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: cornerRadius)
@@ -53,12 +55,12 @@ struct PaperProviderBadge: View {
                     .renderingMode(.template)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
-                    .foregroundStyle(Color.black)
+                    .foregroundStyle(accent)
                     .frame(width: size * 0.65, height: size * 0.65)
             } else {
                 Text(monogram)
                     .font(.system(size: size * 0.42, weight: .bold, design: .rounded))
-                    .foregroundStyle(Color.black)
+                    .foregroundStyle(accent)
             }
         }
         .frame(width: size, height: size)
@@ -160,6 +162,17 @@ struct BalanceCardContent: View {
     let balance: Balance
     var status: String? = nil
 
+    var displayStatus: String {
+        if let status, !status.isEmpty {
+            return status
+                .replacingOccurrences(of: "Connected · refreshes every 5 minutes", with: "Connected · refreshes every 5 min")
+                .replacingOccurrences(of: "Connected · refreshes every 5m", with: "Connected · refreshes every 5 min")
+                .replacingOccurrences(of: "refreshes every 5 minutes", with: "refreshes every 5 min")
+                .replacingOccurrences(of: "refreshes every 5m", with: "refreshes every 5 min")
+        }
+        return balance.live ? "Connected · refreshes every 5 min" : "Not connected"
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             // Header
@@ -175,20 +188,22 @@ struct BalanceCardContent: View {
                         Circle()
                             .fill(balance.live ? Color.green : Color.orange)
                             .frame(width: 5, height: 5)
-                        Text(status ?? (balance.live ? "Connected · refreshes every 5m" : "Not connected"))
+                        Text(displayStatus)
                             .font(.caption2)
                             .foregroundStyle(Color.secondary)
                             .lineLimit(1)
                     }
                 }
-                Spacer()
+                Spacer(minLength: 4)
                 if balance.baseline > 0 {
+                    let isLow = balance.percent < 20
+                    let tint = isLow ? Color.red : Color(NSColor.secondaryLabelColor)
                     Text(balance.percentageLabel)
                         .font(.system(size: 13, weight: .bold, design: .rounded))
-                        .foregroundStyle(balance.percent < 15 ? Color.red : Color.green)
+                        .foregroundStyle(tint)
                         .padding(.horizontal, 7)
                         .padding(.vertical, 2)
-                        .background(Capsule().fill((balance.percent < 15 ? Color.red : Color.green).opacity(0.12)))
+                        .background(Capsule().fill(tint.opacity(isLow ? 0.14 : 0.08)))
                 }
             }
             .padding(.horizontal, 16)
@@ -212,7 +227,7 @@ struct BalanceCardContent: View {
                 GeometryReader { proxy in
                     ZStack(alignment: .leading) {
                         Capsule().fill(Color.primary.opacity(0.08))
-                        Capsule().fill(balance.percent < 15 ? Color.red : providerAccentColor(balance.id))
+                        Capsule().fill(balance.percent < 20 ? Color.red : providerAccentColor(balance.id))
                             .frame(width: proxy.size.width * min(max(balance.percent / 100, 0), 1))
                     }
                 }
@@ -318,17 +333,19 @@ struct OverviewCardContent: View {
                                 .fontWeight(.medium)
                                 .foregroundStyle(Color.primary)
 
+                            let isLow = balance.percent < 20
+                            let tint = isLow ? Color.red : Color(NSColor.secondaryLabelColor)
                             Text(balance.percentageLabel)
                                 .font(.caption2)
                                 .fontWeight(.bold)
-                                .foregroundStyle(balance.percent < 15 ? Color.red : (balance.percent < 50 ? Color.orange : Color.green))
+                                .foregroundStyle(tint)
                                 .frame(minWidth: 32, alignment: .trailing)
                         }
 
                         GeometryReader { proxy in
                             ZStack(alignment: .leading) {
                                 Capsule().fill(Color.primary.opacity(0.08))
-                                Capsule().fill(balance.percent < 15 ? Color.red : providerAccentColor(balance.id))
+                                Capsule().fill(balance.percent < 20 ? Color.red : providerAccentColor(balance.id))
                                     .frame(width: proxy.size.width * min(max(balance.percent / 100, 0), 1))
                             }
                         }
@@ -349,21 +366,21 @@ struct OverviewCardContent: View {
                     .font(.caption2)
                     .foregroundStyle(Color.secondary)
                 Spacer()
-                Text("Refreshes every 5m")
+                Text("Refreshes every 5 min")
                     .font(.caption2)
                     .foregroundStyle(Color.secondary)
             }
             .padding(.horizontal, 16)
             .padding(.bottom, 8)
         }
-        .frame(width: 310, alignment: .leading)
+        .frame(width: 330, alignment: .leading)
     }
 }
 
 @MainActor final class OverviewCard: NSView {
     init(app: APIBarApp) {
         let host = VibrantHost(rootView: OverviewCardContent(app: app))
-        super.init(frame: NSRect(x: 0, y: 0, width: 310, height: 175))
+        super.init(frame: NSRect(x: 0, y: 0, width: 330, height: 175))
         host.frame = bounds
         addSubview(host)
         let height = ceil(host.fittingSize.height)
@@ -380,8 +397,8 @@ struct OverviewCardContent: View {
 
 @MainActor final class BalanceCard: NSView {
     init(_ balance: Balance, status: String? = nil) {
-        let host = VibrantHost(rootView: BalanceCardContent(balance: balance,status:status))
-        super.init(frame: NSRect(x: 0, y: 0, width: 310, height: 175))
+        let host = VibrantHost(rootView: BalanceCardContent(balance: balance, status: status))
+        super.init(frame: NSRect(x: 0, y: 0, width: 330, height: 175))
         host.frame = bounds
         addSubview(host)
         let height = ceil(host.fittingSize.height)

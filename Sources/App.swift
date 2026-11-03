@@ -16,6 +16,21 @@ enum ProviderSortMode: String, CaseIterable, Codable {
     }
 }
 
+final class ClosableWindow: NSWindow {
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        if flags == .command, event.charactersIgnoringModifiers == "w" {
+            self.performClose(nil)
+            return true
+        }
+        return super.performKeyEquivalent(with: event)
+    }
+
+    override func cancelOperation(_ sender: Any?) {
+        self.performClose(nil)
+    }
+}
+
 @MainActor
 final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowDelegate, ObservableObject {
     // Providers are opt-in. A first launch starts with an empty list and the
@@ -145,7 +160,7 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         removed.removeAll(where: { $0 == provider.id })
         UserDefaults.standard.set(removed, forKey: "RemovedProviders")
 
-        providerStatus[provider.id] = isConnected(provider.id) ? "Connected · refreshes every 5 minutes" : "Connect in Settings"
+        providerStatus[provider.id] = isConnected(provider.id) ? "Connected · refreshes every 5 min" : "Connect in Settings"
         save()
         reapplyOrder()
     }
@@ -180,7 +195,7 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
             dynamicAuthHeader: draft.authHeader
         )
         balances.append(newBalance)
-        providerStatus[finalID] = hasAuth ? "Connected · refreshes every 5 minutes" : "Connect in Settings"
+        providerStatus[finalID] = hasAuth ? "Connected · refreshes every 5 min" : "Connect in Settings"
         save()
         reapplyOrder()
         if hasAuth {
@@ -372,23 +387,14 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
             }
             preferences.set(true, forKey: "MigratedAnonymousStatusItemVisibility")
         }
-        let mainMenu = NSMenu()
-        let appMenuItem = NSMenuItem()
-        let appMenu = NSMenu()
-        let openSettings = NSMenuItem(title: "Settings…", action: #selector(settings), keyEquivalent: ",")
-        openSettings.target = self; appMenu.addItem(openSettings)
-        appMenu.addItem(.separator())
-        let quitItem = NSMenuItem(title: "Quit API Bar", action: #selector(quit), keyEquivalent: "q")
-        quitItem.target = self; appMenu.addItem(quitItem)
-        appMenuItem.submenu = appMenu; mainMenu.addItem(appMenuItem)
+        setupMainMenuIfNeeded()
         for b in balances {
             if b.live || (try? KeychainVault.load(b.id)) != nil || (b.dynamicAuthHeader != nil && !b.dynamicAuthHeader!.isEmpty) {
-                providerStatus[b.id] = "Connected · refreshes every 5 minutes"
+                providerStatus[b.id] = "Connected · refreshes every 5 min"
             } else {
                 providerStatus[b.id] = "Connect in Settings"
             }
         }
-        NSApp.mainMenu = mainMenu
         configureStatusItems()
         updateTitles()
         writeDiagnostics()
@@ -683,7 +689,7 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
                 }
                 clients[provider] = client
                 apply(reading)
-                providerStatus[provider] = "Connected · refreshes every 5 minutes"
+                providerStatus[provider] = "Connected · refreshes every 5 min"
             } catch {
                 providerStatus[provider] = error.localizedDescription
                 refreshBraveProfiles()
@@ -769,7 +775,7 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
                     switch result {
                     case .success(let reading):
                         apply(reading)
-                        providerStatus[id] = "Connected · refreshes every 5 minutes"
+                        providerStatus[id] = "Connected · refreshes every 5 min"
                     case .failure(let error):
                         providerStatus[id] = error.localizedDescription
                         if let name = balances.first(where: { $0.id == id })?.name {
@@ -815,7 +821,7 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         if r.provider == "refuseless" {
             let ref = r.reference ?? r.remaining
             balances[i].baseline = ref
-            providerStatus[r.provider] = "Connected · refreshes every 5 minutes"
+            providerStatus[r.provider] = "Connected · refreshes every 5 min"
             if sortMode != .manual {
                 applySorting()
             } else {
@@ -837,7 +843,7 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
             let paidAmount = PaymentReference.inferTier(for: delta)
             balances[i].baseline = max(oldRemaining + paidAmount, r.remaining)
         }
-        providerStatus[r.provider] = "Connected · refreshes every 5 minutes"
+        providerStatus[r.provider] = "Connected · refreshes every 5 min"
         if sortMode != .manual {
             applySorting()
         } else {
@@ -1020,11 +1026,67 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         Task { await refreshProvider(id) }
     }
     @objc func refresh() { Task { await refreshAll() } }
+    func setupMainMenuIfNeeded() {
+        if let menu = NSApp.mainMenu, menu.items.count > 1 { return }
+        let mainMenu = NSMenu()
+
+        let appMenuItem = NSMenuItem()
+        let appMenu = NSMenu()
+        let openSettings = NSMenuItem(title: "Settings…", action: #selector(settings), keyEquivalent: ",")
+        openSettings.target = self
+        appMenu.addItem(openSettings)
+        appMenu.addItem(.separator())
+        let hideItem = NSMenuItem(title: "Hide API Bar", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+        appMenu.addItem(hideItem)
+        let hideOthersItem = NSMenuItem(title: "Hide Others", action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h")
+        hideOthersItem.keyEquivalentModifierMask = [.command, .option]
+        appMenu.addItem(hideOthersItem)
+        appMenu.addItem(withTitle: "Show All", action: #selector(NSApplication.unhideAllApplications(_:)), keyEquivalent: "")
+        appMenu.addItem(.separator())
+        let quitItem = NSMenuItem(title: "Quit API Bar", action: #selector(quit), keyEquivalent: "q")
+        quitItem.target = self
+        appMenu.addItem(quitItem)
+        appMenuItem.submenu = appMenu
+        mainMenu.addItem(appMenuItem)
+
+        let fileMenuItem = NSMenuItem()
+        let fileMenu = NSMenu(title: "File")
+        let closeItem = NSMenuItem(title: "Close Window", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        fileMenu.addItem(closeItem)
+        fileMenuItem.submenu = fileMenu
+        mainMenu.addItem(fileMenuItem)
+
+        let editMenuItem = NSMenuItem()
+        let editMenu = NSMenu(title: "Edit")
+        editMenu.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
+        let redoItem = NSMenuItem(title: "Redo", action: Selector(("redo:")), keyEquivalent: "Z")
+        editMenu.addItem(redoItem)
+        editMenu.addItem(.separator())
+        editMenu.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        editMenu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        editMenu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        editMenuItem.submenu = editMenu
+        mainMenu.addItem(editMenuItem)
+
+        let windowMenuItem = NSMenuItem()
+        let windowMenu = NSMenu(title: "Window")
+        windowMenu.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
+        windowMenu.addItem(withTitle: "Zoom", action: #selector(NSWindow.performZoom(_:)), keyEquivalent: "")
+        windowMenu.addItem(NSMenuItem.separator())
+        windowMenu.addItem(withTitle: "Bring All to Front", action: #selector(NSApplication.arrangeInFront(_:)), keyEquivalent: "")
+        windowMenuItem.submenu = windowMenu
+        mainMenu.addItem(windowMenuItem)
+        NSApp.windowsMenu = windowMenu
+
+        NSApp.mainMenu = mainMenu
+    }
     @objc func settings() {
         if !UserDefaults.standard.bool(forKey: "HasCompletedOnboarding") {
             showOnboarding()
             return
         }
+        setupMainMenuIfNeeded()
         refreshBraveProfiles()
         NSApp.setActivationPolicy(.regular)
         if let settingsWindow {
@@ -1032,7 +1094,7 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
             settingsWindow.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
             writeDiagnostics(); return
         }
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 620, height: 720), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
+        let window = ClosableWindow(contentRect: NSRect(x: 0, y: 0, width: 620, height: 720), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
         window.minSize = NSSize(width: 560, height: 600)
         window.title = "API Bar Settings"; window.isReleasedWhenClosed = false
         window.delegate = self
@@ -1041,6 +1103,7 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         writeDiagnostics()
     }
     @objc func showOnboarding() {
+        setupMainMenuIfNeeded()
         if let settingsWindow {
             settingsWindow.close()
             self.settingsWindow = nil
@@ -1052,7 +1115,7 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
             NSApp.activate(ignoringOtherApps: true)
             return
         }
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 540, height: 560), styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
+        let window = ClosableWindow(contentRect: NSRect(x: 0, y: 0, width: 540, height: 560), styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
         window.title = "Welcome to API Bar"
         window.isReleasedWhenClosed = false
         window.delegate = self

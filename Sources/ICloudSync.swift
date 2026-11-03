@@ -284,7 +284,7 @@ final class ICloudSync: ObservableObject {
                             current[localIdx].dynamicAuthHeader = remote.dynamicAuthHeader
                             if let auth = remote.dynamicAuthHeader, !auth.isEmpty {
                                 current[localIdx].live = true
-                                app.providerStatus[remote.id] = "Connected · refreshes every 5 minutes"
+                                app.providerStatus[remote.id] = "Connected · refreshes every 5 min"
                             }
                             didChangeLocally = true
                         }
@@ -300,7 +300,7 @@ final class ICloudSync: ObservableObject {
                 } else if !removedSet.contains(remote.id) {
                     current.append(remote)
                     if app.isConnected(remote.id) || (remote.dynamicAuthHeader != nil && !remote.dynamicAuthHeader!.isEmpty) {
-                        app.providerStatus[remote.id] = "Connected · refreshes every 5 minutes"
+                        app.providerStatus[remote.id] = "Connected · refreshes every 5 min"
                     } else {
                         app.providerStatus[remote.id] = "Connect in Settings"
                     }
@@ -345,7 +345,7 @@ final class ICloudSync: ObservableObject {
                         try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: localFile.path)
                         try? KeychainVault.save(data, account: provider, interactive: false)
                         if app.balances.contains(where: { $0.id == provider }) {
-                            app.providerStatus[provider] = "Connected · refreshes every 5 minutes"
+                            app.providerStatus[provider] = "Connected · refreshes every 5 min"
                         }
                     }
                 }
