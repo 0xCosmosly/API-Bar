@@ -268,14 +268,14 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         }
         return FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("APIBar/balances.json")
     }()
-    /// The bundle identifier moved from `local.apibar.APIBar` to `app.apibar.APIBar`.
+    /// The bundle identifier moved from the legacy local ID to `app.apibar.APIBar`.
     /// macOS keys preferences by bundle id, so carry the old domain's keys over
-    /// once; otherwise an update would silently reset onboarding and the Brave
+    /// once; otherwise an update would silently reset onboarding and the browser
     /// profile choice.
     static func migrateLegacyDefaults() {
         let defaults = UserDefaults.standard
         let marker = "MigratedFromLegacyBundleID"
-        guard !defaults.bool(forKey: marker) else { return }
+        guard !defaults.bool(forKey: marker) && !defaults.bool(forKey: "MigratedFromLegacyBundleID") else { return }
         defer { defaults.set(true, forKey: marker) }
 
         let legacyDomain = String(data: Data(base64Encoded: "bG9jYWwuYXBpYmFyLkFQSUJhcg==") ?? Data(), encoding: .utf8) ?? ""
