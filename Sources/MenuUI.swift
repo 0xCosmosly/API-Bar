@@ -30,59 +30,89 @@ func providerAccentColor(_ id: String) -> Color {
 struct BalanceCardContent: View {
     let balance: Balance
     var status: String? = nil
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 6) {
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(alignment: .firstTextBaseline, spacing: 12) {
-                        Text(balance.name)
-                            .font(.headline)
-                            .fontWeight(.semibold)
-                            .foregroundStyle(Color.primary)
-                    }
-                    HStack(alignment: .firstTextBaseline, spacing: 12) {
-                        Text(status ?? (balance.live ? "Connected · refreshes every 5 minutes" : "Not connected"))
-                            .font(.footnote)
+        VStack(alignment: .leading, spacing: 10) {
+            // Header
+            HStack(alignment: .center, spacing: 8) {
+                Image(nsImage: ProviderIcon.image(balance.id))
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 20, height: 20)
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(balance.name)
+                        .font(.headline)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(Color.primary)
+                    HStack(spacing: 5) {
+                        Circle()
+                            .fill(balance.live ? Color.green : Color.orange)
+                            .frame(width: 5, height: 5)
+                        Text(status ?? (balance.live ? "Connected · refreshes every 5m" : "Not connected"))
+                            .font(.caption2)
                             .foregroundStyle(Color.secondary)
-                            .lineLimit(2)
-                        Spacer()
-                        Text("API")
-                            .font(.footnote)
-                            .foregroundStyle(Color.primary)
+                            .lineLimit(1)
                     }
                 }
-                Divider()
+                Spacer()
+                if balance.baseline > 0 {
+                    Text(balance.percentageLabel)
+                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                        .foregroundStyle(balance.percent < 15 ? Color.red : Color.green)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 2)
+                        .background(Capsule().fill((balance.percent < 15 ? Color.red : Color.green).opacity(0.12)))
+                }
             }
-            .padding(.horizontal, 20).padding(.top, 7).padding(.bottom, 6)
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+
+            Divider()
+
+            // Metric Hero
             VStack(alignment: .leading, spacing: 6) {
-                Text(balance.id == "refuseless" ? "Balance" : "Credits")
-                    .font(.body)
-                    .fontWeight(.medium)
-                    .foregroundStyle(Color.primary)
+                HStack(alignment: .firstTextBaseline) {
+                    Text(balance.money)
+                        .font(.system(size: 22, weight: .bold, design: .rounded))
+                        .foregroundStyle(Color.primary)
+                    if balance.baseline > 0 {
+                        Text("of \(balance.baseline.formatted(.currency(code: "USD")))")
+                            .font(.subheadline)
+                            .foregroundStyle(Color.secondary)
+                    }
+                }
+
                 GeometryReader { proxy in
                     ZStack(alignment: .leading) {
-                        Capsule().fill(Color.primary.opacity(0.10))
-                        Capsule().fill(balance.percent < 10 ? Color.red : providerAccentColor(balance.id))
+                        Capsule().fill(Color.primary.opacity(0.08))
+                        Capsule().fill(balance.percent < 15 ? Color.red : providerAccentColor(balance.id))
                             .frame(width: proxy.size.width * min(max(balance.percent / 100, 0), 1))
                     }
-                }.frame(height: 6)
-                HStack(alignment: .firstTextBaseline) {
-                    Text(balance.live || balance.baseline > 0 ? "\(balance.percentageLabel) left" : "Balance")
-                        .font(.footnote)
-                        .foregroundStyle(Color.primary)
-                    Spacer()
-                    Text(balance.id == "crowbot" && balance.account.isEmpty
-                        ? "Connect to read"
-                        : "\(balance.money) / \(balance.baseline.formatted(.currency(code: "USD")))")
-                        .font(.footnote)
-                        .foregroundStyle(Color.primary)
                 }
-                Text("Last checked: \(relativeTimeString(for: balance.updated))")
-                    .font(.footnote)
-                    .foregroundStyle(Color.secondary)
+                .frame(height: 6)
             }
-            .padding(.horizontal, 20).padding(.top, 10).padding(.bottom, 2)
-        }.frame(width: 310, alignment: .leading)
+            .padding(.horizontal, 16)
+
+            Divider()
+
+            // Footer
+            HStack(alignment: .center) {
+                Text("Last checked: \(relativeTimeString(for: balance.updated))")
+                    .font(.caption2)
+                    .foregroundStyle(Color.secondary)
+                Spacer()
+                if !balance.account.isEmpty {
+                    Text("Account: \(balance.account)")
+                        .font(.caption2)
+                        .foregroundStyle(Color.secondary)
+                        .lineLimit(1)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.bottom, 8)
+        }
+        .frame(width: 310, alignment: .leading)
     }
 }
 
@@ -97,82 +127,111 @@ struct OverviewCardContent: View {
         app.balances.reduce(0.0) { $0 + $1.remaining }
     }
 
+    var totalBaseline: Double {
+        app.balances.reduce(0.0) { $0 + $1.baseline }
+    }
+
     var totalSummaryText: String {
         totalUsdRemaining.formatted(.currency(code: "USD"))
     }
 
+    var aggregatePercentText: String {
+        guard totalBaseline > 0 else { return "—" }
+        let pct = Int(round((totalUsdRemaining / totalBaseline) * 100))
+        return "\(pct)%"
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 6) {
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(alignment: .firstTextBaseline, spacing: 12) {
-                        Text("Overview")
-                            .font(.headline)
-                            .fontWeight(.semibold)
-                            .foregroundStyle(Color.primary)
-                        Spacer()
-                        Text("\(connectedCount) of \(app.balances.count) connected")
-                            .font(.footnote)
-                            .foregroundStyle(Color.secondary)
-                    }
-                    HStack(alignment: .firstTextBaseline, spacing: 12) {
-                        Text("All Providers")
-                            .font(.footnote)
-                            .foregroundStyle(Color.primary)
-                        Spacer()
-                        Text("Total: \(totalSummaryText)")
-                            .font(.footnote)
-                            .fontWeight(.semibold)
-                            .foregroundStyle(Color.primary)
+        VStack(alignment: .leading, spacing: 10) {
+            // Hero Header
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(totalSummaryText)
+                        .font(.system(size: 20, weight: .bold, design: .rounded))
+                        .foregroundStyle(Color.primary)
+                    Text("remaining")
+                        .font(.subheadline)
+                        .foregroundStyle(Color.secondary)
+                    Spacer()
+                    if totalBaseline > 0 {
+                        Text(aggregatePercentText)
+                            .font(.system(size: 13, weight: .bold, design: .rounded))
+                            .foregroundStyle(Color.accentColor)
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 2)
+                            .background(Capsule().fill(Color.accentColor.opacity(0.12)))
                     }
                 }
-                Divider()
+                HStack {
+                    Text("\(connectedCount) of \(app.balances.count) connected · All active providers")
+                        .font(.caption)
+                        .foregroundStyle(Color.secondary)
+                }
             }
-            .padding(.horizontal, 20).padding(.top, 7).padding(.bottom, 6)
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
 
+            Divider()
+
+            // Provider Rows
             VStack(alignment: .leading, spacing: 8) {
                 ForEach(app.balances, id: \.id) { balance in
-                    VStack(alignment: .leading, spacing: 3) {
-                        HStack(alignment: .center, spacing: 6) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(alignment: .center, spacing: 8) {
                             Image(nsImage: ProviderIcon.image(balance.id))
                                 .resizable()
                                 .aspectRatio(contentMode: .fit)
-                                .frame(width: 14, height: 14)
+                                .frame(width: 16, height: 16)
+
                             Text(balance.name)
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                                .foregroundStyle(Color.primary)
+
+                            Spacer()
+
+                            Text(balance.money)
                                 .font(.subheadline)
                                 .fontWeight(.medium)
                                 .foregroundStyle(Color.primary)
-                            Spacer()
-                            Text(balance.money)
-                                .font(.subheadline)
-                                .foregroundStyle(Color.primary)
-                            Text("(\(balance.percentageLabel))")
-                                .font(.footnote)
-                                .foregroundStyle(Color.primary)
+
+                            Text(balance.percentageLabel)
+                                .font(.caption2)
+                                .fontWeight(.bold)
+                                .foregroundStyle(balance.percent < 15 ? Color.red : (balance.percent < 50 ? Color.orange : Color.green))
+                                .frame(minWidth: 32, alignment: .trailing)
                         }
+
                         GeometryReader { proxy in
                             ZStack(alignment: .leading) {
-                                Capsule().fill(Color.primary.opacity(0.10))
-                                Capsule().fill(balance.percent < 10 ? Color.red : providerAccentColor(balance.id))
+                                Capsule().fill(Color.primary.opacity(0.08))
+                                Capsule().fill(balance.percent < 15 ? Color.red : providerAccentColor(balance.id))
                                     .frame(width: proxy.size.width * min(max(balance.percent / 100, 0), 1))
                             }
-                        }.frame(height: 6)
+                        }
+                        .frame(height: 5)
                     }
-                }
-
-                Divider().padding(.top, 4)
-
-                HStack(alignment: .firstTextBaseline) {
-                    Text("Last checked: \(relativeTimeString(for: app.lastRefresh ?? .distantPast))")
-                        .font(.footnote)
-                        .foregroundStyle(Color.secondary)
-                    Spacer()
-                    Text("Refreshes every 5m")
-                        .font(.footnote)
-                        .foregroundStyle(Color.secondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(RoundedRectangle(cornerRadius: 7).fill(Color.primary.opacity(0.03)))
                 }
             }
-            .padding(.horizontal, 20).padding(.top, 6).padding(.bottom, 6)
+            .padding(.horizontal, 16)
+
+            Divider()
+
+            // Footer
+            HStack(alignment: .center) {
+                Text("Last checked: \(relativeTimeString(for: app.lastRefresh ?? .distantPast))")
+                    .font(.caption2)
+                    .foregroundStyle(Color.secondary)
+                Spacer()
+                Text("Refreshes every 5m")
+                    .font(.caption2)
+                    .foregroundStyle(Color.secondary)
+            }
+            .padding(.horizontal, 16)
+            .padding(.bottom, 8)
         }
         .frame(width: 310, alignment: .leading)
     }
