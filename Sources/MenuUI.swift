@@ -570,8 +570,10 @@ struct OnboardingView: View {
                             .font(.caption)
                             .foregroundStyle(Color.orange)
                         Spacer()
-                        Button("Grant Access…") { app.chooseBraveProfile() }
+                        Button("Grant Full Disk Access") { app.openFullDiskAccessSettings() }
                             .buttonStyle(.borderedProminent)
+                            .controlSize(.small)
+                        Button("Folder Access Only") { app.chooseBraveProfile() }
                             .controlSize(.small)
                     }
                 }
@@ -771,7 +773,8 @@ struct SettingsPane: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        ScrollView(.vertical, showsIndicators: true) {
+            VStack(alignment: .leading, spacing: 14) {
             // MARK: - Header
             HStack {
                 HStack(spacing: 10) {
@@ -1016,10 +1019,10 @@ struct SettingsPane: View {
                             .font(.caption)
                             .foregroundStyle(Color.secondary)
                         HStack(spacing: 8) {
-                            Button("Grant Folder Access…") { app.chooseBraveProfile() }
+                            Button("Grant Full Disk Access") { app.openFullDiskAccessSettings() }
                                 .buttonStyle(.borderedProminent)
                                 .controlSize(.small)
-                            Button("Full Disk Access…") { app.openFullDiskAccessSettings() }
+                            Button("Folder Access Only") { app.chooseBraveProfile() }
                                 .controlSize(.small)
                         }
                     }
@@ -1113,9 +1116,8 @@ struct SettingsPane: View {
                 .controlSize(.small)
             }
 
-            // MARK: - Scrollable Provider List
-            ScrollView(.vertical, showsIndicators: true) {
-                VStack(alignment: .leading, spacing: 8) {
+            // MARK: - Providers List
+            VStack(alignment: .leading, spacing: 8) {
                     if app.balances.isEmpty {
                         VStack(spacing: 12) {
                             Image(systemName: "tray")
@@ -1418,22 +1420,24 @@ struct SettingsPane: View {
                     }
                 }
                 .padding(.horizontal, 2)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            Divider()
+                Divider()
 
-            HStack {
-                Text("100% reference is automatic from your last payment or grant. Click reference to customize.")
-                    .font(.caption)
-                    .foregroundStyle(Color.secondary)
-                Spacer()
+                HStack {
+                    Text("100% reference is automatic from your last payment or grant. Click reference to customize.")
+                        .font(.caption)
+                        .foregroundStyle(Color.secondary)
+                    Spacer()
+                }
             }
+            .padding(20)
         }
-        .padding(20)
         .frame(minWidth: 560, maxWidth: .infinity, minHeight: 620, maxHeight: .infinity, alignment: .topLeading)
         .sheet(isPresented: $showManageProvidersSheet) {
             ManageProvidersSheet(app: app)
+        }
+        .onAppear {
+            app.refreshBraveProfiles()
         }
     }
 

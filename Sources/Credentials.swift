@@ -121,7 +121,48 @@ enum BraveSessionImporter {
     static let defaultBrowserRoot = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/BraveSoftware/Brave-Browser")
     static let accessError = "macOS blocked access to Brave's profile files. In Settings, click 'Choose Brave Profile…' to grant folder access (or grant Full Disk Access in macOS System Settings)."
 
+    static func hasFullDiskAccess() -> Bool {
+        // Test standard macOS locations requiring Full Disk Access
+        let safariCloudTabs = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Safari/CloudTabs.db")
+        if (try? FileHandle(forReadingFrom: safariCloudTabs)) != nil {
+            return true
+        }
+        let userTCC = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/com.apple.TCC/TCC.db")
+        if (try? FileHandle(forReadingFrom: userTCC)) != nil {
+            return true
+        }
+        // Test direct access to Brave cookie database
+        for prof in ["Default", "Profile 1", "Profile 2", "Profile 3"] {
+            for suffix in ["Network/Cookies", "Cookies"] {
+                let cookieFile = defaultBrowserRoot.appendingPathComponent(prof).appendingPathComponent(suffix)
+                if FileManager.default.fileExists(atPath: cookieFile.path) {
+                    if let handle = try? FileHandle(forReadingFrom: cookieFile) {
+                        try? handle.close()
+                        return true
+                    }
+                }
+            }
+        }
+        // Test direct access to Brave root directory
+        var isDir: ObjCBool = false
+        if FileManager.default.fileExists(atPath: defaultBrowserRoot.path, isDirectory: &isDir), isDir.boolValue {
+            do {
+                _ = try FileManager.default.contentsOfDirectory(atPath: defaultBrowserRoot.path)
+                return true
+            } catch {
+                return false
+            }
+        }
+        return false
+    }
+
     static func resolvedBrowserRoot() -> (url: URL, accessing: Bool) {
+        if hasFullDiskAccess() {
+            var isDir: ObjCBool = false
+            if FileManager.default.fileExists(atPath: defaultBrowserRoot.path, isDirectory: &isDir), isDir.boolValue {
+                return (defaultBrowserRoot, false)
+            }
+        }
         if let bookmark = UserDefaults.standard.data(forKey: rootBookmarkKey) {
             var stale = false
             if let url = try? ProfileBookmark.resolve(bookmark, stale: &stale) {
@@ -158,6 +199,9 @@ enum BraveSessionImporter {
     }
 
     static func isAccessBlocked() -> Bool {
+        if hasFullDiskAccess() {
+            return false
+        }
         let (root, accessing) = resolvedBrowserRoot()
         defer { if accessing { root.stopAccessingSecurityScopedResource() } }
         var isDir: ObjCBool = false

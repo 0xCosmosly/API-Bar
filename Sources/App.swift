@@ -248,6 +248,7 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
     var lastRefresh: Date?
     var items: [NSStatusItem] = []
     var timer: Timer?
+    var fdaPollTimer: Timer?
     var appError: String?
     var settingsWindow: NSWindow?
     var onboardingWindow: NSWindow?
@@ -288,6 +289,11 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
     func applicationDidFinishLaunching(_ notification: Notification) {
         Self.migrateLegacyDefaults()
         ICloudSync.shared.attach(app: self)
+        NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in
+                self?.refreshBraveProfiles()
+            }
+        }
         NSApp.applicationIconImage = BrandMark.appIconImage(size: 256)
         // This callback runs after the application run loop has started.
         // Command-line diagnostic launches need the same agent policy as Launch Services.
@@ -573,6 +579,19 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles") {
             NSWorkspace.shared.open(url)
         }
+        fdaPollTimer?.invalidate()
+        var remaining = 30
+        fdaPollTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] timer in
+            Task { @MainActor in
+                guard let self else { timer.invalidate(); return }
+                self.refreshBraveProfiles()
+                remaining -= 1
+                if !self.isBraveAccessBlocked || remaining <= 0 {
+                    timer.invalidate()
+                    self.fdaPollTimer = nil
+                }
+            }
+        }
     }
 
     func connect(_ provider: String) {
@@ -605,15 +624,15 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
                     alert.icon = NSApp.applicationIconImage ?? BrandMark.appIconImage(size: 128)
                     alert.messageText = "Brave Access Blocked by macOS"
                     alert.informativeText = error.localizedDescription
-                    alert.addButton(withTitle: "Grant Folder Access…")
-                    alert.addButton(withTitle: "Full Disk Access Settings…")
+                    alert.addButton(withTitle: "Grant Full Disk Access")
+                    alert.addButton(withTitle: "Folder Access Only")
                     alert.addButton(withTitle: "Cancel")
                     NSApp.activate(ignoringOtherApps: true)
                     let response = alert.runModal()
                     if response == .alertFirstButtonReturn {
-                        chooseBraveProfile()
-                    } else if response == .alertSecondButtonReturn {
                         openFullDiskAccessSettings()
+                    } else if response == .alertSecondButtonReturn {
+                        chooseBraveProfile()
                     }
                 } else {
                     alert("Could not connect", error.localizedDescription)
@@ -656,15 +675,15 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
                     alert.icon = NSApp.applicationIconImage ?? BrandMark.appIconImage(size: 128)
                     alert.messageText = "Brave Access Blocked by macOS"
                     alert.informativeText = errors.joined(separator: "\n\n")
-                    alert.addButton(withTitle: "Grant Folder Access…")
-                    alert.addButton(withTitle: "Full Disk Access Settings…")
+                    alert.addButton(withTitle: "Grant Full Disk Access")
+                    alert.addButton(withTitle: "Folder Access Only")
                     alert.addButton(withTitle: "Cancel")
                     NSApp.activate(ignoringOtherApps: true)
                     let response = alert.runModal()
                     if response == .alertFirstButtonReturn {
-                        chooseBraveProfile()
-                    } else if response == .alertSecondButtonReturn {
                         openFullDiskAccessSettings()
+                    } else if response == .alertSecondButtonReturn {
+                        chooseBraveProfile()
                     }
                 } else {
                     alert("Connect All", errors.joined(separator: "\n\n"))
@@ -910,6 +929,7 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
             showOnboarding()
             return
         }
+        refreshBraveProfiles()
         NSApp.setActivationPolicy(.regular)
         if let settingsWindow {
             settingsWindow.deminiaturize(nil)
@@ -952,6 +972,11 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         window.makeKeyAndOrderFront(nil)
         onboardingWindow = window
         NSApp.activate(ignoringOtherApps: true)
+    }
+    func windowDidBecomeKey(_ notification: Notification) {
+        if let window = notification.object as? NSWindow, window === settingsWindow {
+            refreshBraveProfiles()
+        }
     }
     func windowWillClose(_ notification: Notification) {
         guard let window = notification.object as? NSWindow else { return }
