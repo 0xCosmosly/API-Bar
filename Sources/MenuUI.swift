@@ -106,10 +106,11 @@ struct PaperWhiteButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 13, weight: .medium))
+            .font(.system(size: 12.5, weight: .medium))
+            .lineLimit(1)
             .foregroundStyle(isEnabled ? Color.primary : Color(NSColor.secondaryLabelColor))
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
+            .padding(.horizontal, 11)
+            .padding(.vertical, 5)
             .background(
                 RoundedRectangle(cornerRadius: 7)
                     .fill(Color(NSColor.controlBackgroundColor))
@@ -377,12 +378,22 @@ struct OverviewCardContent: View {
                         }
                         .frame(height: 5.5)
 
-                        if let pacing = balance.pacingMessage {
-                            Text(pacing)
-                                .font(.system(size: 11.5, weight: .medium, design: .rounded))
-                                .foregroundStyle(Color.secondary)
-                                .lineLimit(1)
-                        }
+                        let subtitleText: String = {
+                            if let pacing = balance.pacingMessage {
+                                return pacing
+                            } else if balance.baseline > 0 {
+                                return "\(balance.money) of \(balance.baseline.formatted(.currency(code: "USD")))"
+                            } else if balance.live {
+                                return "Connected · refreshes every 5 min"
+                            } else {
+                                return "Not connected"
+                            }
+                        }()
+
+                        Text(subtitleText)
+                            .font(.system(size: 11.5, weight: .medium, design: .rounded))
+                            .foregroundStyle(Color.secondary)
+                            .lineLimit(1)
                     }
                     .padding(.horizontal, 9)
                     .padding(.vertical, 5)
@@ -410,14 +421,17 @@ struct OverviewCardContent: View {
     }
 }
 
+public let kCardWidth: CGFloat = 365.0
+
 @MainActor final class OverviewCard: NSView {
     init(app: APIBarApp) {
         let host = VibrantHost(rootView: OverviewCardContent(app: app))
-        super.init(frame: NSRect(x: 0, y: 0, width: 340, height: 185))
+        super.init(frame: NSRect(x: 0, y: 0, width: kCardWidth, height: 185))
         host.frame = bounds
         addSubview(host)
         let height = ceil(host.fittingSize.height)
         frame.size.height = height
+        frame.size.width = kCardWidth
         host.frame = bounds; host.autoresizingMask = [.width, .height]
     }
     required init?(coder: NSCoder) { fatalError() }
@@ -431,11 +445,12 @@ struct OverviewCardContent: View {
 @MainActor final class BalanceCard: NSView {
     init(_ balance: Balance, status: String? = nil) {
         let host = VibrantHost(rootView: BalanceCardContent(balance: balance, status: status))
-        super.init(frame: NSRect(x: 0, y: 0, width: 340, height: 185))
+        super.init(frame: NSRect(x: 0, y: 0, width: kCardWidth, height: 185))
         host.frame = bounds
         addSubview(host)
         let height = ceil(host.fittingSize.height)
         frame.size.height = height
+        frame.size.width = kCardWidth
         host.frame = bounds; host.autoresizingMask = [.width, .height]
     }
     required init?(coder: NSCoder) { fatalError() }
@@ -1080,11 +1095,12 @@ struct SettingsPane: View {
         ScrollView(.vertical, showsIndicators: true) {
             VStack(alignment: .leading, spacing: 14) {
             // MARK: - Header
-            HStack {
+            HStack(alignment: .center) {
                 HStack(spacing: 10) {
                     Image(nsImage: BrandMark.appIconImage(size: 32)).resizable().frame(width: 32, height: 32)
                     Text("API Bar").font(.title2).fontWeight(.bold).foregroundStyle(Color.primary)
-                    Text("v\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "") (\(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""))")
+                    let versionStr = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? updater.currentVersion
+                    Text("v\(versionStr)")
                         .font(.subheadline).foregroundStyle(Color.secondary)
                 }
                 Spacer()
@@ -1146,11 +1162,16 @@ struct SettingsPane: View {
                     .fontWeight(.bold)
                     .foregroundStyle(Color.primary)
 
-                Toggle("Start at Login", isOn: Binding(get: { login }, set: { _ in
-                    app.toggleLogin(); login = SMAppService.mainApp.status == .enabled
-                }))
-                .font(.body)
-                .foregroundStyle(Color.primary)
+                VStack(alignment: .leading, spacing: 4) {
+                    Toggle("Start at Login", isOn: Binding(get: { login }, set: { _ in
+                        app.toggleLogin(); login = SMAppService.mainApp.status == .enabled
+                    }))
+                    .font(.body)
+                    .foregroundStyle(Color.primary)
+                    Text("Launch API Bar automatically whenever you log into your Mac.")
+                        .font(.subheadline)
+                        .foregroundStyle(Color.secondary)
+                }
 
                 Divider().opacity(0.6)
 
@@ -1165,27 +1186,27 @@ struct SettingsPane: View {
 
                 Divider().opacity(0.6)
 
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack {
+                HStack(alignment: .center) {
+                    VStack(alignment: .leading, spacing: 2) {
                         Text("Sort Providers")
                             .font(.body)
                             .fontWeight(.medium)
                             .foregroundStyle(Color.primary)
-                        Spacer()
-                        Picker("", selection: Binding(
-                            get: { app.sortMode },
-                            set: { app.setSortMode($0) }
-                        )) {
-                            ForEach(ProviderSortMode.allCases, id: \.self) { mode in
-                                Text(mode.displayName).tag(mode)
-                            }
-                        }
-                        .pickerStyle(.segmented)
-                        .frame(width: 270)
+                        Text("Rearrange providers manually or sort them automatically across menus.")
+                            .font(.subheadline)
+                            .foregroundStyle(Color.secondary)
                     }
-                    Text("Rearrange providers manually or sort them automatically across menus and menu-bar items.")
-                        .font(.subheadline)
-                        .foregroundStyle(Color.secondary)
+                    Spacer()
+                    Picker("", selection: Binding(
+                        get: { app.sortMode },
+                        set: { app.setSortMode($0) }
+                    )) {
+                        ForEach(ProviderSortMode.allCases, id: \.self) { mode in
+                            Text(mode.displayName).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .frame(width: 150)
                 }
             }
             .padding(16)
@@ -1268,21 +1289,23 @@ struct SettingsPane: View {
                             .foregroundStyle(Color.secondary)
 
                         if icloud.isOpenCodeSyncEnabled {
-                            VStack(alignment: .leading, spacing: 3) {
+                            VStack(alignment: .leading, spacing: 4) {
                                 Toggle("Sync API Keys & Credentials", isOn: Binding(
                                     get: { icloud.isOpenCodeCredentialsSyncEnabled },
                                     set: { icloud.setOpenCodeCredentialsSyncEnabled($0) }
                                 ))
-                                .font(.subheadline)
+                                .font(.body)
                                 .fontWeight(.medium)
                                 .foregroundStyle(Color.primary)
 
                                 Text("Synchronizes your OpenCode stored API keys and authentication tokens via your private iCloud vault so models connect immediately without re-authenticating.")
-                                    .font(.caption)
+                                    .font(.subheadline)
                                     .foregroundStyle(Color.secondary)
                             }
-                            .padding(.leading, 18)
-                            .padding(.top, 4)
+                            .padding(10)
+                            .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.025)))
+                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.primary.opacity(0.06), lineWidth: 1))
+                            .padding(.top, 2)
                         }
                     }
 
@@ -1790,23 +1813,19 @@ struct SettingsPane: View {
     private var browserSessionActions: some View {
         let allConnected = !app.inFlight.isEmpty || app.balances.allSatisfy { app.isConnected($0.id) }
         HStack(spacing: 8) {
-            Button(app.braveAccessKind == .fullDisk ? "Full Disk Access Granted ✓" : "Grant Full Disk Access") {
+            Button(app.braveAccessKind == .fullDisk ? "Full Disk Access ✓" : "Grant Full Disk Access") {
                 app.openFullDiskAccessSettings()
             }
             .buttonStyle(PaperWhiteButtonStyle())
             .disabled(app.braveAccessKind == .fullDisk)
 
-            Button(app.braveAccessKind == .folder ? "Folder Access Active ✓" : "Folder Access Only") {
+            Button(app.braveAccessKind == .folder ? "Folder Access ✓" : "Folder Access Only") {
                 app.chooseBraveProfile()
             }
             .buttonStyle(PaperWhiteButtonStyle())
             .disabled(app.braveAccessKind == .folder)
 
-            Divider()
-                .frame(height: 16)
-                .padding(.horizontal, 4)
-
-            Button("Relaunch API Bar") {
+            Button("Relaunch") {
                 app.relaunchApp()
             }
             .buttonStyle(PaperWhiteButtonStyle())
@@ -1816,13 +1835,13 @@ struct SettingsPane: View {
             Button {
                 app.connectAll()
             } label: {
-                HStack(spacing: 6) {
+                HStack(spacing: 5) {
                     if !app.inFlight.isEmpty {
                         ProgressView().controlSize(.small)
                     } else {
                         Image(systemName: "arrow.triangle.2.circlepath")
                     }
-                    Text("Connect All from \(app.browserName)")
+                    Text("Connect All")
                 }
             }
             .buttonStyle(PaperProminentButtonStyle())

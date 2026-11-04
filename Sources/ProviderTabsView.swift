@@ -350,8 +350,8 @@ struct ProviderTabItem: Equatable {
         }
         let detailHeight = card.frame.height
         frame.size.height = tabs.frame.height + detailHeight
-        tabs.frame.origin = NSPoint(x: 0, y: detailHeight)
-        card.frame.origin = NSPoint(x: round((bounds.width - card.frame.width) / 2), y: detailHeight - card.frame.height)
+        tabs.frame = NSRect(x: 0, y: detailHeight, width: bounds.width, height: tabs.frame.height)
+        card.frame = NSRect(x: 0, y: 0, width: bounds.width, height: detailHeight)
         addSubview(card, positioned: .below, relativeTo: tabs)
         detail = card
         layoutSubtreeIfNeeded()
