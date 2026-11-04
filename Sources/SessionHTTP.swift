@@ -646,15 +646,18 @@ struct RefuselessProvider: BalanceProvider {
 
         // The billing ledger itemises every completed top-up plus its bonus.
         // The first entry is the most recent top-up.
-        let (latestDeposit, latestDate, ledgerTotal) = Self.depositLedgerInfo(html)
-        let spendSince = Self.extractSpendSince(html: html, date: latestDate)
+        let (latestDeposit, latestDate, totalBefore, ledgerTotal) = Self.depositLedgerInfo(html)
+        let spendBefore = Self.extractSpendBefore(html: html, date: latestDate)
 
         let baseline: Double
         if latestDeposit > 0 {
             // When user topped up, the cycle budget is the latest top-up + whatever was remaining.
-            // That equals the remaining balance plus whatever was consumed since that top-up.
-            let cycleBudget = finalBalance + spendSince
-            baseline = min(ledgerTotal, max(latestDeposit, cycleBudget))
+            // That equals latestDeposit + (depositsBefore - spendBeforeTopUp), which is completely
+            // static and does not drift as real-time tokens are consumed.
+            let unspentBefore = max(0, totalBefore - spendBefore)
+            let rawBaseline = latestDeposit + unspentBefore
+            let rounded = (rawBaseline * 100).rounded() / 100.0
+            baseline = min(ledgerTotal, max(latestDeposit, rounded))
         } else if ledgerTotal > 0 {
             baseline = max(ledgerTotal, finalBalance)
         } else if finalBalance > 0 {
@@ -705,14 +708,15 @@ struct RefuselessProvider: BalanceProvider {
     }
 
     /// Sums `amountCents` + `bonusCents` for completed entries in the billing
-    /// deposit ledger. Returns the latest single top-up, its createdAt date, and cumulative total.
-    private static func depositLedgerInfo(_ html: String) -> (latest: Double, date: String, total: Double) {
+    /// deposit ledger. Returns the latest single top-up, its createdAt date, total before latest, and cumulative total.
+    private static func depositLedgerInfo(_ html: String) -> (latest: Double, date: String, totalBefore: Double, total: Double) {
         guard let start = html.range(of: #"["\\]+deposits["\\]+\s*:\s*\["#, options: .regularExpression),
-              let end = html.range(of: "]", range: start.upperBound..<html.endIndex) else { return (0, "", 0) }
+              let end = html.range(of: "]", range: start.upperBound..<html.endIndex) else { return (0, "", 0, 0) }
         let block = String(html[start.upperBound..<end.lowerBound])
         var total = 0.0
         var latest: Double = 0
         var latestDate = ""
+        var totalBefore = 0.0
         for chunk in block.components(separatedBy: "{") where !chunk.isEmpty {
             let lower = chunk.lowercased()
             if lower.contains("status"), !lower.contains("completed") { continue }
@@ -729,15 +733,18 @@ struct RefuselessProvider: BalanceProvider {
                             latestDate = String(digits[dtRange])
                         }
                     }
+                } else {
+                    totalBefore += dep
                 }
                 total += dep
             }
         }
-        return (latest, latestDate, total)
+        return (latest, latestDate, totalBefore, total)
     }
 
-    /// Sums daily micro-dollar spend on or after `date` (YYYY-MM-DD) from the console RSC payload.
-    private static func extractSpendSince(html: String, date: String) -> Double {
+    /// Sums daily micro-dollar spend strictly before `date` (YYYY-MM-DD) from the console RSC payload.
+    /// Because this historical spend occurred before the latest top-up, it remains completely static.
+    private static func extractSpendBefore(html: String, date: String) -> Double {
         guard !date.isEmpty else { return 0 }
         let pattern = #"\{[^{}]*["\\]+at["\\]+\s*:\s*["\\]+(\d{4}-\d{2}-\d{2})["\\]+[^}]*["\\]+spend["\\]+\s*:\s*(\d+)"#
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return 0 }
@@ -747,7 +754,7 @@ struct RefuselessProvider: BalanceProvider {
         for m in matches where m.numberOfRanges >= 3 {
             let dt = ns.substring(with: m.range(at: 1))
             let sp = Double(ns.substring(with: m.range(at: 2))) ?? 0
-            if dt >= date {
+            if dt < date {
                 sumMicro += sp
             }
         }

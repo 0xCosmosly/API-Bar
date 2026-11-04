@@ -194,7 +194,15 @@ final class ICloudSync: ObservableObject {
         UserDefaults.standard.set(enabled, forKey: Self.openCodeEnabledKey)
         if enabled && isEnabled {
             startOpenCodeMonitoring()
-            schedulePush()
+            Task { @MainActor [weak self] in
+                guard let self = self else { return }
+                // Pull cloud state first so a newly enabled client never overwrites cloud config
+                let pulled = await self.pullAndMerge()
+                let pushed = await self.pushLocalState()
+                if pulled || pushed {
+                    self.updateStatusMessage()
+                }
+            }
         } else {
             stopOpenCodeMonitoring()
         }
@@ -205,7 +213,14 @@ final class ICloudSync: ObservableObject {
         isOpenCodeCredentialsSyncEnabled = enabled
         UserDefaults.standard.set(enabled, forKey: Self.openCodeCredentialsEnabledKey)
         if enabled && isEnabled && isOpenCodeSyncEnabled {
-            schedulePush()
+            Task { @MainActor [weak self] in
+                guard let self = self else { return }
+                let pulled = await self.pullAndMerge()
+                let pushed = await self.pushLocalState()
+                if pulled || pushed {
+                    self.updateStatusMessage()
+                }
+            }
         }
     }
 
@@ -332,6 +347,9 @@ final class ICloudSync: ObservableObject {
 
         _ = await pullAndMerge()
         _ = await pushLocalState()
+        let now = Date()
+        lastSyncDate = now
+        UserDefaults.standard.set(now, forKey: Self.lastSyncKey)
     }
 
     @discardableResult
@@ -493,24 +511,28 @@ final class ICloudSync: ObservableObject {
             } else if let remoteAttrs = try? FileManager.default.attributesOfItem(atPath: cloudOpenCode.path),
                       let localAttrs = try? FileManager.default.attributesOfItem(atPath: localOpenCode.path),
                       let remoteDate = remoteAttrs[.modificationDate] as? Date,
-                      let localDate = localAttrs[.modificationDate] as? Date,
-                      remoteDate > localDate {
-                shouldCopy = true
+                      let localDate = localAttrs[.modificationDate] as? Date {
+                let remoteSize = (remoteAttrs[.size] as? NSNumber)?.int64Value ?? 0
+                let localSize = (localAttrs[.size] as? NSNumber)?.int64Value ?? 0
+                shouldCopy = remoteDate > localDate || remoteSize > (localSize + 100)
             } else {
                 shouldCopy = false
             }
 
             if shouldCopy, let data = try? Data(contentsOf: cloudOpenCode), !data.isEmpty {
-                let configDir = localOpenCode.deletingLastPathComponent()
-                try? FileManager.default.createDirectory(at: configDir, withIntermediateDirectories: true)
-                if FileManager.default.fileExists(atPath: localOpenCode.path) {
-                    let backupURL = configDir.appendingPathComponent("opencode.json.bak")
-                    try? FileManager.default.removeItem(at: backupURL)
-                    try? FileManager.default.copyItem(at: localOpenCode, to: backupURL)
+                let localData = try? Data(contentsOf: localOpenCode)
+                if localData != data {
+                    let configDir = localOpenCode.deletingLastPathComponent()
+                    try? FileManager.default.createDirectory(at: configDir, withIntermediateDirectories: true)
+                    if FileManager.default.fileExists(atPath: localOpenCode.path) {
+                        let backupURL = configDir.appendingPathComponent("opencode.json.bak")
+                        try? FileManager.default.removeItem(at: backupURL)
+                        try? FileManager.default.copyItem(at: localOpenCode, to: backupURL)
+                    }
+                    try? data.write(to: localOpenCode, options: .atomic)
+                    try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: localOpenCode.path)
+                    didChangeLocally = true
                 }
-                try? data.write(to: localOpenCode, options: .atomic)
-                try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: localOpenCode.path)
-                didChangeLocally = true
             }
         }
 
@@ -525,6 +547,12 @@ final class ICloudSync: ObservableObject {
             }
         }
 
+        if didChangeLocally {
+            let now = Date()
+            lastSyncDate = now
+            UserDefaults.standard.set(now, forKey: Self.lastSyncKey)
+        }
+
         return didChangeLocally
     }
 
@@ -533,6 +561,8 @@ final class ICloudSync: ObservableObject {
         guard isEnabled, let base = baseDirectoryURL, let app = app else { return false }
         guard checkAvailability() else { return false }
 
+        var didTransferAny = false
+
         do {
             try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
             try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: base.path)
@@ -540,8 +570,12 @@ final class ICloudSync: ObservableObject {
             // 1. Write balances.json
             if let balancesURL = balancesURL {
                 let data = try JSONEncoder().encode(app.balances)
-                try data.write(to: balancesURL, options: .atomic)
-                try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: balancesURL.path)
+                let existing = try? Data(contentsOf: balancesURL)
+                if existing != data {
+                    try data.write(to: balancesURL, options: .atomic)
+                    try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: balancesURL.path)
+                    didTransferAny = true
+                }
             }
 
             // 2. Write settings.json
@@ -555,8 +589,12 @@ final class ICloudSync: ObservableObject {
                     deviceName: deviceName
                 )
                 let data = try JSONEncoder().encode(settings)
-                try data.write(to: settingsURL, options: .atomic)
-                try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: settingsURL.path)
+                let existing = try? Data(contentsOf: settingsURL)
+                if existing != data {
+                    try data.write(to: settingsURL, options: .atomic)
+                    try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: settingsURL.path)
+                    didTransferAny = true
+                }
             }
 
             // 3. Write vault sessions
@@ -570,8 +608,12 @@ final class ICloudSync: ObservableObject {
                         let localFile = localVault.appendingPathComponent(file)
                         let cloudFile = cloudVault.appendingPathComponent(file)
                         if let data = try? Data(contentsOf: localFile), !data.isEmpty {
-                            try? data.write(to: cloudFile, options: .atomic)
-                            try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: cloudFile.path)
+                            let cloudData = try? Data(contentsOf: cloudFile)
+                            if cloudData != data {
+                                try? data.write(to: cloudFile, options: .atomic)
+                                try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: cloudFile.path)
+                                didTransferAny = true
+                            }
                         }
                     }
                 }
@@ -581,9 +623,25 @@ final class ICloudSync: ObservableObject {
             if isOpenCodeSyncEnabled,
                let cloudOpenCode = cloudOpenCodeURL,
                FileManager.default.fileExists(atPath: localOpenCodeURL.path) {
-                if let data = try? Data(contentsOf: localOpenCodeURL), !data.isEmpty {
-                    try data.write(to: cloudOpenCode, options: .atomic)
-                    try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: cloudOpenCode.path)
+                let shouldPush: Bool
+                if !FileManager.default.fileExists(atPath: cloudOpenCode.path) {
+                    shouldPush = true
+                } else if let remoteAttrs = try? FileManager.default.attributesOfItem(atPath: cloudOpenCode.path),
+                           let localAttrs = try? FileManager.default.attributesOfItem(atPath: localOpenCodeURL.path),
+                           let remoteDate = remoteAttrs[.modificationDate] as? Date,
+                           let localDate = localAttrs[.modificationDate] as? Date {
+                    shouldPush = localDate > remoteDate
+                } else {
+                    shouldPush = false
+                }
+
+                if shouldPush, let data = try? Data(contentsOf: localOpenCodeURL), !data.isEmpty {
+                    let cloudData = try? Data(contentsOf: cloudOpenCode)
+                    if cloudData != data {
+                        try data.write(to: cloudOpenCode, options: .atomic)
+                        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: cloudOpenCode.path)
+                        didTransferAny = true
+                    }
                 }
             }
 
@@ -591,8 +649,12 @@ final class ICloudSync: ObservableObject {
             if isOpenCodeSyncEnabled && isOpenCodeCredentialsSyncEnabled,
                let cloudCreds = cloudOpenCodeCredentialsURL {
                 if let data = exportOpenCodeCredentials(), !data.isEmpty {
-                    try data.write(to: cloudCreds, options: .atomic)
-                    try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: cloudCreds.path)
+                    let cloudData = try? Data(contentsOf: cloudCreds)
+                    if cloudData != data {
+                        try data.write(to: cloudCreds, options: .atomic)
+                        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: cloudCreds.path)
+                        didTransferAny = true
+                    }
                 }
             }
 
@@ -613,11 +675,13 @@ final class ICloudSync: ObservableObject {
                 try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: manifestURL.path)
             }
 
-            lastSyncDate = pushTime
-            UserDefaults.standard.set(lastSyncDate, forKey: Self.lastSyncKey)
+            if didTransferAny {
+                lastSyncDate = pushTime
+                UserDefaults.standard.set(lastSyncDate, forKey: Self.lastSyncKey)
+            }
             updateStatusMessage()
             lastError = nil
-            return true
+            return didTransferAny
         } catch {
             lastError = error.localizedDescription
             statusMessage = "Sync error: \(error.localizedDescription)"

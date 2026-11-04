@@ -867,9 +867,13 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         if let rd = r.runwayDays { balances[i].runwayDays = rd }
         if r.provider == "refuseless" || r.provider == "lutheos" {
             if let ref = r.reference, ref > 0 {
-                balances[i].baseline = ref
+                balances[i].baseline = max(ref, r.remaining)
             } else if balances[i].baseline <= 0 {
                 balances[i].baseline = PaymentReference.inferTier(for: r.remaining)
+            } else if r.remaining > oldRemaining && oldRemaining > 0 {
+                let delta = r.remaining - oldRemaining
+                let paidAmount = PaymentReference.inferTier(for: delta)
+                balances[i].baseline = max(oldRemaining + paidAmount, r.remaining)
             }
             providerStatus[r.provider] = "Connected · refreshes every 5 min"
             if sortMode != .manual {
