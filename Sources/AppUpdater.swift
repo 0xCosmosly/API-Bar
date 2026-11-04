@@ -224,8 +224,9 @@ public final class AppUpdater: ObservableObject {
 
             if manual {
                 // User explicitly clicked "Check for Updates…":
-                // If a newer version exists, or on the same version (same-version push), install it.
-                if isNewer || isSameVersion {
+                // If a newer semver or newer build timestamp is on GitHub, update immediately.
+                // Otherwise, show the native "You're Up to Date" confirmation dialog.
+                if isNewer {
                     self.statusMessage = "Updating to latest build of v\(release.version)…"
                     await self.installUpdate()
                 } else {
