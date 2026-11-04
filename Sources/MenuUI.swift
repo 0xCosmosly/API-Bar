@@ -951,16 +951,25 @@ struct OnboardingView: View {
                         .foregroundStyle(Color.secondary)
 
                     if app.iCloudSyncEnabled {
-                        VStack(alignment: .leading, spacing: 2) {
+                        VStack(alignment: .leading, spacing: 3) {
                             Toggle("Sync OpenCode Configuration (Optional)", isOn: Binding(
                                 get: { app.isOpenCodeSyncEnabled },
                                 set: { app.setOpenCodeSyncEnabled($0) }
                             ))
                             .font(.subheadline)
 
-                            Text("Optional. Syncs models and providers (~/.config/opencode/opencode.json). API keys remain local.")
+                            Text("Optional. Syncs models and providers (~/.config/opencode/opencode.json).")
                                 .font(.caption)
                                 .foregroundStyle(Color.secondary)
+
+                            if app.isOpenCodeSyncEnabled {
+                                Toggle("Sync API Keys & Credentials", isOn: Binding(
+                                    get: { app.isOpenCodeCredentialsSyncEnabled },
+                                    set: { app.setOpenCodeCredentialsSyncEnabled($0) }
+                                ))
+                                .font(.caption)
+                                .padding(.leading, 16)
+                            }
                         }
                         .padding(.top, 4)
                         .padding(.leading, 8)
@@ -1246,7 +1255,7 @@ struct SettingsPane: View {
                 if icloud.isEnabled {
                     Divider().opacity(0.6)
 
-                    VStack(alignment: .leading, spacing: 4) {
+                    VStack(alignment: .leading, spacing: 6) {
                         Toggle("Sync OpenCode Configuration (Optional)", isOn: Binding(
                             get: { icloud.isOpenCodeSyncEnabled },
                             set: { icloud.setOpenCodeSyncEnabled($0) }
@@ -1254,9 +1263,27 @@ struct SettingsPane: View {
                         .font(.body)
                         .foregroundStyle(Color.primary)
 
-                        Text("Optional. Syncs models and providers configured in OpenCode (~/.config/opencode/opencode.json) across devices via iCloud Drive. API keys and credentials are not synced and remain safely local to each machine.")
+                        Text("Optional. Syncs models and providers configured in OpenCode (~/.config/opencode/opencode.json) across devices via iCloud Drive.")
                             .font(.subheadline)
                             .foregroundStyle(Color.secondary)
+
+                        if icloud.isOpenCodeSyncEnabled {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Toggle("Sync API Keys & Credentials", isOn: Binding(
+                                    get: { icloud.isOpenCodeCredentialsSyncEnabled },
+                                    set: { icloud.setOpenCodeCredentialsSyncEnabled($0) }
+                                ))
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                                .foregroundStyle(Color.primary)
+
+                                Text("Synchronizes your OpenCode stored API keys and authentication tokens via your private iCloud vault so models connect immediately without re-authenticating.")
+                                    .font(.caption)
+                                    .foregroundStyle(Color.secondary)
+                            }
+                            .padding(.leading, 18)
+                            .padding(.top, 4)
+                        }
                     }
 
                     Divider().opacity(0.6)

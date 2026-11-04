@@ -50,6 +50,7 @@ final class ICloudSync: ObservableObject {
 
     static let enabledKey = "ICloudSyncEnabled"
     static let openCodeEnabledKey = "ICloudSyncOpenCodeEnabled"
+    static let openCodeCredentialsEnabledKey = "ICloudSyncOpenCodeCredentialsEnabled"
     static let lastSyncKey = "ICloudSyncLastDate"
     static let deviceIdKey = "APIBarDeviceUUID"
 
@@ -57,6 +58,7 @@ final class ICloudSync: ObservableObject {
     @Published private(set) var isAvailable: Bool = false
     @Published var isEnabled: Bool = false
     @Published var isOpenCodeSyncEnabled: Bool = false
+    @Published var isOpenCodeCredentialsSyncEnabled: Bool = true
     @Published private(set) var lastSyncDate: Date? = nil
     @Published private(set) var statusMessage: String = "Disabled"
     @Published private(set) var lastError: String? = nil
@@ -130,9 +132,25 @@ final class ICloudSync: ObservableObject {
         baseDirectoryURL?.appendingPathComponent("opencode.json")
     }
 
+    var localOpenCodeCredentialsURL: URL? {
+        if let custom = ProcessInfo.processInfo.environment["APIBAR_OPENCODE_CREDENTIALS_FILE"], !custom.isEmpty {
+            return URL(fileURLWithPath: custom)
+        }
+        return nil
+    }
+
+    var cloudOpenCodeCredentialsURL: URL? {
+        vaultDirectoryURL?.appendingPathComponent("opencode-credentials.json")
+    }
+
     init() {
         self.isEnabled = UserDefaults.standard.bool(forKey: Self.enabledKey)
         self.isOpenCodeSyncEnabled = UserDefaults.standard.bool(forKey: Self.openCodeEnabledKey)
+        if UserDefaults.standard.object(forKey: Self.openCodeCredentialsEnabledKey) == nil {
+            self.isOpenCodeCredentialsSyncEnabled = true
+        } else {
+            self.isOpenCodeCredentialsSyncEnabled = UserDefaults.standard.bool(forKey: Self.openCodeCredentialsEnabledKey)
+        }
         if let ts = UserDefaults.standard.object(forKey: Self.lastSyncKey) as? Date {
             self.lastSyncDate = ts
         }
@@ -179,6 +197,80 @@ final class ICloudSync: ObservableObject {
             schedulePush()
         } else {
             stopOpenCodeMonitoring()
+        }
+    }
+
+    func setOpenCodeCredentialsSyncEnabled(_ enabled: Bool) {
+        guard isOpenCodeCredentialsSyncEnabled != enabled else { return }
+        isOpenCodeCredentialsSyncEnabled = enabled
+        UserDefaults.standard.set(enabled, forKey: Self.openCodeCredentialsEnabledKey)
+        if enabled && isEnabled && isOpenCodeSyncEnabled {
+            schedulePush()
+        }
+    }
+
+    private func findOpenCodeBinary() -> String? {
+        let candidates = [
+            FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".local/bin/opencode").path,
+            "/usr/local/bin/opencode",
+            "/opt/homebrew/bin/opencode",
+            FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".bun/bin/opencode").path,
+            FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".cargo/bin/opencode").path
+        ]
+        return candidates.first { FileManager.default.isExecutableFile(atPath: $0) }
+    }
+
+    func exportOpenCodeCredentials() -> Data? {
+        if let testURL = localOpenCodeCredentialsURL {
+            return try? Data(contentsOf: testURL)
+        }
+        guard let bin = findOpenCodeBinary() else { return nil }
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: bin)
+        p.arguments = ["auth", "export"]
+        let pipe = Pipe()
+        p.standardOutput = pipe
+        p.standardError = Pipe()
+        do {
+            try p.run()
+            p.waitUntilExit()
+            if p.terminationStatus == 0 {
+                let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                if !data.isEmpty && (try? JSONSerialization.jsonObject(with: data)) != nil {
+                    return data
+                }
+            }
+        } catch {}
+        return nil
+    }
+
+    @discardableResult
+    func importOpenCodeCredentials(data: Data) -> Bool {
+        if let testURL = localOpenCodeCredentialsURL {
+            do {
+                try data.write(to: testURL, options: .atomic)
+                return true
+            } catch {
+                return false
+            }
+        }
+        guard let bin = findOpenCodeBinary() else { return false }
+        let tempURL = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("apibar_auth_\(UUID().uuidString).json")
+        do {
+            try data.write(to: tempURL, options: .atomic)
+            try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: tempURL.path)
+            defer { try? FileManager.default.removeItem(at: tempURL) }
+
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: bin)
+            p.arguments = ["auth", "import", tempURL.path]
+            p.standardOutput = Pipe()
+            p.standardError = Pipe()
+            try p.run()
+            p.waitUntilExit()
+            return p.terminationStatus == 0
+        } catch {
+            return false
         }
     }
 
@@ -422,6 +514,17 @@ final class ICloudSync: ObservableObject {
             }
         }
 
+        // 4b. Pull OpenCode credentials
+        if isOpenCodeSyncEnabled && isOpenCodeCredentialsSyncEnabled,
+           let cloudCreds = cloudOpenCodeCredentialsURL,
+           FileManager.default.fileExists(atPath: cloudCreds.path) {
+            if let data = try? Data(contentsOf: cloudCreds), !data.isEmpty {
+                if importOpenCodeCredentials(data: data) {
+                    didChangeLocally = true
+                }
+            }
+        }
+
         return didChangeLocally
     }
 
@@ -481,6 +584,15 @@ final class ICloudSync: ObservableObject {
                 if let data = try? Data(contentsOf: localOpenCodeURL), !data.isEmpty {
                     try data.write(to: cloudOpenCode, options: .atomic)
                     try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: cloudOpenCode.path)
+                }
+            }
+
+            // 4b. Write OpenCode credentials if enabled
+            if isOpenCodeSyncEnabled && isOpenCodeCredentialsSyncEnabled,
+               let cloudCreds = cloudOpenCodeCredentialsURL {
+                if let data = exportOpenCodeCredentials(), !data.isEmpty {
+                    try data.write(to: cloudCreds, options: .atomic)
+                    try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: cloudCreds.path)
                 }
             }
 

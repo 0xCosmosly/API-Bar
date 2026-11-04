@@ -305,16 +305,24 @@ import SwiftUI
         let localOpenCodeFile = ICloudSync.shared.localOpenCodeURL
         let initialOpenCodeConfig = "{\"providers\":{\"refuseless\":{\"apiKey\":\"test_refuseless_key\"}}}"
         try initialOpenCodeConfig.write(to: localOpenCodeFile, atomically: true, encoding: .utf8)
+
+        let mockCredsFile = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("mock_opencode_creds_\(UUID().uuidString).json")
+        let initialCredsJSON = "[{\"id\":\"cred_refuseless\",\"integrationID\":\"refuseless\",\"label\":\"Refuseless\",\"active\":true,\"value\":{\"type\":\"key\",\"key\":\"abl_test_sync_key\"}}]"
+        try initialCredsJSON.write(to: mockCredsFile, atomically: true, encoding: .utf8)
+        setenv("APIBAR_OPENCODE_CREDENTIALS_FILE", mockCredsFile.path, 1)
+
         precondition(ICloudSync.shared.isOpenCodeSyncEnabled == false, "OpenCode sync must be disabled by default")
         ICloudSync.shared.setOpenCodeSyncEnabled(true)
         precondition(ICloudSync.shared.isOpenCodeSyncEnabled == true)
+        precondition(ICloudSync.shared.isOpenCodeCredentialsSyncEnabled == true)
 
         let pushedSuccess = await ICloudSync.shared.pushLocalState()
         precondition(pushedSuccess == true, "pushLocalState failed")
         guard let balancesFile = ICloudSync.shared.balancesURL,
               let settingsFile = ICloudSync.shared.settingsURL,
               let manifestFile = ICloudSync.shared.manifestURL,
-              let cloudOpenCodeFile = ICloudSync.shared.cloudOpenCodeURL else {
+              let cloudOpenCodeFile = ICloudSync.shared.cloudOpenCodeURL,
+              let cloudOpenCodeCredsFile = ICloudSync.shared.cloudOpenCodeCredentialsURL else {
             preconditionFailure("iCloud URLs not resolved")
         }
         precondition(FileManager.default.fileExists(atPath: balancesFile.path), "balances.json missing in iCloud")
@@ -322,6 +330,8 @@ import SwiftUI
         precondition(FileManager.default.fileExists(atPath: manifestFile.path), "manifest.json missing in iCloud")
         precondition(FileManager.default.fileExists(atPath: cloudOpenCodeFile.path), "opencode.json missing in iCloud")
         precondition((try? String(contentsOf: cloudOpenCodeFile, encoding: .utf8)) == initialOpenCodeConfig)
+        precondition(FileManager.default.fileExists(atPath: cloudOpenCodeCredsFile.path), "opencode-credentials.json missing in iCloud vault")
+        precondition((try? String(contentsOf: cloudOpenCodeCredsFile, encoding: .utf8)) == initialCredsJSON)
 
         let balancesData = try Data(contentsOf: balancesFile)
         let pushedBalances = try JSONDecoder().decode([Balance].self, from: balancesData)
@@ -367,11 +377,15 @@ import SwiftUI
         let mockSessionData = try JSONEncoder().encode(mockSession)
         try mockSessionData.write(to: remoteVaultDir.appendingPathComponent("togetherai.dat"), options: .atomic)
 
-        // Device B updates opencode.json in iCloud
+        // Device B updates opencode.json and opencode-credentials.json in iCloud
         let updatedOpenCodeConfig = "{\"providers\":{\"refuseless\":{\"apiKey\":\"test_refuseless_key\"},\"crowbot\":{\"apiKey\":\"test_crowbot_key\"}}}"
         try updatedOpenCodeConfig.write(to: cloudOpenCodeFile, atomically: true, encoding: .utf8)
         let futureDate = Date().addingTimeInterval(10)
         try FileManager.default.setAttributes([.modificationDate: futureDate], ofItemAtPath: cloudOpenCodeFile.path)
+
+        let updatedCredsJSON = "[{\"id\":\"cred_remote\",\"integrationID\":\"refuseless\",\"label\":\"Refuseless\",\"active\":true,\"value\":{\"type\":\"key\",\"key\":\"abl_remote_updated_key\"}}]"
+        try updatedCredsJSON.write(to: cloudOpenCodeCredsFile, atomically: true, encoding: .utf8)
+        try? FileManager.default.removeItem(at: mockCredsFile)
 
         let didMerge = await ICloudSync.shared.pullAndMerge()
         precondition(didMerge == true, "pullAndMerge did not report merge changes")
@@ -390,6 +404,10 @@ import SwiftUI
         let backupFile = localOpenCodeFile.deletingLastPathComponent().appendingPathComponent("opencode.json.bak")
         precondition(FileManager.default.fileExists(atPath: backupFile.path), "opencode.json.bak backup missing")
         precondition((try? String(contentsOf: backupFile, encoding: .utf8)) == initialOpenCodeConfig, "opencode.json.bak content mismatch")
+
+        precondition((try? String(contentsOf: mockCredsFile, encoding: .utf8)) == updatedCredsJSON, "Local mock credentials did not update with Device B changes")
+        try? FileManager.default.removeItem(at: mockCredsFile)
+        unsetenv("APIBAR_OPENCODE_CREDENTIALS_FILE")
 
         ICloudSync.shared.setOpenCodeSyncEnabled(false)
         precondition(ICloudSync.shared.isOpenCodeSyncEnabled == false)

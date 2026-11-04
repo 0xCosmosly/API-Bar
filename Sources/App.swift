@@ -59,6 +59,10 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         get { ICloudSync.shared.isOpenCodeSyncEnabled }
         set { ICloudSync.shared.setOpenCodeSyncEnabled(newValue) }
     }
+    var isOpenCodeCredentialsSyncEnabled: Bool {
+        get { ICloudSync.shared.isOpenCodeCredentialsSyncEnabled }
+        set { ICloudSync.shared.setOpenCodeCredentialsSyncEnabled(newValue) }
+    }
     var iCloudStatus: String {
         ICloudSync.shared.statusBadge
     }
@@ -70,6 +74,9 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
     }
     func setOpenCodeSyncEnabled(_ enabled: Bool) {
         ICloudSync.shared.setOpenCodeSyncEnabled(enabled)
+    }
+    func setOpenCodeCredentialsSyncEnabled(_ enabled: Bool) {
+        ICloudSync.shared.setOpenCodeCredentialsSyncEnabled(enabled)
     }
     func syncICloudNow() {
         Task { await ICloudSync.shared.syncNow() }
