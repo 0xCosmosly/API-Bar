@@ -13,6 +13,17 @@
 *.swp
 *~
 
-# Local diagnostic dumps
+# Local diagnostic dumps & credentials protection
 runtime.json
 diagnostics.json
+balances.json
+auth.json
+opencode.json
+*.dat
+*.bak
+*.key
+*.pem
+*.env
+*.env.*
+vault/
+*backup*

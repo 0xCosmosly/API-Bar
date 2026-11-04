@@ -166,6 +166,8 @@ Yes. Open **Settings → Add Custom Provider**. Enter the provider's name or pas
 <details>
 <summary><b>🛠️ Developer & Architecture Guide (For Contributors & Agents)</b></summary>
 
+> 🤖 **Working with an AI coding assistant?** See the full [Agent Guide & Architecture Specification (AGENTS.md)](AGENTS.md) for architectural invariants, zero-secret rules, and provider recipes.
+
 ### Repository Structure
 
 ```
