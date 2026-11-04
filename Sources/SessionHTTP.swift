@@ -657,7 +657,7 @@ struct RefuselessProvider: BalanceProvider {
             let unspentBefore = max(0, totalBefore - spendBefore)
             let rawBaseline = latestDeposit + unspentBefore
             let rounded = (rawBaseline * 100).rounded() / 100.0
-            baseline = min(ledgerTotal, max(latestDeposit, rounded))
+            baseline = min(ledgerTotal, max(latestDeposit, max(rounded, finalBalance)))
         } else if ledgerTotal > 0 {
             baseline = max(ledgerTotal, finalBalance)
         } else if finalBalance > 0 {
@@ -714,31 +714,35 @@ struct RefuselessProvider: BalanceProvider {
               let end = html.range(of: "]", range: start.upperBound..<html.endIndex) else { return (0, "", 0, 0) }
         let block = String(html[start.upperBound..<end.lowerBound])
         var total = 0.0
-        var latest: Double = 0
-        var latestDate = ""
-        var totalBefore = 0.0
+        struct DepositItem {
+            let amount: Double
+            let date: String
+        }
+        var items: [DepositItem] = []
         for chunk in block.components(separatedBy: "{") where !chunk.isEmpty {
             let lower = chunk.lowercased()
             if lower.contains("status"), !lower.contains("completed") { continue }
             let amount = Self.integerValue(chunk, key: "amountCents") ?? 0
             let bonus = Self.integerValue(chunk, key: "bonusCents") ?? 0
-            let dep = (amount + bonus) / 100
+            let dep = (amount + bonus) / 100.0
             if dep > 0 {
-                if latest == 0 {
-                    latest = dep
-                    if let r = chunk.range(of: #"createdAt["\\]*\s*:\s*["\\]*(\d{4}-\d{2}-\d{2})"#, options: .regularExpression) {
-                        let m = String(chunk[r])
-                        let digits = m.components(separatedBy: "\"").last ?? ""
-                        if let dtRange = digits.range(of: #"\d{4}-\d{2}-\d{2}"#, options: .regularExpression) {
-                            latestDate = String(digits[dtRange])
-                        }
-                    }
-                } else {
-                    totalBefore += dep
-                }
                 total += dep
+                var dt = ""
+                if let r = chunk.range(of: #"createdAt["\\]*\s*:\s*["\\]*(\d{4}-\d{2}-\d{2})"#, options: .regularExpression) {
+                    let m = String(chunk[r])
+                    let digits = m.components(separatedBy: "\"").last ?? ""
+                    if let dtRange = digits.range(of: #"\d{4}-\d{2}-\d{2}"#, options: .regularExpression) {
+                        dt = String(digits[dtRange])
+                    }
+                }
+                items.append(DepositItem(amount: dep, date: dt))
             }
         }
+        guard !items.isEmpty else { return (0, "", 0, 0) }
+        items.sort { $0.date > $1.date }
+        let latest = items[0].amount
+        let latestDate = items[0].date
+        let totalBefore = items.dropFirst().reduce(0.0) { $0 + $1.amount }
         return (latest, latestDate, totalBefore, total)
     }
 
@@ -861,6 +865,11 @@ struct RefuselessProvider: BalanceProvider {
 
         let resolvedAccount = (!account.isEmpty && !account.hasSuffix(" Account")) ? account : (!parsed.account.isEmpty ? parsed.account : "Refuseless Account")
 
+        // Only send reference if we successfully fetched the billing ledger.
+        // If billing failed and only console was parsed, do not send an unverified baseline.
+        let hasLedger = billingHtml.contains("\"deposits\"") || billingHtml.contains("\\\"deposits\\\"")
+        let verifiedRef: Double? = (hasLedger && parsed.baseline > 0) ? parsed.baseline : nil
+
         return Reading(
             provider: providerID,
             remaining: parsed.remaining,
@@ -868,7 +877,7 @@ struct RefuselessProvider: BalanceProvider {
             account: resolvedAccount,
             url: "https://refuseless.com/console",
             expires: nil,
-            reference: parsed.baseline > 0 ? parsed.baseline : nil,
+            reference: verifiedRef,
             tokensPerDay: pacing?.tokensPerDay,
             runwayDays: pacing?.runwayDays
         )

@@ -55,9 +55,10 @@ API Bar is a native, lightweight macOS menu-bar companion written in **Swift 6**
 - In `configureStatusItems()`, check if `currentIdentities == identities && !items.isEmpty`. If identical, update button titles in-place.
 - Recreating `NSStatusItem`s destroys accessibility window anchors (`AXUIElement`) and causes third-party menu bar managers (Thaw, Bartender, Ice) to enter infinite layout loops.
 
-### 4. Baseline Ingestion Directionality (Never Downgrade)
-- In `App.swift` (`apply(_ r: Reading)`), existing verified baselines (e.g. \$9.00 or \$10.33) must **never** be overwritten by smaller inferred references (e.g. \$5.00).
-- Only increase or preserve `balances[i].baseline`:
+### 4. Baseline Ingestion Directionality & Verified Cycle References
+- In `App.swift` (`apply(_ r: Reading)`), verified references (`ref > 0`) from providers with full deposit ledgers (such as Refuseless) represent the true top-up cycle baseline (`latestDeposit + unspentCarryoverBeforeDeposit`) and directly set `balances[i].baseline = max(ref, r.remaining)`.
+- When a new top-up occurs (e.g. topping up $10 after spending down a previous $25 cycle), the cycle baseline must correctly reset to the new cycle total (e.g. $10.33) rather than remaining locked to lifetime cumulative deposits ($35.00).
+- For providers subject to tier inference fallbacks (such as Lutheos), guard against overwriting a verified baseline with a smaller inferred tier:
   ```swift
   if balances[i].baseline <= 0 || ref >= balances[i].baseline {
       balances[i].baseline = max(ref, r.remaining)
@@ -65,6 +66,7 @@ API Bar is a native, lightweight macOS menu-bar companion written in **Swift 6**
       balances[i].baseline = max(balances[i].baseline, r.remaining)
   }
   ```
+- Missing references (`ref == nil` or `ref <= 0`) must never downgrade or reset the baseline; they simply preserve `balances[i].baseline`.
 
 ### 5. Safe iCloud Push/Pull Sequence
 - Always write safety backups (`.bak` and timestamped JSON) prior to applying remote iCloud changes.
