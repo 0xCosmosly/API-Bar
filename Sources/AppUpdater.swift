@@ -413,9 +413,9 @@ public final class AppUpdater: ObservableObject {
         let alert = NSAlert()
         alert.icon = NSApp.applicationIconImage ?? BrandMark.appIconImage(size: 128)
         alert.messageText = "You're Up to Date"
-        alert.informativeText = "API Bar v\(currentVersion) is currently the latest version. You can redownload this build to reinstall a fresh copy anytime."
+        alert.informativeText = "API Bar v\(currentVersion) is currently the latest version. If you're having any issues, hit Redownload to install a fresh copy."
         alert.addButton(withTitle: "OK")
-        alert.addButton(withTitle: "Redownload Latest Build")
+        alert.addButton(withTitle: "Redownload")
         let prevPolicy = NSApp.activationPolicy()
         if prevPolicy != .regular {
             NSApp.setActivationPolicy(.regular)
