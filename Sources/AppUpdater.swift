@@ -218,17 +218,35 @@ public final class AppUpdater: ObservableObject {
             self.downloadURL = release.downloadURL
             self.updateAvailable = isNewer
 
-            // Silent push:
-            // 1. If manual check is requested, update immediately even if on the same version 0.5.0, silently installing and relaunching!
-            // 2. If background check finds a newer build, or forceSilentInstall is triggered via iCloud, silently update and relaunch!
+            // Cooldown check: prevent rapid reinstallations
+            let lastInstallTime = (UserDefaults.standard.object(forKey: "APIBarLastUpdateInstallTime") as? Date) ?? .distantPast
+            let elapsed = Date().timeIntervalSince(lastInstallTime)
+
             if manual {
-                self.statusMessage = "Updating to latest build of v\(release.version)…"
-                await self.installUpdate()
-            } else if isNewer || forceSilentInstall {
-                self.statusMessage = "Applying silent update to v\(release.version)…"
-                await self.installUpdate()
+                // User explicitly clicked "Check for Updates…":
+                // If a newer version exists, or on the same version (same-version push), install it.
+                if isNewer || isSameVersion {
+                    self.statusMessage = "Updating to latest build of v\(release.version)…"
+                    await self.installUpdate()
+                } else {
+                    self.statusMessage = "Up to date (v\(currentVersion))."
+                    showUpToDateAlert()
+                }
+            } else if forceSilentInstall {
+                // Background silent install triggered by iCloud push:
+                // Only execute if not recently updated (>120s cooldown) and there is a newer build or asset
+                if elapsed > 120 && (isNewer || isSameVersionUpdated) {
+                    self.statusMessage = "Applying silent update to v\(release.version)…"
+                    await self.installUpdate()
+                }
             } else {
-                self.statusMessage = "Up to date (v\(currentVersion))."
+                // Standard automatic background check on startup or periodic timer:
+                // NEVER automatically restart or reinstall the app! Just notify via UI state.
+                if isNewer {
+                    self.statusMessage = "Update available: v\(release.version)"
+                } else {
+                    self.statusMessage = "Up to date (v\(currentVersion))."
+                }
             }
         } catch {
             self.checkError = error.localizedDescription
@@ -283,6 +301,12 @@ public final class AppUpdater: ObservableObject {
     }
 
     public func installUpdate() async {
+        let lastInstallTime = (UserDefaults.standard.object(forKey: "APIBarLastUpdateInstallTime") as? Date) ?? .distantPast
+        guard Date().timeIntervalSince(lastInstallTime) > 60 else {
+            return
+        }
+        UserDefaults.standard.set(Date(), forKey: "APIBarLastUpdateInstallTime")
+
         guard let downloadURL else {
             if let releaseURL { NSWorkspace.shared.open(releaseURL) }
             return

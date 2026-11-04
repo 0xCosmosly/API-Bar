@@ -367,10 +367,13 @@ final class ICloudSync: ObservableObject {
            let data = try? Data(contentsOf: manifestURL),
            let remoteManifest = try? JSONDecoder().decode(ICloudManifest.self, from: data),
            remoteManifest.deviceId != self.deviceId,
-           let remoteBuild = remoteManifest.appBuildTimestamp,
-           remoteBuild > AppUpdater.localBuildDate.timeIntervalSince1970 + 30 {
-            Task { @MainActor in
-                await AppUpdater.shared.checkForUpdates(manual: false, forceSilentInstall: true)
+           let remoteBuild = remoteManifest.appBuildTimestamp {
+            let lastInstall = (UserDefaults.standard.object(forKey: "APIBarLastUpdateInstallTime") as? Date) ?? .distantPast
+            let localTS = max(AppUpdater.localBuildDate.timeIntervalSince1970, lastInstall.timeIntervalSince1970)
+            if remoteBuild > localTS + 60 {
+                Task { @MainActor in
+                    await AppUpdater.shared.checkForUpdates(manual: false, forceSilentInstall: true)
+                }
             }
         }
 
@@ -722,18 +725,20 @@ final class ICloudSync: ObservableObject {
         source.setEventHandler { [weak self] in
             Task { @MainActor [weak self] in
                 guard let self = self, self.isEnabled, !self.isPerformingSync else { return }
-                if let manifestURL = self.manifestURL,
-                   let data = try? Data(contentsOf: manifestURL),
-                   let remoteManifest = try? JSONDecoder().decode(ICloudManifest.self, from: data) {
-                    if remoteManifest.deviceId != self.deviceId {
-                        if let remoteBuild = remoteManifest.appBuildTimestamp,
-                           remoteBuild > AppUpdater.localBuildDate.timeIntervalSince1970 + 30 {
-                            Task { @MainActor in
-                                await AppUpdater.shared.checkForUpdates(manual: false, forceSilentInstall: true)
-                            }
+                guard let manifestURL = self.manifestURL,
+                      let data = try? Data(contentsOf: manifestURL),
+                      let remoteManifest = try? JSONDecoder().decode(ICloudManifest.self, from: data) else {
+                    return
+                }
+                guard remoteManifest.deviceId != self.deviceId else { return }
+
+                if let remoteBuild = remoteManifest.appBuildTimestamp {
+                    let lastInstall = (UserDefaults.standard.object(forKey: "APIBarLastUpdateInstallTime") as? Date) ?? .distantPast
+                    let localTS = max(AppUpdater.localBuildDate.timeIntervalSince1970, lastInstall.timeIntervalSince1970)
+                    if remoteBuild > localTS + 60 {
+                        Task { @MainActor in
+                            await AppUpdater.shared.checkForUpdates(manual: false, forceSilentInstall: true)
                         }
-                    } else {
-                        return
                     }
                 }
                 await self.pullAndMerge()

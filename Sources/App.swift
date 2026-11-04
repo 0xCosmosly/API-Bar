@@ -136,7 +136,11 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
 
     func reapplyOrder() {
         if !mergeIcons {
-            configureStatusItems()
+            let identities = balances.isEmpty ? ["merged"] : balances.map(\.id)
+            let currentIdentities = items.compactMap { $0.autosaveName }
+            if currentIdentities != identities {
+                configureStatusItems()
+            }
         }
         mergedMenuView?.updateProviders(balances)
         updateTitles()
@@ -433,10 +437,15 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         }
     }
     func configureStatusItems() {
+        let identities = mergeIcons ? ["merged"] : (balances.isEmpty ? ["merged"] : balances.map(\.id))
+        let currentIdentities = items.compactMap { $0.autosaveName }
+        if currentIdentities == identities && !items.isEmpty {
+            updateTitles()
+            return
+        }
         for item in items { NSStatusBar.system.removeStatusItem(item) }
         items.removeAll()
         mergedMenuView = nil
-        let identities = mergeIcons ? ["merged"] : (balances.isEmpty ? ["merged"] : balances.map(\.id))
         for identity in identities {
             let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
             item.autosaveName = identity
@@ -917,7 +926,7 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         for (i, b) in (mergeIcons ? [selectedMergedBalance] : balances).enumerated() where i < items.count {
             if mergeIcons && mergedProvider == "overview" {
                 if balances.isEmpty {
-                    items[i].button?.title = ""
+                    if items[i].button?.title != "" { items[i].button?.title = "" }
                     items[i].button?.image = BrandMark.appIconImage(size: 18)
                     items[i].button?.toolTip = nil
                     items[i].button?.setAccessibilityValue("No providers configured")
@@ -930,13 +939,17 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
                         if totalPercent > 0 && totalPercent < 1 { return "<1%" }
                         return "\(Int(floor(totalPercent)))%"
                     }()
-                    items[i].button?.title = percentText
+                    if items[i].button?.title != percentText {
+                        items[i].button?.title = percentText
+                    }
                     items[i].button?.image = ProviderIcon.menuBarImage("overview")
                     items[i].button?.toolTip = nil
                     items[i].button?.setAccessibilityValue("\(percentText) remaining across all providers")
                 }
             } else {
-                items[i].button?.title = b.percentageLabel
+                if items[i].button?.title != b.percentageLabel {
+                    items[i].button?.title = b.percentageLabel
+                }
                 items[i].button?.image = ProviderIcon.menuBarImage(b.id)
                 items[i].button?.toolTip = nil
                 items[i].button?.setAccessibilityValue("\(b.percentageLabel) remaining\(b.stale ? ", stale" : "")")
