@@ -70,7 +70,7 @@ public final class ChangelogManager: ObservableObject {
         if entries.contains(where: { $0.isCurrent(currentVersion: current) }) {
             self.selectedVersion = current
         } else {
-            self.selectedVersion = entries.first?.version ?? "0.5.1"
+            self.selectedVersion = entries.first?.version ?? "0.5.0"
         }
     }
 
@@ -162,56 +162,22 @@ public final class ChangelogManager: ObservableObject {
     public static func builtInEntries() -> [ChangelogEntry] {
         return [
             ChangelogEntry(
-                version: "0.5.1",
-                releaseDate: "November 3, 2026",
-                title: "API Bar 0.5.1 — Dynamic Top-Up Detection & Update Refinements",
-                summary: "Dynamic Refuseless billing ledger top-up detection, manual refresh auto-reconnect, full un-truncated update action buttons, and in-app redownloads.",
-                highlights: [
-                    "Dynamic Refuseless top-up detection from billing ledger with instant 100% baseline calculation",
-                    "Manual refresh auto-reconnect with active session cookie re-acquisition from Brave",
-                    "Full Settings header action buttons with zero truncation on any display scaling",
-                    "In-app redownload support directly from the update dialog even when running the latest build"
-                ],
-                notes: """
-## API Bar 0.5.1
-
-A focused stability and experience update delivering dynamic top-up detection, automated session re-connection on manual refresh, UI layout polish, and flexible redownload options.
-
----
-
-### ✨ What's New in 0.5.1
-
-#### 1. 💳 Dynamic Refuseless Top-Up Detection
-• **Billing Ledger Parsing**: Inspects the Refuseless console billing ledger dynamically. When you top up your account, API Bar instantly recognizes the new deposit and pairs it with any remaining credit to establish an accurate 100% baseline (e.g. $10.00 top-up + $0.09 previous = $10.09 at 100%).
-• **No Hardcoded Values**: Fully general ledger parsing across deposit tiers and payment methods.
-
-#### 2. 🔄 Manual Refresh Auto-Reconnect
-• **Session Recovery**: When clicking manual refresh on any provider or "Refresh All", API Bar automatically re-acquires fresh session cookies from Brave if an existing session expired or became invalid.
-• **Instant Feedback**: Updates the "Last checked" timestamp immediately upon refresh completion.
-
-#### 3. 🎨 Settings Rhythm & Full Button Labels
-• **Zero Truncation**: Applied fixed-size horizontal constraints and widened the Settings window so that action buttons like **Check for Updates…**, **Changelog…**, and **Welcome Tour…** always render in full without ellipsis.
-
-#### 4. 📦 Re-Download Anytime
-• **Direct Redownload**: Even when already running the latest version, clicking **Check for Updates…** gives you the option to **Redownload Latest Build** for a quick and clean in-place re-installation.
-"""
-            ),
-            ChangelogEntry(
                 version: "0.5.0",
                 releaseDate: "November 3, 2026",
                 title: "API Bar 0.5.0 — Token Burn Rate Pacing, OpenCode Sync & Lutheos",
-                summary: "Token burn rate & runway pacing for Refuseless & Lutheos, multi-Mac OpenCode iCloud configuration syncing, and 4-tier traffic-light percentage styling.",
+                summary: "Token burn rate & runway pacing for Refuseless & Lutheos, dynamic top-up detection, OpenCode iCloud sync, and 4-tier percentage styling.",
                 highlights: [
                     "Token burn rate pacing & runway calculations (e.g. 1.9M tokens/day - Runs out in 3 days)",
+                    "Dynamic Refuseless top-up detection combining billing deposits with active spend telemetry",
                     "Bi-directional OpenCode iCloud configuration sync with automatic rollback backups",
                     "Native Lutheos.com balance tracking via SvelteKit devalue tree traversal",
-                    "4-tier traffic-light percentage color scale with matching provider brand accent bars",
-                    "Hardened self-updating with detached PID exit monitoring and quarantine clearing"
+                    "Full Settings header action buttons with zero truncation on any display scaling",
+                    "Hardened self-updating with same-version refresh detection and in-app redownloads"
                 ],
                 notes: """
 ## API Bar 0.5.0
 
-A major feature, design, and resilience update introducing native Lutheos.com & Refuseless token burn rate pacing, OpenCode iCloud sync, a 4-tier traffic-light percentage color scale, matching brand accent progress bars, unified percentage calculations, rich in-app release notes, and hardened self-updating with seamless auto-relaunch.
+A major feature, design, and resilience update introducing native Lutheos.com & Refuseless token burn rate pacing, dynamic top-up recognition, OpenCode iCloud sync, a 4-tier traffic-light percentage color scale, matching brand accent progress bars, unified percentage calculations, rich in-app release notes, and hardened self-updating with seamless auto-relaunch.
 
 ---
 
@@ -222,46 +188,26 @@ A major feature, design, and resilience update introducing native Lutheos.com & 
 • **Refuseless Token Pacing**: Analyzes output tokens, spend telemetry, and deposits to provide automatic runway estimation.
 • **Lutheos Inference Runway**: Analyzes usage ledger nodes, token buckets, and credit runway to show clear depletion timelines.
 
-#### 2. ☁️ Optional OpenCode iCloud Sync
-• **Cross-Mac Syncing (Optional)**: Synchronizes your OpenCode models and provider configuration (`~/.config/opencode/opencode.json`) securely across all your Macs via iCloud Drive (unchecked by default). API keys and credentials are not synced and remain safely local to each machine.
+#### 2. 💳 Dynamic Refuseless Top-Up Detection
+• **Billing Ledger & Spend Telemetry**: Inspects the Refuseless console billing ledger dynamically. When you top up your account, API Bar combines the new deposit with your unspent balance and active spend to establish an accurate 100% baseline (e.g. $10.00 top-up + $0.33 remaining = $10.33 at 100%).
+• **No Hardcoded Values**: Fully general ledger parsing across deposit tiers and payment methods.
+
+#### 3. ☁️ Optional OpenCode iCloud Sync
+• **Cross-Mac Syncing (Optional)**: Synchronizes your OpenCode models and provider configuration (`~/.config/opencode/opencode.json`) securely across all your Macs via iCloud Drive (unchecked by default).
 • **Automatic Rollback Backups**: Generates `.bak` snapshots prior to merging remote updates, ensuring workspace settings are always protected.
 • **Manifest Versioning & Watcher**: Uses low-overhead dispatch event watchers to detect local config updates in real time.
 
-#### 3. ⚡️ Lutheos.com Native Support
+#### 4. ⚡️ Lutheos.com Native Support
 • **Full Native Integration**: Automatically connect and track prepaid balances for Lutheos.com (https://lutheos.com), the private and uncensored AI inference platform.
 • **SvelteKit Devalue Data Traversal**: Implemented an advanced data parser that navigates SvelteKit devalue pointer index trees, accurately decoding microdollar/cents balance, live workspace balances, credited top-up totals, and account email.
 • **Automatic 100% Reference Baseline**: Detects fulfilled top-up transactions (e.g. $9.00, $10.00, $25.00 crypto top-ups) to calculate remaining balance percentages without manual configuration.
-• **Packaged Vector Brand Icon**: Bundled official vector icon silhouette (`lutheos-mask.png`) in app resources with Lutheos terracotta accent (`#AD4F2C`).
 
-#### 4. 🚦 Four-Tier Traffic-Light Percentage Scale
-Replaced binary percentage coloring with an intuitive, accessible 4-tier traffic-light system:
-• 100% – 80% (Green): Abundant remaining balance (`Color.green`).
-• 80% – 20% (Neutral Slate / Grey): Standard running consumption (`NSColor.secondaryLabelColor`).
-• 20% – 10% (Amber Warning Yellow): Low balance warning (`#D97706` in light mode / `#FBBF24` in dark mode) engineered to pass WCAG AA contrast on white backgrounds.
-• 10% – 0% (Alert Red): Critical balance alert (`Color.red`) signaling immediate top-up needed.
+#### 5. 🎨 Settings Rhythm & Full Button Labels
+• **Zero Truncation**: Applied fixed-size horizontal constraints and widened the Settings window so that action buttons like **Check for Updates…**, **Changelog…**, and **Welcome Tour…** always render in full without ellipsis.
 
-#### 5. 🎨 Provider Brand Accent Bars
-• Progress bars and tab selection gauges consistently reflect each provider's distinct brand accent color:
-  • Lutheos: Terracotta `#AD4F2C`
-  • Refuseless: Crimson `#C8102E`
-  • Fireworks AI: Amber Orange `#D46400`
-  • Google Cloud / Vertex AI: Google Blue `#1A73E8`
-  • Cerebras: Flame Red `#DC321E`
-  • Crowbot: Forest Green `#0D733C`
-  • Venice AI: Royal Purple `#7B1FA2`
-
-#### 6. 📖 Rich In-App Release Notes Viewer
-• Completely overhauled the software update window with native rich text rendering. Markdown headers (`#`, `##`, `###`), dividers (`---`), bullet lists (`•`, `-`), numbered steps (`1.`, `2.`), bold highlights (`**text**`), inline code (` `code` `), and clickable web links (`[text](url)`) are formatted with native typography instead of showing raw markdown syntax.
-
-#### 7. 🛡️ Hardened Self-Updating & Seamless Auto-Relaunch
-• **Detached Process-Exit Waiter**: Updated the in-place updater to spawn a detached background helper that monitors the dying app's PID (`kill -0 $pid`). Once the old process has fully exited, it flushes LaunchServices bundle registration (`lsregister -f`) and launches the new app.
-• **Startup Grace Period**: Enhanced `Main.swift` single-instance check with an adaptive polling loop. When launched during an update, if a previous instance is still terminating, the new instance waits for it to exit rather than immediately aborting.
-• **Atomic Rollback & Safe Backup**: In-place bundle replacement creates an isolated backup before moving the existing app bundle, and retains it until after process exit so dyld paging is not disrupted while shutting down.
-• **Quarantine Stripping**: Automatically invokes `/usr/bin/xattr -dr com.apple.quarantine` on newly extracted bundles to ensure smooth, unblocked relaunch without macOS Gatekeeper permission prompts.
-
-#### 8. 🔒 Security & Privacy Sanitization
-• Complete audit and sanitization of test suites to use anonymous placeholders (`user@example.com`, `user@refuseless.com`, `user@lutheos.com`).
-• Zero telemetry and 100% local macOS Keychain credential storage.
+#### 6. 📦 Re-Download & Same-Version Updates
+• **Direct Redownload**: Even when already running the latest version, clicking **Check for Updates…** gives you the option to **Redownload Latest Build** for a quick and clean in-place re-installation.
+• **Same-Version Build Refresh**: When updates are pushed without changing the version number, API Bar automatically detects the refreshed asset build and presents the update.
 """
             ),
             ChangelogEntry(

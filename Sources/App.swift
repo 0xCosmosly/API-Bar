@@ -865,18 +865,29 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         balances[i].remaining = r.remaining; balances[i].updated = Date(); balances[i].live = true; balances[i].expires = r.expires
         if let tpd = r.tokensPerDay { balances[i].tokensPerDay = tpd }
         if let rd = r.runwayDays { balances[i].runwayDays = rd }
-        // Automatic 100% reference & top-up calculation:
-        // When remaining balance increases while previous remaining > 0,
-        // infer the paid tier from the delta and add it to the previous remaining.
-        // e.g. remaining was $0.09, user topped up $10.00 -> new recognized total is $10.09.
+        if r.provider == "refuseless" || r.provider == "lutheos" {
+            if let ref = r.reference, ref > 0 {
+                balances[i].baseline = ref
+            } else if balances[i].baseline <= 0 {
+                balances[i].baseline = PaymentReference.inferTier(for: r.remaining)
+            }
+            providerStatus[r.provider] = "Connected · refreshes every 5 min"
+            if sortMode != .manual {
+                applySorting()
+            } else {
+                save(); updateTitles()
+            }
+            return
+        }
+        // Automatic 100% reference & top-up calculation for generic providers:
         if r.remaining > oldRemaining && oldRemaining > 0 {
             let delta = r.remaining - oldRemaining
             let paidAmount = PaymentReference.inferTier(for: delta)
             balances[i].baseline = max(oldRemaining + paidAmount, r.remaining)
-        } else if balances[i].baseline <= 0 || (r.provider == "refuseless" && r.reference != nil && r.reference! > 0) {
+        } else if balances[i].baseline <= 0 {
             let ref = r.reference ?? PaymentReference.inferTier(for: r.remaining)
             balances[i].baseline = max(ref, r.remaining)
-        } else if let ref = r.reference, ref > balances[i].baseline, r.provider != "refuseless" {
+        } else if let ref = r.reference, ref > balances[i].baseline {
             balances[i].baseline = ref
         }
         providerStatus[r.provider] = "Connected · refreshes every 5 min"

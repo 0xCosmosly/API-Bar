@@ -28,7 +28,16 @@ public final class AppUpdater: ObservableObject {
     private var lastCheckedDate: Date?
 
     public var currentVersion: String {
-        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.5.1"
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.5.0"
+    }
+
+    public static var localBuildDate: Date {
+        if let bundlePath = Bundle.main.bundlePath as String?,
+           let attrs = try? FileManager.default.attributesOfItem(atPath: bundlePath),
+           let date = attrs[.modificationDate] as? Date {
+            return date
+        }
+        return .distantPast
     }
 
     public struct ReleaseInfo {
@@ -37,6 +46,7 @@ public final class AppUpdater: ObservableObject {
         public let notes: String
         public let releaseURL: URL?
         public let downloadURL: URL?
+        public let assetUpdatedAt: Date?
     }
 
     public init() {}
@@ -60,12 +70,16 @@ public final class AppUpdater: ObservableObject {
                 let releaseHtmlURL = htmlUrlStr.flatMap { URL(string: $0) }
 
                 var zipURL: URL? = nil
+                var assetUpdatedAt: Date? = nil
                 if let assets = json["assets"] as? [[String: Any]] {
                     for asset in assets {
                         if let name = asset["name"] as? String, name.hasSuffix(".zip"),
                            let download = asset["browser_download_url"] as? String,
                            let assetURL = URL(string: download) {
                             zipURL = assetURL
+                            if let updatedStr = asset["updated_at"] as? String {
+                                assetUpdatedAt = ISO8601DateFormatter().date(from: updatedStr)
+                            }
                             break
                         }
                     }
@@ -75,7 +89,8 @@ public final class AppUpdater: ObservableObject {
                     title: title,
                     notes: notes,
                     releaseURL: releaseHtmlURL,
-                    downloadURL: zipURL ?? URL(string: "https://github.com/\(Self.repoOwner)/\(Self.repoName)/releases/download/\(tagName)/APIBar-app.zip")
+                    downloadURL: zipURL ?? URL(string: "https://github.com/\(Self.repoOwner)/\(Self.repoName)/releases/download/\(tagName)/APIBar-app.zip"),
+                    assetUpdatedAt: assetUpdatedAt
                 )
             }
         }
@@ -126,7 +141,8 @@ public final class AppUpdater: ObservableObject {
                             title: title,
                             notes: notes.isEmpty ? "No release notes provided." : notes,
                             releaseURL: htmlURL,
-                            downloadURL: downloadURL
+                            downloadURL: downloadURL,
+                            assetUpdatedAt: nil
                         )
                     }
                 }
@@ -149,7 +165,8 @@ public final class AppUpdater: ObservableObject {
                         title: "API Bar v\(cleanVer)",
                         notes: "Latest release available at \(finalURL.absoluteString)",
                         releaseURL: finalURL,
-                        downloadURL: URL(string: "https://github.com/\(Self.repoOwner)/\(Self.repoName)/releases/download/\(tag)/APIBar-app.zip")
+                        downloadURL: URL(string: "https://github.com/\(Self.repoOwner)/\(Self.repoName)/releases/download/\(tag)/APIBar-app.zip"),
+                        assetUpdatedAt: nil
                     )
                 }
             }
@@ -171,7 +188,16 @@ public final class AppUpdater: ObservableObject {
 
         do {
             let release = try await fetchReleaseInfo()
-            let isNewer = Self.isVersion(release.version, newerThan: currentVersion)
+            let isSemverNewer = Self.isVersion(release.version, newerThan: currentVersion)
+            let isSameVersionUpdated: Bool
+            let cleanRel = release.version.trimmingCharacters(in: CharacterSet(charactersIn: "vV"))
+            let cleanCur = currentVersion.trimmingCharacters(in: CharacterSet(charactersIn: "vV"))
+            if cleanRel == cleanCur, let remoteAssetDate = release.assetUpdatedAt {
+                isSameVersionUpdated = remoteAssetDate.timeIntervalSince(Self.localBuildDate) > 60
+            } else {
+                isSameVersionUpdated = false
+            }
+            let isNewer = isSemverNewer || isSameVersionUpdated
             self.latestVersion = release.version
             self.releaseTitle = release.title
             self.releaseNotes = release.notes
@@ -180,7 +206,9 @@ public final class AppUpdater: ObservableObject {
             self.updateAvailable = isNewer
 
             if isNewer {
-                self.statusMessage = "Update available: v\(release.version)"
+                self.statusMessage = isSameVersionUpdated
+                    ? "Update available: refreshed build of v\(release.version)"
+                    : "Update available: v\(release.version)"
                 if manual {
                     showUpdateWindow()
                 }

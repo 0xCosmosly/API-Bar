@@ -646,18 +646,15 @@ struct RefuselessProvider: BalanceProvider {
 
         // The billing ledger itemises every completed top-up plus its bonus.
         // The first entry is the most recent top-up.
-        let (latestDeposit, ledgerTotal) = Self.depositLedgerInfo(html)
+        let (latestDeposit, latestDate, ledgerTotal) = Self.depositLedgerInfo(html)
+        let spendSince = Self.extractSpendSince(html: html, date: latestDate)
 
         let baseline: Double
         if latestDeposit > 0 {
             // When user topped up, the cycle budget is the latest top-up + whatever was remaining.
-            // If the final balance is greater than the latest deposit, the excess is the previous remaining!
-            // e.g. finalBalance is $10.09, latest deposit is $10.00 -> baseline is $10.09.
-            if finalBalance > latestDeposit {
-                baseline = finalBalance
-            } else {
-                baseline = latestDeposit
-            }
+            // That equals the remaining balance plus whatever was consumed since that top-up.
+            let cycleBudget = finalBalance + spendSince
+            baseline = min(ledgerTotal, max(latestDeposit, cycleBudget))
         } else if ledgerTotal > 0 {
             baseline = max(ledgerTotal, finalBalance)
         } else if finalBalance > 0 {
@@ -708,13 +705,14 @@ struct RefuselessProvider: BalanceProvider {
     }
 
     /// Sums `amountCents` + `bonusCents` for completed entries in the billing
-    /// deposit ledger. Returns the latest single top-up and the cumulative total.
-    private static func depositLedgerInfo(_ html: String) -> (latest: Double, total: Double) {
+    /// deposit ledger. Returns the latest single top-up, its createdAt date, and cumulative total.
+    private static func depositLedgerInfo(_ html: String) -> (latest: Double, date: String, total: Double) {
         guard let start = html.range(of: #"["\\]+deposits["\\]+\s*:\s*\["#, options: .regularExpression),
-              let end = html.range(of: "]", range: start.upperBound..<html.endIndex) else { return (0, 0) }
+              let end = html.range(of: "]", range: start.upperBound..<html.endIndex) else { return (0, "", 0) }
         let block = String(html[start.upperBound..<end.lowerBound])
         var total = 0.0
-        var latest: Double? = nil
+        var latest: Double = 0
+        var latestDate = ""
         for chunk in block.components(separatedBy: "{") where !chunk.isEmpty {
             let lower = chunk.lowercased()
             if lower.contains("status"), !lower.contains("completed") { continue }
@@ -722,11 +720,38 @@ struct RefuselessProvider: BalanceProvider {
             let bonus = Self.integerValue(chunk, key: "bonusCents") ?? 0
             let dep = (amount + bonus) / 100
             if dep > 0 {
-                if latest == nil { latest = dep }
+                if latest == 0 {
+                    latest = dep
+                    if let r = chunk.range(of: #"createdAt["\\]*\s*:\s*["\\]*(\d{4}-\d{2}-\d{2})"#, options: .regularExpression) {
+                        let m = String(chunk[r])
+                        let digits = m.components(separatedBy: "\"").last ?? ""
+                        if let dtRange = digits.range(of: #"\d{4}-\d{2}-\d{2}"#, options: .regularExpression) {
+                            latestDate = String(digits[dtRange])
+                        }
+                    }
+                }
                 total += dep
             }
         }
-        return (latest ?? 0, total)
+        return (latest, latestDate, total)
+    }
+
+    /// Sums daily micro-dollar spend on or after `date` (YYYY-MM-DD) from the console RSC payload.
+    private static func extractSpendSince(html: String, date: String) -> Double {
+        guard !date.isEmpty else { return 0 }
+        let pattern = #"\{[^{}]*["\\]+at["\\]+\s*:\s*["\\]+(\d{4}-\d{2}-\d{2})["\\]+[^}]*["\\]+spend["\\]+\s*:\s*(\d+)"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return 0 }
+        let ns = html as NSString
+        let matches = regex.matches(in: html, range: NSRange(location: 0, length: ns.length))
+        var sumMicro: Double = 0
+        for m in matches where m.numberOfRanges >= 3 {
+            let dt = ns.substring(with: m.range(at: 1))
+            let sp = Double(ns.substring(with: m.range(at: 2))) ?? 0
+            if dt >= date {
+                sumMicro += sp
+            }
+        }
+        return sumMicro / 1_000_000.0
     }
 
     /// Extracts 30-day token pacing and runway metrics from the Refuseless console RSC payload.
@@ -786,29 +811,26 @@ struct RefuselessProvider: BalanceProvider {
         var latestParsed: (remaining: Double, baseline: Double, account: String)? = nil
         var pacing: (tokensPerDay: Double, runwayDays: Int)? = nil
 
-        // The billing page carries the deposit ledger (top-up + bonus), which
-        // gives the truest "total granted" figure. We check both billing and console
-        // so we obtain accurate baseline ledger totals as well as pacing telemetry.
+        var billingHtml = ""
+        var consoleHtml = ""
+
+        // The billing page carries the deposit ledger (top-up + bonus), while the console
+        // carries real-time spend records and 30-day token pacing. We fetch both and parse
+        // their combined data so the cycle budget accurately reflects top-up + remaining.
         for path in ["https://refuseless.com/console/billing", "https://refuseless.com/console"] {
             guard let url = URL(string: path) else { continue }
             if let (data, response) = try? await http.request(url: url, headers: ["Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"]),
                response.statusCode == 200,
                let html = String(data: data, encoding: .utf8) {
-                if let parsed = try? Self.parse(html: html) {
-                    if let existing = latestParsed {
-                        latestParsed = (
-                            remaining: parsed.remaining,
-                            baseline: existing.baseline > 0 ? existing.baseline : parsed.baseline,
-                            account: parsed.account.isEmpty ? existing.account : parsed.account
-                        )
-                    } else {
-                        latestParsed = parsed
-                    }
-                }
-                if pacing == nil, let rem = latestParsed?.remaining {
-                    pacing = Self.extractPacing(html: html, remaining: rem)
-                }
+                if path.contains("billing") { billingHtml = html }
+                else { consoleHtml = html }
             }
+        }
+
+        let combinedHtml = (billingHtml + "\n" + consoleHtml).trimmingCharacters(in: .whitespacesAndNewlines)
+        if !combinedHtml.isEmpty, let parsed = try? Self.parse(html: combinedHtml) {
+            latestParsed = parsed
+            pacing = Self.extractPacing(html: combinedHtml, remaining: parsed.remaining)
         }
 
         if latestParsed == nil {
@@ -823,9 +845,7 @@ struct RefuselessProvider: BalanceProvider {
                 throw ConnectorError.message("Refuseless returned invalid HTML encoding.")
             }
             latestParsed = try Self.parse(html: html)
-            if pacing == nil, let rem = latestParsed?.remaining {
-                pacing = Self.extractPacing(html: html, remaining: rem)
-            }
+            pacing = Self.extractPacing(html: html, remaining: latestParsed?.remaining ?? 0)
         }
 
         guard let parsed = latestParsed else {

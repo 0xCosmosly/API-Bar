@@ -10,10 +10,6 @@
 
 API Bar lives in your macOS menu bar alongside your daily developer tools, continuously pulling real-time credit balances, token burn rates, and subscription quotas from your signed-in browser sessions and custom endpoints. Never hit an unexpected rate limit or quota cutoff mid-prompt again.
 
-<p align="center">
-  <img src="docs/images/menubar_popover.png" alt="API Bar Menu Bar Popover" width="520" />
-</p>
-
 ---
 
 ## 📑 Table of Contents
@@ -86,18 +82,14 @@ flowchart LR
 
 ---
 
-## 📸 Interface at a Glance
+## 🖥️ Native Interface & Experience
 
-| 🚀 Effortless 3-Step Setup | ⚙️ Native Settings & OpenCode Sync |
-| :---: | :---: |
-| <img src="docs/images/onboarding.png" width="420" alt="API Bar Onboarding" /> | <img src="docs/images/settings.png" width="420" alt="API Bar Settings & Sync" /> |
-| *Select your providers, connect your browser in one click, and choose your menu bar style.* | *Manage tracked endpoints, configure iCloud & OpenCode syncing, and inspect live connection status.* |
+API Bar is built as a lightweight, native macOS menu bar utility tailored to developers:
 
-<p align="center">
-  <img src="docs/images/changelog.png" width="620" alt="API Bar Multi-Version Changelog Viewer" />
-  <br/>
-  <em><b>Native Changelog & Version History:</b> Inspect current and previous releases, key feature highlights, and release notes with instant offline availability.</em>
-</p>
+- **Menu Bar Status Gauges**: Pin individual provider badges (e.g. `Refuseless 97%`, `Lutheos 67%`) or collapse them into a single merged gauge. Displays percentage rings, microdollar increments, or currency values.
+- **Provider Popover Cards**: Click any gauge to inspect your remaining balance, exact reference baseline, brand-accented progress bar, daily token burn velocity, and estimated runway depletion timeline.
+- **Settings & Session Management**: Connect your browser sessions in one click without generating API keys, configure optional iCloud sync for OpenCode configurations, and adjust baseline targets.
+- **Built-in Offline Changelog**: Browse version release notes, architecture improvements, and new provider integrations natively from the menu bar or Settings header.
 
 ---
 
