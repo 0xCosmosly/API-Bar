@@ -227,12 +227,22 @@ final class ICloudSync: ObservableObject {
     }
 
     private func findOpenCodeBinary() -> String? {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        if let pathEnv = ProcessInfo.processInfo.environment["PATH"] {
+            for dir in pathEnv.split(separator: ":") where !dir.isEmpty {
+                let candidate = URL(fileURLWithPath: String(dir)).appendingPathComponent("opencode").path
+                if FileManager.default.isExecutableFile(atPath: candidate) {
+                    return candidate
+                }
+            }
+        }
         let candidates = [
-            FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".local/bin/opencode").path,
+            home.appendingPathComponent(".opencode/bin/opencode").path,
+            home.appendingPathComponent(".local/bin/opencode").path,
             "/usr/local/bin/opencode",
             "/opt/homebrew/bin/opencode",
-            FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".bun/bin/opencode").path,
-            FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".cargo/bin/opencode").path
+            home.appendingPathComponent(".bun/bin/opencode").path,
+            home.appendingPathComponent(".cargo/bin/opencode").path
         ]
         return candidates.first { FileManager.default.isExecutableFile(atPath: $0) }
     }
