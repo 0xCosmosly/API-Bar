@@ -187,8 +187,8 @@ A major feature, design, and resilience update introducing native Lutheos.com & 
 • **Refuseless Token Pacing**: Analyzes output tokens, spend telemetry, and deposits to provide automatic runway estimation.
 • **Lutheos Inference Runway**: Analyzes usage ledger nodes, token buckets, and credit runway to show clear depletion timelines.
 
-#### 2. ☁️ OpenCode iCloud Sync
-• **Cross-Mac Syncing**: Synchronizes your OpenCode configuration (`~/.config/opencode/opencode.json`) securely across all your Macs via iCloud Drive.
+#### 2. ☁️ Optional OpenCode iCloud Sync
+• **Cross-Mac Syncing (Optional)**: Synchronizes your OpenCode models and provider configuration (`~/.config/opencode/opencode.json`) securely across all your Macs via iCloud Drive (unchecked by default). API keys and credentials are not synced and remain safely local to each machine.
 • **Automatic Rollback Backups**: Generates `.bak` snapshots prior to merging remote updates, ensuring workspace settings are always protected.
 • **Manifest Versioning & Watcher**: Uses low-overhead dispatch event watchers to detect local config updates in real time.
 

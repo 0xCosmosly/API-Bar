@@ -56,7 +56,7 @@ final class ICloudSync: ObservableObject {
     @Published private(set) var isSyncing: Bool = false
     @Published private(set) var isAvailable: Bool = false
     @Published var isEnabled: Bool = false
-    @Published var isOpenCodeSyncEnabled: Bool = true
+    @Published var isOpenCodeSyncEnabled: Bool = false
     @Published private(set) var lastSyncDate: Date? = nil
     @Published private(set) var statusMessage: String = "Disabled"
     @Published private(set) var lastError: String? = nil
@@ -132,11 +132,7 @@ final class ICloudSync: ObservableObject {
 
     init() {
         self.isEnabled = UserDefaults.standard.bool(forKey: Self.enabledKey)
-        if UserDefaults.standard.object(forKey: Self.openCodeEnabledKey) == nil {
-            self.isOpenCodeSyncEnabled = true
-        } else {
-            self.isOpenCodeSyncEnabled = UserDefaults.standard.bool(forKey: Self.openCodeEnabledKey)
-        }
+        self.isOpenCodeSyncEnabled = UserDefaults.standard.bool(forKey: Self.openCodeEnabledKey)
         if let ts = UserDefaults.standard.object(forKey: Self.lastSyncKey) as? Date {
             self.lastSyncDate = ts
         }
@@ -318,18 +314,18 @@ final class ICloudSync: ObservableObject {
                     if remote.dynamicEndpoint != nil {
                         if current[localIdx].dynamicEndpoint != remote.dynamicEndpoint ||
                            current[localIdx].dynamicJsonPath != remote.dynamicJsonPath ||
-                           current[localIdx].dynamicCookieDomain != remote.dynamicCookieDomain ||
-                           current[localIdx].dynamicAuthHeader != remote.dynamicAuthHeader {
+                           current[localIdx].dynamicCookieDomain != remote.dynamicCookieDomain {
                             current[localIdx].dynamicEndpoint = remote.dynamicEndpoint
                             current[localIdx].dynamicJsonPath = remote.dynamicJsonPath
                             current[localIdx].dynamicCookieDomain = remote.dynamicCookieDomain
-                            current[localIdx].dynamicAuthHeader = remote.dynamicAuthHeader
-                            if let auth = remote.dynamicAuthHeader, !auth.isEmpty {
-                                current[localIdx].live = true
-                                app.providerStatus[remote.id] = "Connected · refreshes every 5 min"
-                            }
                             didChangeLocally = true
                         }
+                    }
+                    if let auth = remote.dynamicAuthHeader, !auth.isEmpty, current[localIdx].dynamicAuthHeader != auth {
+                        current[localIdx].dynamicAuthHeader = auth
+                        current[localIdx].live = true
+                        app.providerStatus[remote.id] = "Connected · refreshes every 5 min"
+                        didChangeLocally = true
                     }
                     if remote.updated > current[localIdx].updated {
                         current[localIdx].remaining = remote.remaining

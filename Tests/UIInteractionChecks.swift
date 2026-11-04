@@ -293,6 +293,8 @@ import SwiftUI
         var cleanedRemoved = UserDefaults.standard.stringArray(forKey: "RemovedProviders") ?? []
         cleanedRemoved.removeAll(where: { $0 == "togetherai" })
         UserDefaults.standard.set(cleanedRemoved, forKey: "RemovedProviders")
+        UserDefaults.standard.removeObject(forKey: ICloudSync.openCodeEnabledKey)
+        ICloudSync.shared.setOpenCodeSyncEnabled(false)
         ICloudSync.shared.attach(app: app)
         precondition(ICloudSync.shared.isAvailable == true, "iCloud should be available in test environment with APIBAR_ICLOUD_DIR")
         app.setICloudSyncEnabled(true)
@@ -303,6 +305,8 @@ import SwiftUI
         let localOpenCodeFile = ICloudSync.shared.localOpenCodeURL
         let initialOpenCodeConfig = "{\"providers\":{\"refuseless\":{\"apiKey\":\"test_refuseless_key\"}}}"
         try initialOpenCodeConfig.write(to: localOpenCodeFile, atomically: true, encoding: .utf8)
+        precondition(ICloudSync.shared.isOpenCodeSyncEnabled == false, "OpenCode sync must be disabled by default")
+        ICloudSync.shared.setOpenCodeSyncEnabled(true)
         precondition(ICloudSync.shared.isOpenCodeSyncEnabled == true)
 
         let pushedSuccess = await ICloudSync.shared.pushLocalState()
@@ -389,8 +393,7 @@ import SwiftUI
 
         ICloudSync.shared.setOpenCodeSyncEnabled(false)
         precondition(ICloudSync.shared.isOpenCodeSyncEnabled == false)
-        ICloudSync.shared.setOpenCodeSyncEnabled(true)
-        precondition(ICloudSync.shared.isOpenCodeSyncEnabled == true)
+        UserDefaults.standard.removeObject(forKey: ICloudSync.openCodeEnabledKey)
 
         precondition(ICloudSync.shared.statusBadge == "Active" || ICloudSync.shared.statusBadge == "Synced")
         precondition(app.iCloudStatusMessage.contains("Synced") || app.iCloudStatusMessage.contains("ago") || app.iCloudStatusMessage.contains("just now"))

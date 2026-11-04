@@ -37,7 +37,7 @@ API Bar lives in your macOS menu bar alongside your daily developer tools, conti
 
 - **Live Credit & Burn Rate Gauges**: Track remaining balances as dynamic percentage rings, microdollar increments, or currency values in your menu bar.
 - **Burn Rate & Runway Pacing**: Real-time pacing estimates calculated from your active usage (e.g. `1.9M tokens per day - Runs out in 3 days`) so you never get surprised by an unexpected balance exhaustion.
-- **OpenCode & Multi-Mac iCloud Sync**: Seamlessly sync your monitored providers, baseline dollar targets, and OpenCode configurations (`opencode.json`) across all your Macs via iCloud with automatic safety backups.
+- **OpenCode & Multi-Mac iCloud Sync (Optional)**: Seamlessly sync your monitored providers, baseline dollar targets, and optional OpenCode configurations (`opencode.json` models and providers) across all your Macs via iCloud with automatic safety backups.
 - **Single or Multi-Icon Display**: Merge all providers into a single unified gauge with a rich drop-down dashboard, or pin individual provider gauges to your menu bar.
 - **Zero API Key Hassle (Dominant Browser Session Import)**: Automatically detects your primary browser (Brave, Google Chrome, Arc, Microsoft Edge, Vivaldi, or Chromium) and imports authenticated sessions directly on-device. No hunting down admin API keys.
 - **Dual Permission Model (Folder Access vs. Full Disk Access)**:
@@ -63,7 +63,7 @@ API Bar lives in your macOS menu bar alongside your daily developer tools, conti
 | **Lutheos** | Private inference prepaid credit balance & runway pacing | Dominant browser session or Bearer key | Inferred top-up tier |
 | **Venice AI** | Consumption currency balances (USD & DIEM) | Dominant browser session or Bearer key | Inferred baseline |
 | **Crowbot** | Chat & API usage credits (microdollar precision) | Dominant browser session (`crowbot_session`) | Account quota |
-| **OpenCode Sync** | Bi-directional `opencode.json` configuration sync | Apple iCloud Drive container | Automatic `.bak` safety |
+| **OpenCode Sync (Optional)** | Bi-directional models & providers configuration sync | Apple iCloud Drive container | Automatic `.bak` safety |
 | **Custom / Any AI API** | OpenRouter, Groq, Together, DeepSeek, local endpoints | cURL / JSON via on-device AFM extractor | Custom reference |
 
 ---
@@ -81,7 +81,7 @@ flowchart LR
 
 1. **No API Keys to Hunt Down**: API Bar detects your active browser on-device. It reads your authenticated session cookies locally and securely via macOS Keychain encryption—no need to generate or rotate administrative API keys.
 2. **Real-Time Burn Rate & Runway**: Beyond raw balances, API Bar calculates your real-world consumption pace and displays how many days or hours remain before your credits exhaust.
-3. **OpenCode & Cross-Mac Syncing**: If you use OpenCode, API Bar automatically keeps your configuration files synced across your machines with automatic rollback backups, ensuring all your workspaces share the same models and settings.
+3. **Optional OpenCode Syncing**: If you use OpenCode, you can optionally sync your models and provider definitions across your machines with automatic rollback backups. API keys and credentials are not synced and remain safely local to each machine.
 4. **Completely Local & Private**: All balance checks happen directly between your Mac and the official AI provider endpoints. No middleman servers, no proxy servers, and zero telemetry.
 
 ---

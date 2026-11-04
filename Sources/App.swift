@@ -216,6 +216,7 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         balances[idx].live = true
         providerStatus[providerID] = "Connecting…"
         save()
+        ICloudSync.shared.schedulePush()
         Task { await refreshProvider(providerID) }
     }
     func setMergeIcons(_ enabled: Bool) {
@@ -924,7 +925,7 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
     func menuWillOpen(_ menu: NSMenu) {
         if menu.identifier?.rawValue == "merged" {
             menu.removeAllItems()
-            menu.minimumWidth = 340
+            menu.minimumWidth = 365
             let card = NSMenuItem()
             let content = MergedMenuView(app: self)
             mergedMenuView = content
@@ -956,7 +957,7 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         guard let index = balances.firstIndex(where: { $0.id == menu.identifier?.rawValue }) else { return }
         let b = balances[index]
         menu.removeAllItems()
-        menu.minimumWidth = 340
+        menu.minimumWidth = 365
         let card = NSMenuItem(); card.view = BalanceCard(b,status:providerStatus[b.id]); menu.addItem(card)
         menu.addItem(.separator())
         if AppUpdater.shared.updateAvailable, let ver = AppUpdater.shared.latestVersion {

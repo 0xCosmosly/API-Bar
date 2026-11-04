@@ -188,7 +188,7 @@ struct ProviderTabItem: Equatable {
         self.items = items; self.selectedID = selectedID; self.onSelect = onSelect
         let rowCount = (items.count + 4 - 1) / 4
         let initialHeight = CGFloat(rowCount) * 48.0 + 8
-        super.init(frame: NSRect(x: 0, y: 0, width: 340, height: initialHeight))
+        super.init(frame: NSRect(x: 0, y: 0, width: 365, height: initialHeight))
         buildButtons()
         layoutTabs()
         updateSelection()
@@ -324,7 +324,7 @@ struct ProviderTabItem: Equatable {
         tabs = ProviderTabsView(items: items, selectedID: app.mergedProvider) { [weak app] id in
             app?.selectMergedProvider(id)
         }
-        super.init(frame: NSRect(x: 0, y: 0, width: 340, height: 280))
+        super.init(frame: NSRect(x: 0, y: 0, width: 365, height: 280))
         addSubview(tabs)
         refresh()
     }

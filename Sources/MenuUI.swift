@@ -202,7 +202,7 @@ struct BalanceCardContent: View {
                             .fill(balance.live ? Color.green : Color.orange)
                             .frame(width: 6, height: 6)
                         Text(displayStatus)
-                            .font(.system(size: 12, weight: .regular))
+                            .font(.system(size: 11.5, weight: .regular))
                             .foregroundStyle(Color.secondary)
                             .lineLimit(1)
                     }
@@ -260,14 +260,14 @@ struct BalanceCardContent: View {
             // Footer
             HStack(alignment: .center, spacing: 6) {
                 Text("Last checked: \(relativeTimeString(for: balance.updated))")
-                    .font(.system(size: 12))
+                    .font(.system(size: 11.5))
                     .foregroundStyle(Color.secondary)
                     .lineLimit(1)
                     .layoutPriority(0)
                 Spacer(minLength: 6)
                 if !balance.account.isEmpty {
                     Text(balance.account)
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.system(size: 11.5, weight: .medium))
                         .foregroundStyle(Color.secondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
@@ -277,7 +277,7 @@ struct BalanceCardContent: View {
             .padding(.horizontal, 16)
             .padding(.bottom, 10)
         }
-        .frame(width: 340, alignment: .leading)
+        .frame(width: 365, alignment: .leading)
     }
 }
 
@@ -396,17 +396,17 @@ struct OverviewCardContent: View {
             // Footer
             HStack(alignment: .center) {
                 Text("Last checked: \(relativeTimeString(for: app.lastRefresh ?? .distantPast))")
-                    .font(.system(size: 12))
+                    .font(.system(size: 11.5))
                     .foregroundStyle(Color.secondary)
                 Spacer()
                 Text("Refreshes every 5 min")
-                    .font(.system(size: 12))
+                    .font(.system(size: 11.5))
                     .foregroundStyle(Color.secondary)
             }
             .padding(.horizontal, 16)
             .padding(.bottom, 10)
         }
-        .frame(width: 340, alignment: .leading)
+        .frame(width: 365, alignment: .leading)
     }
 }
 
@@ -951,11 +951,17 @@ struct OnboardingView: View {
                         .foregroundStyle(Color.secondary)
 
                     if app.iCloudSyncEnabled {
-                        Toggle("Sync OpenCode configuration (~/.config/opencode/opencode.json)", isOn: Binding(
-                            get: { app.isOpenCodeSyncEnabled },
-                            set: { app.setOpenCodeSyncEnabled($0) }
-                        ))
-                        .font(.subheadline)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Toggle("Sync OpenCode Configuration (Optional)", isOn: Binding(
+                                get: { app.isOpenCodeSyncEnabled },
+                                set: { app.setOpenCodeSyncEnabled($0) }
+                            ))
+                            .font(.subheadline)
+
+                            Text("Optional. Syncs models and providers (~/.config/opencode/opencode.json). API keys remain local.")
+                                .font(.caption)
+                                .foregroundStyle(Color.secondary)
+                        }
                         .padding(.top, 4)
                         .padding(.leading, 8)
                     }
@@ -1241,14 +1247,14 @@ struct SettingsPane: View {
                     Divider().opacity(0.6)
 
                     VStack(alignment: .leading, spacing: 4) {
-                        Toggle("Sync OpenCode configuration", isOn: Binding(
+                        Toggle("Sync OpenCode Configuration (Optional)", isOn: Binding(
                             get: { icloud.isOpenCodeSyncEnabled },
                             set: { icloud.setOpenCodeSyncEnabled($0) }
                         ))
                         .font(.body)
                         .foregroundStyle(Color.primary)
 
-                        Text("Syncs ~/.config/opencode/opencode.json across devices via iCloud Drive.")
+                        Text("Optional. Syncs models and providers configured in OpenCode (~/.config/opencode/opencode.json) across devices via iCloud Drive. API keys and credentials are not synced and remain safely local to each machine.")
                             .font(.subheadline)
                             .foregroundStyle(Color.secondary)
                     }
