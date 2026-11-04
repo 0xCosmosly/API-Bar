@@ -70,7 +70,7 @@ public final class ChangelogManager: ObservableObject {
         if entries.contains(where: { $0.isCurrent(currentVersion: current) }) {
             self.selectedVersion = current
         } else {
-            self.selectedVersion = entries.first?.version ?? "0.5.0"
+            self.selectedVersion = entries.first?.version ?? "0.5.1"
         }
     }
 
@@ -161,6 +161,41 @@ public final class ChangelogManager: ObservableObject {
 
     public static func builtInEntries() -> [ChangelogEntry] {
         return [
+            ChangelogEntry(
+                version: "0.5.1",
+                releaseDate: "November 3, 2026",
+                title: "API Bar 0.5.1 — Dynamic Top-Up Detection & Update Refinements",
+                summary: "Dynamic Refuseless billing ledger top-up detection, manual refresh auto-reconnect, full un-truncated update action buttons, and in-app redownloads.",
+                highlights: [
+                    "Dynamic Refuseless top-up detection from billing ledger with instant 100% baseline calculation",
+                    "Manual refresh auto-reconnect with active session cookie re-acquisition from Brave",
+                    "Full Settings header action buttons with zero truncation on any display scaling",
+                    "In-app redownload support directly from the update dialog even when running the latest build"
+                ],
+                notes: """
+## API Bar 0.5.1
+
+A focused stability and experience update delivering dynamic top-up detection, automated session re-connection on manual refresh, UI layout polish, and flexible redownload options.
+
+---
+
+### ✨ What's New in 0.5.1
+
+#### 1. 💳 Dynamic Refuseless Top-Up Detection
+• **Billing Ledger Parsing**: Inspects the Refuseless console billing ledger dynamically. When you top up your account, API Bar instantly recognizes the new deposit and pairs it with any remaining credit to establish an accurate 100% baseline (e.g. $10.00 top-up + $0.09 previous = $10.09 at 100%).
+• **No Hardcoded Values**: Fully general ledger parsing across deposit tiers and payment methods.
+
+#### 2. 🔄 Manual Refresh Auto-Reconnect
+• **Session Recovery**: When clicking manual refresh on any provider or "Refresh All", API Bar automatically re-acquires fresh session cookies from Brave if an existing session expired or became invalid.
+• **Instant Feedback**: Updates the "Last checked" timestamp immediately upon refresh completion.
+
+#### 3. 🎨 Settings Rhythm & Full Button Labels
+• **Zero Truncation**: Applied fixed-size horizontal constraints and widened the Settings window so that action buttons like **Check for Updates…**, **Changelog…**, and **Welcome Tour…** always render in full without ellipsis.
+
+#### 4. 📦 Re-Download Anytime
+• **Direct Redownload**: Even when already running the latest version, clicking **Check for Updates…** gives you the option to **Redownload Latest Build** for a quick and clean in-place re-installation.
+"""
+            ),
             ChangelogEntry(
                 version: "0.5.0",
                 releaseDate: "November 3, 2026",
