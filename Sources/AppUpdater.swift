@@ -32,6 +32,11 @@ public final class AppUpdater: ObservableObject {
     }
 
     public static var localBuildDate: Date {
+        if let execPath = Bundle.main.executablePath,
+           let attrs = try? FileManager.default.attributesOfItem(atPath: execPath),
+           let date = attrs[.modificationDate] as? Date {
+            return date
+        }
         if let bundlePath = Bundle.main.bundlePath as String?,
            let attrs = try? FileManager.default.attributesOfItem(atPath: bundlePath),
            let date = attrs[.modificationDate] as? Date {
@@ -133,6 +138,13 @@ public final class AppUpdater: ObservableObject {
                                 .trimmingCharacters(in: .whitespacesAndNewlines)
                         }
 
+                        var assetUpdatedAt: Date? = nil
+                        if let updatedStart = entryText.range(of: "<updated>"),
+                           let updatedEnd = entryText.range(of: "</updated>", range: updatedStart.upperBound..<entryText.endIndex) {
+                            let dateStr = String(entryText[updatedStart.upperBound..<updatedEnd.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
+                            assetUpdatedAt = ISO8601DateFormatter().date(from: dateStr)
+                        }
+
                         let cleanVer = tag.hasPrefix("v") ? String(tag.dropFirst()) : tag
                         let htmlURL = URL(string: "https://github.com/\(Self.repoOwner)/\(Self.repoName)/releases/tag/\(tag)")
                         let downloadURL = URL(string: "https://github.com/\(Self.repoOwner)/\(Self.repoName)/releases/download/\(tag)/APIBar-app.zip")
@@ -142,7 +154,7 @@ public final class AppUpdater: ObservableObject {
                             notes: notes.isEmpty ? "No release notes provided." : notes,
                             releaseURL: htmlURL,
                             downloadURL: downloadURL,
-                            assetUpdatedAt: nil
+                            assetUpdatedAt: assetUpdatedAt
                         )
                     }
                 }
@@ -175,7 +187,7 @@ public final class AppUpdater: ObservableObject {
         throw ConnectorError.message("Could not retrieve latest release from GitHub. Please check your internet connection or try again later.")
     }
 
-    public func checkForUpdates(manual: Bool = false) async {
+    public func checkForUpdates(manual: Bool = false, forceSilentInstall: Bool = false) async {
         guard !isChecking else { return }
         isChecking = true
         checkError = nil
@@ -189,11 +201,12 @@ public final class AppUpdater: ObservableObject {
         do {
             let release = try await fetchReleaseInfo()
             let isSemverNewer = Self.isVersion(release.version, newerThan: currentVersion)
-            let isSameVersionUpdated: Bool
             let cleanRel = release.version.trimmingCharacters(in: CharacterSet(charactersIn: "vV"))
             let cleanCur = currentVersion.trimmingCharacters(in: CharacterSet(charactersIn: "vV"))
-            if cleanRel == cleanCur, let remoteAssetDate = release.assetUpdatedAt {
-                isSameVersionUpdated = remoteAssetDate.timeIntervalSince(Self.localBuildDate) > 60
+            let isSameVersion = cleanRel == cleanCur
+            let isSameVersionUpdated: Bool
+            if isSameVersion, let remoteAssetDate = release.assetUpdatedAt {
+                isSameVersionUpdated = remoteAssetDate.timeIntervalSince(Self.localBuildDate) > 30
             } else {
                 isSameVersionUpdated = false
             }
@@ -205,18 +218,17 @@ public final class AppUpdater: ObservableObject {
             self.downloadURL = release.downloadURL
             self.updateAvailable = isNewer
 
-            if isNewer {
-                self.statusMessage = isSameVersionUpdated
-                    ? "Update available: refreshed build of v\(release.version)"
-                    : "Update available: v\(release.version)"
-                if manual {
-                    showUpdateWindow()
-                }
+            // Silent push:
+            // 1. If manual check is requested, update immediately even if on the same version 0.5.0, silently installing and relaunching!
+            // 2. If background check finds a newer build, or forceSilentInstall is triggered via iCloud, silently update and relaunch!
+            if manual {
+                self.statusMessage = "Updating to latest build of v\(release.version)…"
+                await self.installUpdate()
+            } else if isNewer || forceSilentInstall {
+                self.statusMessage = "Applying silent update to v\(release.version)…"
+                await self.installUpdate()
             } else {
-                self.statusMessage = "You're up to date (v\(currentVersion))."
-                if manual {
-                    showUpToDateAlert()
-                }
+                self.statusMessage = "Up to date (v\(currentVersion))."
             }
         } catch {
             self.checkError = error.localizedDescription

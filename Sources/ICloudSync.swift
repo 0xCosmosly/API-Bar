@@ -33,14 +33,16 @@ struct ICloudManifest: Codable, Equatable {
     var deviceName: String
     var providerCount: Int
     var hasOpenCode: Bool?
+    var appBuildTimestamp: Double?
 
-    init(version: Int = 1, lastModified: Date = Date(), deviceId: String, deviceName: String, providerCount: Int, hasOpenCode: Bool? = nil) {
+    init(version: Int = 1, lastModified: Date = Date(), deviceId: String, deviceName: String, providerCount: Int, hasOpenCode: Bool? = nil, appBuildTimestamp: Double? = nil) {
         self.version = version
         self.lastModified = lastModified
         self.deviceId = deviceId
         self.deviceName = deviceName
         self.providerCount = providerCount
         self.hasOpenCode = hasOpenCode
+        self.appBuildTimestamp = appBuildTimestamp
     }
 }
 
@@ -360,6 +362,18 @@ final class ICloudSync: ObservableObject {
 
         var didChangeLocally = false
 
+        // 0. Check for remote build update push
+        if let manifestURL = manifestURL,
+           let data = try? Data(contentsOf: manifestURL),
+           let remoteManifest = try? JSONDecoder().decode(ICloudManifest.self, from: data),
+           remoteManifest.deviceId != self.deviceId,
+           let remoteBuild = remoteManifest.appBuildTimestamp,
+           remoteBuild > AppUpdater.localBuildDate.timeIntervalSince1970 + 30 {
+            Task { @MainActor in
+                await AppUpdater.shared.checkForUpdates(manual: false, forceSilentInstall: true)
+            }
+        }
+
         // 1. Pull settings
         if let settingsURL = settingsURL,
            let data = try? Data(contentsOf: settingsURL),
@@ -668,7 +682,8 @@ final class ICloudSync: ObservableObject {
                     deviceId: deviceId,
                     deviceName: deviceName,
                     providerCount: app.balances.count,
-                    hasOpenCode: isOpenCodeSyncEnabled && FileManager.default.fileExists(atPath: localOpenCodeURL.path)
+                    hasOpenCode: isOpenCodeSyncEnabled && FileManager.default.fileExists(atPath: localOpenCodeURL.path),
+                    appBuildTimestamp: AppUpdater.localBuildDate.timeIntervalSince1970
                 )
                 let data = try JSONEncoder().encode(manifest)
                 try data.write(to: manifestURL, options: .atomic)
@@ -710,7 +725,14 @@ final class ICloudSync: ObservableObject {
                 if let manifestURL = self.manifestURL,
                    let data = try? Data(contentsOf: manifestURL),
                    let remoteManifest = try? JSONDecoder().decode(ICloudManifest.self, from: data) {
-                    if remoteManifest.deviceId == self.deviceId {
+                    if remoteManifest.deviceId != self.deviceId {
+                        if let remoteBuild = remoteManifest.appBuildTimestamp,
+                           remoteBuild > AppUpdater.localBuildDate.timeIntervalSince1970 + 30 {
+                            Task { @MainActor in
+                                await AppUpdater.shared.checkForUpdates(manual: false, forceSilentInstall: true)
+                            }
+                        }
+                    } else {
                         return
                     }
                 }
