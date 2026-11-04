@@ -1122,15 +1122,18 @@ struct SettingsPane: View {
                 Button {
                     Task { await updater.checkForUpdates(manual: true) }
                 } label: {
-                    if updater.isChecking {
-                        ProgressView().controlSize(.small)
-                    } else {
-                        Label(updater.updateAvailable ? "Update Available!" : "Check for Updates…", systemImage: updater.updateAvailable ? "arrow.down.circle.fill" : "arrow.triangle.2.circlepath")
-                            .fixedSize(horizontal: true, vertical: false)
+                    HStack(spacing: 6) {
+                        if updater.isChecking {
+                            ProgressView().controlSize(.small)
+                            Text("Checking…")
+                        } else {
+                            Image(systemName: updater.updateAvailable ? "arrow.down.circle.fill" : "arrow.triangle.2.circlepath")
+                            Text(updater.updateAvailable ? "Update Available!" : "Check for Updates…")
+                        }
                     }
+                    .frame(minWidth: 140)
                 }
                 .buttonStyle(PaperWhiteButtonStyle())
-                .fixedSize(horizontal: true, vertical: false)
                 .disabled(updater.isChecking || updater.isInstalling)
             }
 

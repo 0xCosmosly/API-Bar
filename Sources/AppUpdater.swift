@@ -210,13 +210,12 @@ public final class AppUpdater: ObservableObject {
             } else {
                 isSameVersionUpdated = false
             }
-            let isNewer = isSemverNewer || isSameVersionUpdated
             self.latestVersion = release.version
             self.releaseTitle = release.title
             self.releaseNotes = release.notes
             self.releaseURL = release.releaseURL
             self.downloadURL = release.downloadURL
-            self.updateAvailable = isNewer
+            self.updateAvailable = isSemverNewer
 
             // Cooldown check: prevent rapid reinstallations
             let lastInstallTime = (UserDefaults.standard.object(forKey: "APIBarLastUpdateInstallTime") as? Date) ?? .distantPast
@@ -224,11 +223,11 @@ public final class AppUpdater: ObservableObject {
 
             if manual {
                 // User explicitly clicked "Check for Updates…":
-                // If a newer semver or newer build timestamp is on GitHub, update immediately.
+                // If a new version exists on GitHub, show the Software Update window with notes.
                 // Otherwise, show the native "You're Up to Date" confirmation dialog.
-                if isNewer {
-                    self.statusMessage = "Updating to latest build of v\(release.version)…"
-                    await self.installUpdate()
+                if isSemverNewer {
+                    self.statusMessage = "Update available: v\(release.version)"
+                    showUpdateWindow()
                 } else {
                     self.statusMessage = "Up to date (v\(currentVersion))."
                     showUpToDateAlert()
@@ -236,14 +235,14 @@ public final class AppUpdater: ObservableObject {
             } else if forceSilentInstall {
                 // Background silent install triggered by iCloud push:
                 // Only execute if not recently updated (>120s cooldown) and there is a newer build or asset
-                if elapsed > 120 && (isNewer || isSameVersionUpdated) {
+                if elapsed > 120 && (isSemverNewer || isSameVersionUpdated) {
                     self.statusMessage = "Applying silent update to v\(release.version)…"
                     await self.installUpdate()
                 }
             } else {
                 // Standard automatic background check on startup or periodic timer:
                 // NEVER automatically restart or reinstall the app! Just notify via UI state.
-                if isNewer {
+                if isSemverNewer {
                     self.statusMessage = "Update available: v\(release.version)"
                 } else {
                     self.statusMessage = "Up to date (v\(currentVersion))."
@@ -417,10 +416,18 @@ public final class AppUpdater: ObservableObject {
         alert.informativeText = "API Bar v\(currentVersion) is currently the latest version. You can redownload this build to reinstall a fresh copy anytime."
         alert.addButton(withTitle: "OK")
         alert.addButton(withTitle: "Redownload Latest Build")
+        let prevPolicy = NSApp.activationPolicy()
+        if prevPolicy != .regular {
+            NSApp.setActivationPolicy(.regular)
+        }
         NSApp.activate(ignoringOtherApps: true)
         let response = alert.runModal()
+        if prevPolicy != .regular {
+            NSApp.setActivationPolicy(.accessory)
+        }
         if response == .alertSecondButtonReturn {
             Task {
+                UserDefaults.standard.removeObject(forKey: "APIBarLastUpdateInstallTime")
                 await self.installUpdate()
             }
         }
@@ -432,8 +439,15 @@ public final class AppUpdater: ObservableObject {
         alert.messageText = title
         alert.informativeText = message
         alert.addButton(withTitle: "OK")
+        let prevPolicy = NSApp.activationPolicy()
+        if prevPolicy != .regular {
+            NSApp.setActivationPolicy(.regular)
+        }
         NSApp.activate(ignoringOtherApps: true)
         alert.runModal()
+        if prevPolicy != .regular {
+            NSApp.setActivationPolicy(.accessory)
+        }
     }
 }
 
