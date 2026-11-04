@@ -20,7 +20,9 @@
 </p>
 
 <p align="center">
-  <img src="docs/images/overview_card.png" width="600" alt="API Bar Menu Bar Overview" style="border-radius: 12px; box-shadow: 0 8px 30px rgba(0,0,0,0.12);" />
+  <img src="docs/images/popovers_showcase.png" width="800" alt="API Bar Menu Bar Overview & Detailed Balance Card" />
+  <br />
+  <em><b>Menu Bar Experience</b>: Unified multi-provider overview (left) alongside detailed individual runway and pacing inspection (right).</em>
 </p>
 
 ---
@@ -56,28 +58,20 @@
 ## 📸 Screenshots & Visual Tour
 
 <p align="center">
-  <img src="docs/images/balance_card.png" width="560" alt="Detailed Provider Balance Card" />
+  <img src="docs/images/windows_showcase.png" width="840" alt="30-Second Setup Tour & Built-in Changelog" />
   <br />
-  <em><b>Detailed Balance Card</b>: Inspect exact remaining funds, original top-up capacity, daily token burn rate, and projected runway timeline.</em>
+  <em><b>Native macOS App Windows</b>: Guided 30-second setup tour (left) and built-in native markdown changelog with one-click updates (right).</em>
 </p>
 
+<details>
+<summary><b>⚙️ View Settings & Browser Session Management</b></summary>
+<br />
 <p align="center">
-  <img src="docs/images/settings.png" width="620" alt="Settings & Session Management" />
+  <img src="docs/images/settings.png" width="560" alt="Settings & Session Management" />
   <br />
-  <em><b>Settings Pane</b>: Manage browser connections, toggle iCloud sync, adjust provider sorting, and configure custom endpoints with clean, responsive controls.</em>
+  <em><b>Settings Pane</b>: Manage browser connections, toggle iCloud sync, adjust provider sorting, and configure custom endpoints.</em>
 </p>
-
-<p align="center">
-  <img src="docs/images/onboarding.png" width="560" alt="30-Second Setup Tour" />
-  <br />
-  <em><b>30-Second Setup</b>: Pick your AI providers, connect your browser in one click, and choose between unified or individual status bar items.</em>
-</p>
-
-<p align="center">
-  <img src="docs/images/changelog.png" width="620" alt="Native Built-in Changelog" />
-  <br />
-  <em><b>In-App Changelog</b>: Browse feature updates, performance enhancements, and integration notes natively with rich markdown.</em>
-</p>
+</details>
 
 ---
 
