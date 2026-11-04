@@ -522,8 +522,12 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
             inFlight.insert(balance.id)
             do {
                 let client: SessionHTTP
-                if let existing = clients[balance.id] { client = existing }
-                else if let auth = balance.dynamicAuthHeader, !auth.isEmpty {
+                if let existing = clients[balance.id] {
+                    if await existing.cookies.isEmpty || providerStatus[balance.id]?.contains("expired") == true {
+                        _ = try? await existing.reloadCookiesFromBrave(interactive: false)
+                    }
+                    client = existing
+                } else if let auth = balance.dynamicAuthHeader, !auth.isEmpty {
                     let host = balance.dynamicEndpoint.flatMap { URL(string: $0)?.host }
                     client = SessionHTTP(provider: balance.id, cookies: [], dynamicHost: host)
                     clients[balance.id] = client
@@ -532,7 +536,17 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
                     client = try SessionHTTP.load(provider: balance.id, dynamicHost: host, cookieDomain: balance.dynamicCookieDomain)
                     clients[balance.id] = client
                 }
-                let reading = try await fetch(balance.id,client:client)
+                let reading: Reading
+                do {
+                    reading = try await fetch(balance.id, client: client)
+                } catch {
+                    if let fresh = try? SessionHTTP.connect(provider: balance.id, cookieDomain: balance.dynamicCookieDomain) {
+                        reading = try await fetch(balance.id, client: fresh)
+                        clients[balance.id] = fresh
+                    } else {
+                        throw error
+                    }
+                }
                 apply(reading)
             } catch {
                 let provName: String
@@ -851,33 +865,19 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         balances[i].remaining = r.remaining; balances[i].updated = Date(); balances[i].live = true; balances[i].expires = r.expires
         if let tpd = r.tokensPerDay { balances[i].tokensPerDay = tpd }
         if let rd = r.runwayDays { balances[i].runwayDays = rd }
-        if r.provider == "refuseless" || r.provider == "lutheos" {
-            if let ref = r.reference, ref > 0 {
-                balances[i].baseline = ref
-            } else if balances[i].baseline <= 0 {
-                balances[i].baseline = PaymentReference.inferTier(for: r.remaining)
-            }
-            providerStatus[r.provider] = "Connected · refreshes every 5 min"
-            if sortMode != .manual {
-                applySorting()
-            } else {
-                save(); updateTitles()
-            }
-            return
-        }
-        // Automatic 100% reference calculation:
+        // Automatic 100% reference & top-up calculation:
         // When remaining balance increases while previous remaining > 0,
         // infer the paid tier from the delta and add it to the previous remaining.
-        // e.g. remaining was $3.00, user paid $5.00 -> new recognized total is $8.00.
-        if balances[i].baseline <= 0 {
-            let ref = r.reference ?? PaymentReference.inferTier(for: r.remaining)
-            balances[i].baseline = max(ref, r.remaining)
-        } else if let ref = r.reference, ref > balances[i].baseline {
-            balances[i].baseline = ref
-        } else if r.remaining > oldRemaining && oldRemaining > 0 {
+        // e.g. remaining was $0.09, user topped up $10.00 -> new recognized total is $10.09.
+        if r.remaining > oldRemaining && oldRemaining > 0 {
             let delta = r.remaining - oldRemaining
             let paidAmount = PaymentReference.inferTier(for: delta)
             balances[i].baseline = max(oldRemaining + paidAmount, r.remaining)
+        } else if balances[i].baseline <= 0 || (r.provider == "refuseless" && r.reference != nil && r.reference! > 0) {
+            let ref = r.reference ?? PaymentReference.inferTier(for: r.remaining)
+            balances[i].baseline = max(ref, r.remaining)
+        } else if let ref = r.reference, ref > balances[i].baseline, r.provider != "refuseless" {
+            balances[i].baseline = ref
         }
         providerStatus[r.provider] = "Connected · refreshes every 5 min"
         if sortMode != .manual {
@@ -1006,10 +1006,15 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
             updateTitles()
             writeDiagnostics()
         }
+        lastRefresh = Date()
         do {
             let client: SessionHTTP
-            if let existing = clients[balance.id] { client = existing }
-            else if let auth = balance.dynamicAuthHeader, !auth.isEmpty {
+            if let existing = clients[balance.id] {
+                if await existing.cookies.isEmpty || providerStatus[balance.id]?.contains("expired") == true {
+                    _ = try? await existing.reloadCookiesFromBrave(interactive: false)
+                }
+                client = existing
+            } else if let auth = balance.dynamicAuthHeader, !auth.isEmpty {
                 let host = balance.dynamicEndpoint.flatMap { URL(string: $0)?.host }
                 client = SessionHTTP(provider: balance.id, cookies: [], dynamicHost: host)
                 clients[balance.id] = client
@@ -1018,7 +1023,17 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
                 client = try SessionHTTP.load(provider: balance.id, dynamicHost: host, cookieDomain: balance.dynamicCookieDomain)
                 clients[balance.id] = client
             }
-            let reading = try await fetch(balance.id, client: client)
+            let reading: Reading
+            do {
+                reading = try await fetch(balance.id, client: client)
+            } catch {
+                if let fresh = try? SessionHTTP.connect(provider: balance.id, cookieDomain: balance.dynamicCookieDomain) {
+                    reading = try await fetch(balance.id, client: fresh)
+                    clients[balance.id] = fresh
+                } else {
+                    throw error
+                }
+            }
             apply(reading)
         } catch {
             let provName: String
@@ -1130,8 +1145,8 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
             settingsWindow.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
             writeDiagnostics(); return
         }
-        let window = ClosableWindow(contentRect: NSRect(x: 0, y: 0, width: 620, height: 720), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
-        window.minSize = NSSize(width: 560, height: 600)
+        let window = ClosableWindow(contentRect: NSRect(x: 0, y: 0, width: 660, height: 720), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
+        window.minSize = NSSize(width: 620, height: 600)
         window.title = "API Bar Settings"; window.isReleasedWhenClosed = false
         window.delegate = self
         window.contentView = NSHostingView(rootView: SettingsPane(app: self))

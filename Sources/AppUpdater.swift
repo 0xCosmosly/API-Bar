@@ -187,7 +187,7 @@ public final class AppUpdater: ObservableObject {
             } else {
                 self.statusMessage = "You're up to date (v\(currentVersion))."
                 if manual {
-                    showAlert("You're Up to Date", "API Bar v\(currentVersion) is currently the latest version.")
+                    showUpToDateAlert()
                 }
             }
         } catch {
@@ -342,6 +342,22 @@ public final class AppUpdater: ObservableObject {
         } catch {
             installStatusText = "Installation failed: \(error.localizedDescription)"
             if let releaseURL { NSWorkspace.shared.open(releaseURL) }
+        }
+    }
+
+    private func showUpToDateAlert() {
+        let alert = NSAlert()
+        alert.icon = NSApp.applicationIconImage ?? BrandMark.appIconImage(size: 128)
+        alert.messageText = "You're Up to Date"
+        alert.informativeText = "API Bar v\(currentVersion) is currently the latest version. You can redownload this build to reinstall a fresh copy anytime."
+        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: "Redownload Latest Build")
+        NSApp.activate(ignoringOtherApps: true)
+        let response = alert.runModal()
+        if response == .alertSecondButtonReturn {
+            Task {
+                await self.installUpdate()
+            }
         }
     }
 

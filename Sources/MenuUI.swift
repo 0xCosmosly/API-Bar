@@ -108,8 +108,9 @@ struct PaperWhiteButtonStyle: ButtonStyle {
         configuration.label
             .font(.system(size: 12.5, weight: .medium))
             .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
             .foregroundStyle(isEnabled ? Color.primary : Color(NSColor.secondaryLabelColor))
-            .padding(.horizontal, 11)
+            .padding(.horizontal, 10)
             .padding(.vertical, 5)
             .background(
                 RoundedRectangle(cornerRadius: 7)
@@ -1125,9 +1126,11 @@ struct SettingsPane: View {
                         ProgressView().controlSize(.small)
                     } else {
                         Label(updater.updateAvailable ? "Update Available!" : "Check for Updates…", systemImage: updater.updateAvailable ? "arrow.down.circle.fill" : "arrow.triangle.2.circlepath")
+                            .fixedSize(horizontal: true, vertical: false)
                     }
                 }
                 .buttonStyle(PaperWhiteButtonStyle())
+                .fixedSize(horizontal: true, vertical: false)
                 .disabled(updater.isChecking || updater.isInstalling)
             }
 

@@ -645,11 +645,20 @@ struct RefuselessProvider: BalanceProvider {
         }
 
         // The billing ledger itemises every completed top-up plus its bonus.
-        // That sum is the real amount ever granted, so it is the best 100%.
-        let ledgerTotal = Self.depositLedgerTotal(html)
+        // The first entry is the most recent top-up.
+        let (latestDeposit, ledgerTotal) = Self.depositLedgerInfo(html)
 
         let baseline: Double
-        if ledgerTotal > 0 {
+        if latestDeposit > 0 {
+            // When user topped up, the cycle budget is the latest top-up + whatever was remaining.
+            // If the final balance is greater than the latest deposit, the excess is the previous remaining!
+            // e.g. finalBalance is $10.09, latest deposit is $10.00 -> baseline is $10.09.
+            if finalBalance > latestDeposit {
+                baseline = finalBalance
+            } else {
+                baseline = latestDeposit
+            }
+        } else if ledgerTotal > 0 {
             baseline = max(ledgerTotal, finalBalance)
         } else if finalBalance > 0 {
             // Total granted = what remains plus what has been consumed.
@@ -699,21 +708,25 @@ struct RefuselessProvider: BalanceProvider {
     }
 
     /// Sums `amountCents` + `bonusCents` for completed entries in the billing
-    /// deposit ledger. Auto-recharge settings also expose an `amountCents`, so
-    /// only the `deposits` array is considered.
-    private static func depositLedgerTotal(_ html: String) -> Double {
+    /// deposit ledger. Returns the latest single top-up and the cumulative total.
+    private static func depositLedgerInfo(_ html: String) -> (latest: Double, total: Double) {
         guard let start = html.range(of: #"["\\]+deposits["\\]+\s*:\s*\["#, options: .regularExpression),
-              let end = html.range(of: "]", range: start.upperBound..<html.endIndex) else { return 0 }
+              let end = html.range(of: "]", range: start.upperBound..<html.endIndex) else { return (0, 0) }
         let block = String(html[start.upperBound..<end.lowerBound])
         var total = 0.0
+        var latest: Double? = nil
         for chunk in block.components(separatedBy: "{") where !chunk.isEmpty {
             let lower = chunk.lowercased()
             if lower.contains("status"), !lower.contains("completed") { continue }
             let amount = Self.integerValue(chunk, key: "amountCents") ?? 0
             let bonus = Self.integerValue(chunk, key: "bonusCents") ?? 0
-            total += (amount + bonus) / 100
+            let dep = (amount + bonus) / 100
+            if dep > 0 {
+                if latest == nil { latest = dep }
+                total += dep
+            }
         }
-        return total
+        return (latest ?? 0, total)
     }
 
     /// Extracts 30-day token pacing and runway metrics from the Refuseless console RSC payload.
@@ -785,7 +798,7 @@ struct RefuselessProvider: BalanceProvider {
                     if let existing = latestParsed {
                         latestParsed = (
                             remaining: parsed.remaining,
-                            baseline: max(existing.baseline, parsed.baseline),
+                            baseline: existing.baseline > 0 ? existing.baseline : parsed.baseline,
                             account: parsed.account.isEmpty ? existing.account : parsed.account
                         )
                     } else {
