@@ -868,7 +868,7 @@ struct RefuselessProvider: BalanceProvider {
             account: resolvedAccount,
             url: "https://refuseless.com/console",
             expires: nil,
-            reference: parsed.baseline,
+            reference: parsed.baseline > 0 ? parsed.baseline : nil,
             tokensPerDay: pacing?.tokensPerDay,
             runwayDays: pacing?.runwayDays
         )
@@ -889,7 +889,7 @@ struct LutheosProvider: BalanceProvider {
 
     static func parse(data: Data, url: String) throws -> (remaining: Double, baseline: Double, account: String) {
         if let json = try? JSONSerialization.jsonObject(with: data) {
-            if let parsed = parse(json: json) {
+            if let parsed = parse(json: json, url: url) {
                 return parsed
             }
         }
@@ -899,7 +899,7 @@ struct LutheosProvider: BalanceProvider {
         throw ConnectorError.message("Could not parse Lutheos balance from response.")
     }
 
-    static func parse(json: Any) -> (remaining: Double, baseline: Double, account: String)? {
+    static func parse(json: Any, url: String = "") -> (remaining: Double, baseline: Double, account: String)? {
         guard let root = json as? [String: Any] else { return nil }
 
         var email = ""
@@ -1033,8 +1033,8 @@ struct LutheosProvider: BalanceProvider {
         }
 
         if let balance = remaining {
-            let base = baseline ?? PaymentReference.inferTier(for: balance)
-            return (remaining: balance, baseline: max(base, balance), account: email)
+            let base = baseline ?? (url.contains("overview") ? 0.0 : PaymentReference.inferTier(for: balance))
+            return (remaining: balance, baseline: base > 0 ? max(base, balance) : 0.0, account: email)
         }
         return nil
     }
@@ -1235,7 +1235,7 @@ struct LutheosProvider: BalanceProvider {
             account: resolvedAccount,
             url: "https://lutheos.com/billing",
             expires: nil,
-            reference: parsed.baseline,
+            reference: parsed.baseline > 0 ? parsed.baseline : nil,
             tokensPerDay: pacing?.tokensPerDay,
             runwayDays: pacing?.runwayDays
         )

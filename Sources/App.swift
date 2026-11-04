@@ -876,13 +876,19 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         if let rd = r.runwayDays { balances[i].runwayDays = rd }
         if r.provider == "refuseless" || r.provider == "lutheos" {
             if let ref = r.reference, ref > 0 {
-                balances[i].baseline = max(ref, r.remaining)
+                if balances[i].baseline <= 0 || ref >= balances[i].baseline {
+                    balances[i].baseline = max(ref, r.remaining)
+                } else {
+                    balances[i].baseline = max(balances[i].baseline, r.remaining)
+                }
             } else if balances[i].baseline <= 0 {
                 balances[i].baseline = PaymentReference.inferTier(for: r.remaining)
             } else if r.remaining > oldRemaining && oldRemaining > 0 {
                 let delta = r.remaining - oldRemaining
                 let paidAmount = PaymentReference.inferTier(for: delta)
-                balances[i].baseline = max(oldRemaining + paidAmount, r.remaining)
+                balances[i].baseline = max(balances[i].baseline + paidAmount, r.remaining)
+            } else {
+                balances[i].baseline = max(balances[i].baseline, r.remaining)
             }
             providerStatus[r.provider] = "Connected · refreshes every 5 min"
             if sortMode != .manual {
@@ -896,12 +902,14 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         if r.remaining > oldRemaining && oldRemaining > 0 {
             let delta = r.remaining - oldRemaining
             let paidAmount = PaymentReference.inferTier(for: delta)
-            balances[i].baseline = max(oldRemaining + paidAmount, r.remaining)
+            balances[i].baseline = max(balances[i].baseline + paidAmount, r.remaining)
         } else if balances[i].baseline <= 0 {
             let ref = r.reference ?? PaymentReference.inferTier(for: r.remaining)
             balances[i].baseline = max(ref, r.remaining)
         } else if let ref = r.reference, ref > balances[i].baseline {
             balances[i].baseline = ref
+        } else {
+            balances[i].baseline = max(balances[i].baseline, r.remaining)
         }
         providerStatus[r.provider] = "Connected · refreshes every 5 min"
         if sortMode != .manual {

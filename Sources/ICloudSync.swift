@@ -443,7 +443,7 @@ final class ICloudSync: ObservableObject {
             for remote in remoteBalances {
                 if let localIdx = current.firstIndex(where: { $0.id == remote.id }) {
                     if remote.baseline > 0 && remote.baseline != current[localIdx].baseline {
-                        if remote.updated >= current[localIdx].updated || current[localIdx].baseline == 0 {
+                        if (remote.updated >= current[localIdx].updated && remote.baseline >= current[localIdx].baseline) || current[localIdx].baseline == 0 {
                             current[localIdx].baseline = remote.baseline
                             didChangeLocally = true
                         }
