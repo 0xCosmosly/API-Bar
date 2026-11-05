@@ -33,7 +33,7 @@ API Bar is a native, lightweight macOS menu-bar companion written in **Swift 6**
        ┌──────────────────────────────┼──────────────────────────────┐
        ▼                              ▼                              ▼
 [NSStatusItem Gauges]        [Popover Detail Cards]        [iCloud Sync Engine]
-(Percentage / Currency)     (Runway, burn pacing, tabs)   (Vault + opencode.json)
+(Percentage / Currency)     (Runway, burn pacing, tabs)   (Vault + opencode + pi)
 ```
 
 ---

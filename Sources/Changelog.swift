@@ -169,7 +169,7 @@ public final class ChangelogManager: ObservableObject {
                 highlights: [
                     "Token burn rate pacing & runway calculations (e.g. 1.9M tokens/day - Runs out in 3 days)",
                     "Dynamic Refuseless top-up detection combining billing deposits with active spend telemetry",
-                    "Bi-directional OpenCode iCloud configuration sync with automatic rollback backups",
+                    "Bi-directional OpenCode & Pi iCloud configuration sync with automatic rollback backups",
                     "Native Lutheos.com balance tracking via SvelteKit devalue tree traversal",
                     "Full Settings header action buttons with zero truncation on any display scaling",
                     "Hardened self-updating with same-version refresh detection and in-app redownloads"
@@ -192,8 +192,8 @@ A major feature, design, and resilience update introducing native Lutheos.com & 
 • **Billing Ledger & Spend Telemetry**: Inspects the Refuseless console billing ledger dynamically. When you top up your account, API Bar combines the new deposit with your unspent balance and active spend to establish an accurate 100% baseline (e.g. $10.00 top-up + $0.33 remaining = $10.33 at 100%).
 • **No Hardcoded Values**: Fully general ledger parsing across deposit tiers and payment methods.
 
-#### 3. ☁️ Optional OpenCode iCloud Sync
-• **Cross-Mac Syncing (Optional)**: Synchronizes your OpenCode models and provider configuration (`~/.config/opencode/opencode.json`) securely across all your Macs via iCloud Drive (unchecked by default).
+#### 3. ☁️ Optional OpenCode & Pi iCloud Sync
+• **Cross-Mac Syncing (Optional)**: Synchronizes your OpenCode (`~/.config/opencode/opencode.json`) and Pi (`~/.pi/agent`) models, provider endpoints, and credentials securely across all your Macs via iCloud Drive (unchecked by default).
 • **Automatic Rollback Backups**: Generates `.bak` snapshots prior to merging remote updates, ensuring workspace settings are always protected.
 • **Manifest Versioning & Watcher**: Uses low-overhead dispatch event watchers to detect local config updates in real time.
 

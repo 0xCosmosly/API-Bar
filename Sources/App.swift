@@ -63,6 +63,14 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         get { ICloudSync.shared.isOpenCodeCredentialsSyncEnabled }
         set { ICloudSync.shared.setOpenCodeCredentialsSyncEnabled(newValue) }
     }
+    var isPiSyncEnabled: Bool {
+        get { ICloudSync.shared.isPiSyncEnabled }
+        set { ICloudSync.shared.setPiSyncEnabled(newValue) }
+    }
+    var isPiCredentialsSyncEnabled: Bool {
+        get { ICloudSync.shared.isPiCredentialsSyncEnabled }
+        set { ICloudSync.shared.setPiCredentialsSyncEnabled(newValue) }
+    }
     var iCloudStatus: String {
         ICloudSync.shared.statusBadge
     }
@@ -77,6 +85,12 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
     }
     func setOpenCodeCredentialsSyncEnabled(_ enabled: Bool) {
         ICloudSync.shared.setOpenCodeCredentialsSyncEnabled(enabled)
+    }
+    func setPiSyncEnabled(_ enabled: Bool) {
+        ICloudSync.shared.setPiSyncEnabled(enabled)
+    }
+    func setPiCredentialsSyncEnabled(_ enabled: Bool) {
+        ICloudSync.shared.setPiCredentialsSyncEnabled(enabled)
     }
     func syncICloudNow() {
         Task { await ICloudSync.shared.syncNow() }

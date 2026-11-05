@@ -989,6 +989,29 @@ struct OnboardingView: View {
                         }
                         .padding(.top, 4)
                         .padding(.leading, 8)
+
+                        VStack(alignment: .leading, spacing: 3) {
+                            Toggle("Sync Pi Configuration (Optional)", isOn: Binding(
+                                get: { app.isPiSyncEnabled },
+                                set: { app.setPiSyncEnabled($0) }
+                            ))
+                            .font(.subheadline)
+
+                            Text("Optional. Syncs models and settings (~/.pi/agent).")
+                                .font(.caption)
+                                .foregroundStyle(Color.secondary)
+
+                            if app.isPiSyncEnabled {
+                                Toggle("Sync API Keys & Credentials", isOn: Binding(
+                                    get: { app.isPiCredentialsSyncEnabled },
+                                    set: { app.setPiCredentialsSyncEnabled($0) }
+                                ))
+                                .font(.caption)
+                                .padding(.leading, 16)
+                            }
+                        }
+                        .padding(.top, 4)
+                        .padding(.leading, 8)
                     }
                 }
 
@@ -1305,6 +1328,41 @@ struct SettingsPane: View {
                                 .foregroundStyle(Color.primary)
 
                                 Text("Synchronizes your OpenCode stored API keys and authentication tokens via your private iCloud vault so models connect immediately without re-authenticating.")
+                                    .font(.subheadline)
+                                    .foregroundStyle(Color.secondary)
+                            }
+                            .padding(10)
+                            .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.025)))
+                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.primary.opacity(0.06), lineWidth: 1))
+                            .padding(.top, 2)
+                        }
+                    }
+
+                    Divider().opacity(0.6)
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Toggle("Sync Pi Configuration (Optional)", isOn: Binding(
+                            get: { icloud.isPiSyncEnabled },
+                            set: { icloud.setPiSyncEnabled($0) }
+                        ))
+                        .font(.body)
+                        .foregroundStyle(Color.primary)
+
+                        Text("Optional. Syncs models and settings configured in Pi (~/.pi/agent) across devices via iCloud Drive.")
+                            .font(.subheadline)
+                            .foregroundStyle(Color.secondary)
+
+                        if icloud.isPiSyncEnabled {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Toggle("Sync API Keys & Credentials", isOn: Binding(
+                                    get: { icloud.isPiCredentialsSyncEnabled },
+                                    set: { icloud.setPiCredentialsSyncEnabled($0) }
+                                ))
+                                .font(.body)
+                                .fontWeight(.medium)
+                                .foregroundStyle(Color.primary)
+
+                                Text("Synchronizes your Pi stored API keys and authentication tokens (~/.pi/agent/auth.json) via your private iCloud vault.")
                                     .font(.subheadline)
                                     .foregroundStyle(Color.secondary)
                             }

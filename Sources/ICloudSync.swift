@@ -33,15 +33,17 @@ struct ICloudManifest: Codable, Equatable {
     var deviceName: String
     var providerCount: Int
     var hasOpenCode: Bool?
+    var hasPi: Bool?
     var appBuildTimestamp: Double?
 
-    init(version: Int = 1, lastModified: Date = Date(), deviceId: String, deviceName: String, providerCount: Int, hasOpenCode: Bool? = nil, appBuildTimestamp: Double? = nil) {
+    init(version: Int = 1, lastModified: Date = Date(), deviceId: String, deviceName: String, providerCount: Int, hasOpenCode: Bool? = nil, hasPi: Bool? = nil, appBuildTimestamp: Double? = nil) {
         self.version = version
         self.lastModified = lastModified
         self.deviceId = deviceId
         self.deviceName = deviceName
         self.providerCount = providerCount
         self.hasOpenCode = hasOpenCode
+        self.hasPi = hasPi
         self.appBuildTimestamp = appBuildTimestamp
     }
 }
@@ -53,6 +55,8 @@ final class ICloudSync: ObservableObject {
     static let enabledKey = "ICloudSyncEnabled"
     static let openCodeEnabledKey = "ICloudSyncOpenCodeEnabled"
     static let openCodeCredentialsEnabledKey = "ICloudSyncOpenCodeCredentialsEnabled"
+    static let piEnabledKey = "ICloudSyncPiEnabled"
+    static let piCredentialsEnabledKey = "ICloudSyncPiCredentialsEnabled"
     static let lastSyncKey = "ICloudSyncLastDate"
     static let deviceIdKey = "APIBarDeviceUUID"
 
@@ -61,6 +65,8 @@ final class ICloudSync: ObservableObject {
     @Published var isEnabled: Bool = false
     @Published var isOpenCodeSyncEnabled: Bool = false
     @Published var isOpenCodeCredentialsSyncEnabled: Bool = true
+    @Published var isPiSyncEnabled: Bool = false
+    @Published var isPiCredentialsSyncEnabled: Bool = true
     @Published private(set) var lastSyncDate: Date? = nil
     @Published private(set) var statusMessage: String = "Disabled"
     @Published private(set) var lastError: String? = nil
@@ -71,6 +77,8 @@ final class ICloudSync: ObservableObject {
     private var monitorFD: Int32 = -1
     private var openCodeMonitorSource: DispatchSourceFileSystemObject?
     private var openCodeMonitorFD: Int32 = -1
+    private var piMonitorSource: DispatchSourceFileSystemObject?
+    private var piMonitorFD: Int32 = -1
     private var isPerformingSync: Bool = false
     private var lastPushedDate: Date = .distantPast
 
@@ -145,6 +153,25 @@ final class ICloudSync: ObservableObject {
         vaultDirectoryURL?.appendingPathComponent("opencode-credentials.json")
     }
 
+    var localPiDirectoryURL: URL {
+        if let custom = ProcessInfo.processInfo.environment["APIBAR_PI_DIR"], !custom.isEmpty {
+            return URL(fileURLWithPath: custom, isDirectory: true)
+        }
+        if let custom = ProcessInfo.processInfo.environment["PI_CODING_AGENT_DIR"], !custom.isEmpty {
+            return URL(fileURLWithPath: custom, isDirectory: true)
+        }
+        return FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".pi/agent", isDirectory: true)
+    }
+
+    var cloudPiDirectoryURL: URL? {
+        baseDirectoryURL?.appendingPathComponent("pi", isDirectory: true)
+    }
+
+    var cloudPiCredentialsURL: URL? {
+        vaultDirectoryURL?.appendingPathComponent("pi-auth.json")
+    }
+
     init() {
         self.isEnabled = UserDefaults.standard.bool(forKey: Self.enabledKey)
         self.isOpenCodeSyncEnabled = UserDefaults.standard.bool(forKey: Self.openCodeEnabledKey)
@@ -152,6 +179,12 @@ final class ICloudSync: ObservableObject {
             self.isOpenCodeCredentialsSyncEnabled = true
         } else {
             self.isOpenCodeCredentialsSyncEnabled = UserDefaults.standard.bool(forKey: Self.openCodeCredentialsEnabledKey)
+        }
+        self.isPiSyncEnabled = UserDefaults.standard.bool(forKey: Self.piEnabledKey)
+        if UserDefaults.standard.object(forKey: Self.piCredentialsEnabledKey) == nil {
+            self.isPiCredentialsSyncEnabled = true
+        } else {
+            self.isPiCredentialsSyncEnabled = UserDefaults.standard.bool(forKey: Self.piCredentialsEnabledKey)
         }
         if let ts = UserDefaults.standard.object(forKey: Self.lastSyncKey) as? Date {
             self.lastSyncDate = ts
@@ -168,6 +201,9 @@ final class ICloudSync: ObservableObject {
             if isOpenCodeSyncEnabled {
                 startOpenCodeMonitoring()
             }
+            if isPiSyncEnabled {
+                startPiMonitoring()
+            }
             Task { await syncNow() }
         }
     }
@@ -182,10 +218,14 @@ final class ICloudSync: ObservableObject {
             if isOpenCodeSyncEnabled {
                 startOpenCodeMonitoring()
             }
+            if isPiSyncEnabled {
+                startPiMonitoring()
+            }
             Task { await syncNow() }
         } else {
             stopMonitoring()
             stopOpenCodeMonitoring()
+            stopPiMonitoring()
             updateStatusMessage()
         }
     }
@@ -215,6 +255,42 @@ final class ICloudSync: ObservableObject {
         isOpenCodeCredentialsSyncEnabled = enabled
         UserDefaults.standard.set(enabled, forKey: Self.openCodeCredentialsEnabledKey)
         if enabled && isEnabled && isOpenCodeSyncEnabled {
+            Task { @MainActor [weak self] in
+                guard let self = self else { return }
+                let pulled = await self.pullAndMerge()
+                let pushed = await self.pushLocalState()
+                if pulled || pushed {
+                    self.updateStatusMessage()
+                }
+            }
+        }
+    }
+
+    func setPiSyncEnabled(_ enabled: Bool) {
+        guard isPiSyncEnabled != enabled else { return }
+        isPiSyncEnabled = enabled
+        UserDefaults.standard.set(enabled, forKey: Self.piEnabledKey)
+        if enabled && isEnabled {
+            startPiMonitoring()
+            Task { @MainActor [weak self] in
+                guard let self = self else { return }
+                // Pull cloud state first so a newly enabled client never overwrites cloud config
+                let pulled = await self.pullAndMerge()
+                let pushed = await self.pushLocalState()
+                if pulled || pushed {
+                    self.updateStatusMessage()
+                }
+            }
+        } else {
+            stopPiMonitoring()
+        }
+    }
+
+    func setPiCredentialsSyncEnabled(_ enabled: Bool) {
+        guard isPiCredentialsSyncEnabled != enabled else { return }
+        isPiCredentialsSyncEnabled = enabled
+        UserDefaults.standard.set(enabled, forKey: Self.piCredentialsEnabledKey)
+        if enabled && isEnabled && isPiSyncEnabled {
             Task { @MainActor [weak self] in
                 guard let self = self else { return }
                 let pulled = await self.pullAndMerge()
@@ -574,6 +650,83 @@ final class ICloudSync: ObservableObject {
             }
         }
 
+        // 5. Pull Pi configuration
+        if isPiSyncEnabled,
+           let cloudPi = cloudPiDirectoryURL,
+           FileManager.default.fileExists(atPath: cloudPi.path) {
+            let localPi = localPiDirectoryURL
+            let configFiles = ["models.json", "settings.json", "mcp.json"]
+            for file in configFiles {
+                let remoteFile = cloudPi.appendingPathComponent(file)
+                guard FileManager.default.fileExists(atPath: remoteFile.path) else { continue }
+                let localFile = localPi.appendingPathComponent(file)
+
+                let shouldCopy: Bool
+                if !FileManager.default.fileExists(atPath: localFile.path) {
+                    shouldCopy = true
+                } else if let remoteAttrs = try? FileManager.default.attributesOfItem(atPath: remoteFile.path),
+                          let localAttrs = try? FileManager.default.attributesOfItem(atPath: localFile.path),
+                          let remoteDate = remoteAttrs[.modificationDate] as? Date,
+                          let localDate = localAttrs[.modificationDate] as? Date {
+                    let remoteSize = (remoteAttrs[.size] as? NSNumber)?.int64Value ?? 0
+                    let localSize = (localAttrs[.size] as? NSNumber)?.int64Value ?? 0
+                    shouldCopy = remoteDate > localDate || remoteSize > (localSize + 100)
+                } else {
+                    shouldCopy = false
+                }
+
+                if shouldCopy, let data = try? Data(contentsOf: remoteFile), !data.isEmpty {
+                    let localData = try? Data(contentsOf: localFile)
+                    if localData != data {
+                        try? FileManager.default.createDirectory(at: localPi, withIntermediateDirectories: true)
+                        if FileManager.default.fileExists(atPath: localFile.path) {
+                            let backupURL = localPi.appendingPathComponent("\(file).bak")
+                            try? FileManager.default.removeItem(at: backupURL)
+                            try? FileManager.default.copyItem(at: localFile, to: backupURL)
+                        }
+                        try? data.write(to: localFile, options: .atomic)
+                        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: localFile.path)
+                        didChangeLocally = true
+                    }
+                }
+            }
+        }
+
+        // 5b. Pull Pi credentials
+        if isPiSyncEnabled && isPiCredentialsSyncEnabled,
+           let cloudAuth = cloudPiCredentialsURL,
+           FileManager.default.fileExists(atPath: cloudAuth.path) {
+            let localPi = localPiDirectoryURL
+            let localAuth = localPi.appendingPathComponent("auth.json")
+
+            let shouldCopy: Bool
+            if !FileManager.default.fileExists(atPath: localAuth.path) {
+                shouldCopy = true
+            } else if let remoteAttrs = try? FileManager.default.attributesOfItem(atPath: cloudAuth.path),
+                      let localAttrs = try? FileManager.default.attributesOfItem(atPath: localAuth.path),
+                      let remoteDate = remoteAttrs[.modificationDate] as? Date,
+                      let localDate = localAttrs[.modificationDate] as? Date {
+                shouldCopy = remoteDate > localDate
+            } else {
+                shouldCopy = false
+            }
+
+            if shouldCopy, let data = try? Data(contentsOf: cloudAuth), !data.isEmpty {
+                let localData = try? Data(contentsOf: localAuth)
+                if localData != data {
+                    try? FileManager.default.createDirectory(at: localPi, withIntermediateDirectories: true)
+                    if FileManager.default.fileExists(atPath: localAuth.path) {
+                        let backupURL = localPi.appendingPathComponent("auth.json.bak")
+                        try? FileManager.default.removeItem(at: backupURL)
+                        try? FileManager.default.copyItem(at: localAuth, to: backupURL)
+                    }
+                    try? data.write(to: localAuth, options: .atomic)
+                    try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: localAuth.path)
+                    didChangeLocally = true
+                }
+            }
+        }
+
         if didChangeLocally {
             let now = Date()
             lastSyncDate = now
@@ -685,7 +838,61 @@ final class ICloudSync: ObservableObject {
                 }
             }
 
-            // 5. Write manifest.json
+            // 5. Write Pi configuration
+            if isPiSyncEnabled, let cloudPi = cloudPiDirectoryURL {
+                let localPi = localPiDirectoryURL
+                let configFiles = ["models.json", "settings.json", "mcp.json"]
+                var createdCloudDir = false
+
+                for file in configFiles {
+                    let localFile = localPi.appendingPathComponent(file)
+                    guard FileManager.default.fileExists(atPath: localFile.path) else { continue }
+                    let cloudFile = cloudPi.appendingPathComponent(file)
+
+                    let shouldPush: Bool
+                    if !FileManager.default.fileExists(atPath: cloudFile.path) {
+                        shouldPush = true
+                    } else if let remoteAttrs = try? FileManager.default.attributesOfItem(atPath: cloudFile.path),
+                               let localAttrs = try? FileManager.default.attributesOfItem(atPath: localFile.path),
+                               let remoteDate = remoteAttrs[.modificationDate] as? Date,
+                               let localDate = localAttrs[.modificationDate] as? Date {
+                        shouldPush = localDate > remoteDate
+                    } else {
+                        shouldPush = false
+                    }
+
+                    if shouldPush, let data = try? Data(contentsOf: localFile), !data.isEmpty {
+                        if !createdCloudDir {
+                            try? FileManager.default.createDirectory(at: cloudPi, withIntermediateDirectories: true)
+                            try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: cloudPi.path)
+                            createdCloudDir = true
+                        }
+                        let cloudData = try? Data(contentsOf: cloudFile)
+                        if cloudData != data {
+                            try? data.write(to: cloudFile, options: .atomic)
+                            try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: cloudFile.path)
+                            didTransferAny = true
+                        }
+                    }
+                }
+            }
+
+            // 5b. Write Pi credentials if enabled
+            if isPiSyncEnabled && isPiCredentialsSyncEnabled,
+               let cloudAuth = cloudPiCredentialsURL {
+                let localAuth = localPiDirectoryURL.appendingPathComponent("auth.json")
+                if FileManager.default.fileExists(atPath: localAuth.path),
+                   let data = try? Data(contentsOf: localAuth), !data.isEmpty {
+                    let cloudData = try? Data(contentsOf: cloudAuth)
+                    if cloudData != data {
+                        try? data.write(to: cloudAuth, options: .atomic)
+                        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: cloudAuth.path)
+                        didTransferAny = true
+                    }
+                }
+            }
+
+            // 6. Write manifest.json
             let pushTime = Date()
             lastPushedDate = pushTime
             if let manifestURL = manifestURL {
@@ -696,6 +903,10 @@ final class ICloudSync: ObservableObject {
                     deviceName: deviceName,
                     providerCount: app.balances.count,
                     hasOpenCode: isOpenCodeSyncEnabled && FileManager.default.fileExists(atPath: localOpenCodeURL.path),
+                    hasPi: isPiSyncEnabled && (
+                        FileManager.default.fileExists(atPath: localPiDirectoryURL.appendingPathComponent("models.json").path) ||
+                        FileManager.default.fileExists(atPath: localPiDirectoryURL.appendingPathComponent("settings.json").path)
+                    ),
                     appBuildTimestamp: AppUpdater.localBuildDate.timeIntervalSince1970
                 )
                 let data = try JSONEncoder().encode(manifest)
@@ -814,6 +1025,49 @@ final class ICloudSync: ObservableObject {
         if openCodeMonitorFD >= 0 {
             close(openCodeMonitorFD)
             openCodeMonitorFD = -1
+        }
+    }
+
+    func startPiMonitoring() {
+        stopPiMonitoring()
+        guard isEnabled && isPiSyncEnabled else { return }
+        let dir = localPiDirectoryURL
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+
+        let fd = open(dir.path, O_EVTONLY)
+        guard fd >= 0 else { return }
+        piMonitorFD = fd
+
+        let source = DispatchSource.makeFileSystemObjectSource(
+            fileDescriptor: fd,
+            eventMask: [.write, .extend, .attrib, .rename, .delete],
+            queue: DispatchQueue.global(qos: .utility)
+        )
+
+        source.setEventHandler { [weak self] in
+            Task { @MainActor [weak self] in
+                guard let self = self, self.isEnabled, self.isPiSyncEnabled, !self.isPerformingSync else { return }
+                self.schedulePush()
+                self.startPiMonitoring()
+            }
+        }
+
+        source.setCancelHandler {
+            close(fd)
+        }
+
+        piMonitorSource = source
+        source.resume()
+    }
+
+    func stopPiMonitoring() {
+        if let source = piMonitorSource {
+            source.cancel()
+            piMonitorSource = nil
+        }
+        if piMonitorFD >= 0 {
+            close(piMonitorFD)
+            piMonitorFD = -1
         }
     }
 }

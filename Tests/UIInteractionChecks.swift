@@ -413,6 +413,57 @@ import SwiftUI
         precondition(ICloudSync.shared.isOpenCodeSyncEnabled == false)
         UserDefaults.standard.removeObject(forKey: ICloudSync.openCodeEnabledKey)
 
+        // Test Pi agent configuration and credentials push/pull/backup to iCloud
+        let localPiDir = ICloudSync.shared.localPiDirectoryURL
+        try FileManager.default.createDirectory(at: localPiDir, withIntermediateDirectories: true)
+        let initialPiModels = "{\"providers\":{\"refuseless\":{\"baseUrl\":\"https://refuseless.com/v1\"}}}"
+        let initialPiSettings = "{\"defaultProvider\":\"refuseless\",\"defaultModel\":\"deepseek-v4.1-flash\"}"
+        let initialPiAuth = "{\"refuseless\":{\"apiKey\":\"pi_test_key\"}}"
+        let localPiModelsFile = localPiDir.appendingPathComponent("models.json")
+        let localPiSettingsFile = localPiDir.appendingPathComponent("settings.json")
+        let localPiAuthFile = localPiDir.appendingPathComponent("auth.json")
+        try initialPiModels.write(to: localPiModelsFile, atomically: true, encoding: .utf8)
+        try initialPiSettings.write(to: localPiSettingsFile, atomically: true, encoding: .utf8)
+        try initialPiAuth.write(to: localPiAuthFile, atomically: true, encoding: .utf8)
+
+        precondition(ICloudSync.shared.isPiSyncEnabled == false, "Pi sync must be disabled by default")
+        ICloudSync.shared.setPiSyncEnabled(true)
+        precondition(ICloudSync.shared.isPiSyncEnabled == true)
+        precondition(ICloudSync.shared.isPiCredentialsSyncEnabled == true)
+
+        let pushedPiSuccess = await ICloudSync.shared.pushLocalState()
+        precondition(pushedPiSuccess == true, "pushLocalState failed for Pi")
+        guard let cloudPiDir = ICloudSync.shared.cloudPiDirectoryURL,
+              let cloudPiAuthFile = ICloudSync.shared.cloudPiCredentialsURL else {
+            preconditionFailure("Pi iCloud URLs not resolved")
+        }
+        let cloudPiModelsFile = cloudPiDir.appendingPathComponent("models.json")
+        let cloudPiSettingsFile = cloudPiDir.appendingPathComponent("settings.json")
+        precondition(FileManager.default.fileExists(atPath: cloudPiModelsFile.path), "pi/models.json missing in iCloud")
+        precondition(FileManager.default.fileExists(atPath: cloudPiSettingsFile.path), "pi/settings.json missing in iCloud")
+        precondition(FileManager.default.fileExists(atPath: cloudPiAuthFile.path), "pi-auth.json missing in iCloud vault")
+        precondition((try? String(contentsOf: cloudPiModelsFile, encoding: .utf8)) == initialPiModels)
+        precondition((try? String(contentsOf: cloudPiSettingsFile, encoding: .utf8)) == initialPiSettings)
+        precondition((try? String(contentsOf: cloudPiAuthFile, encoding: .utf8)) == initialPiAuth)
+
+        // Simulate Device B updating pi/models.json in iCloud
+        let updatedPiModels = "{\"providers\":{\"refuseless\":{\"baseUrl\":\"https://refuseless.com/v1\"},\"cerebras\":{\"baseUrl\":\"https://api.cerebras.ai/v1\"}}}"
+        try updatedPiModels.write(to: cloudPiModelsFile, atomically: true, encoding: .utf8)
+        let piFutureDate = Date().addingTimeInterval(10)
+        try FileManager.default.setAttributes([.modificationDate: piFutureDate], ofItemAtPath: cloudPiModelsFile.path)
+
+        let didMergePi = await ICloudSync.shared.pullAndMerge()
+        precondition(didMergePi == true, "pullAndMerge did not report Pi merge changes")
+        precondition((try? String(contentsOf: localPiModelsFile, encoding: .utf8)) == updatedPiModels, "Local models.json did not update with Device B changes")
+        let piBackupFile = localPiDir.appendingPathComponent("models.json.bak")
+        precondition(FileManager.default.fileExists(atPath: piBackupFile.path), "models.json.bak backup missing")
+        precondition((try? String(contentsOf: piBackupFile, encoding: .utf8)) == initialPiModels, "models.json.bak content mismatch")
+
+        ICloudSync.shared.setPiSyncEnabled(false)
+        precondition(ICloudSync.shared.isPiSyncEnabled == false)
+        UserDefaults.standard.removeObject(forKey: ICloudSync.piEnabledKey)
+        try? FileManager.default.removeItem(at: localPiDir)
+
         precondition(ICloudSync.shared.statusBadge == "Active" || ICloudSync.shared.statusBadge == "Synced")
         precondition(app.iCloudStatusMessage.contains("Synced") || app.iCloudStatusMessage.contains("ago") || app.iCloudStatusMessage.contains("just now"))
 
