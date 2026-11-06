@@ -37,7 +37,7 @@ actor SessionHTTP {
                 return client
             }
         }
-        let provName = provider == "crowbot" ? "Crowbot" : provider == "fireworks" ? "Fireworks" : provider == "aistudio" ? "Google AI Studio" : provider == "cerebras" ? "Cerebras" : provider == "refuseless" ? "Refuseless" : provider == "lutheos" ? "Lutheos" : "Google Cloud"
+        let provName = provider == "crowbot" ? "Crowbot" : provider == "fireworks" ? "Fireworks" : provider == "aistudio" ? "Google AI Studio" : provider == "cerebras" ? "Cerebras" : provider == "refuseless" ? "Refuseless" : provider == "lutheos" ? "Lutheos" : provider == "unaligned" ? "Unaligned" : provider == "yeta" ? "Yeta" : "Google Cloud"
         throw ConnectorError.message("Connect \(provName) in Settings first.")
     }
     static func connect(provider: String, cookieDomain: String? = nil, dynamicHost: String? = nil, interactive: Bool = false) throws -> SessionHTTP {
@@ -159,6 +159,11 @@ actor SessionHTTP {
         case "cerebras": allowed = ["cloud.cerebras.ai", "api.cerebras.ai"].contains(host)
         case "refuseless": allowed = ["refuseless.com", "api.refuseless.com", "console.refuseless.com"].contains(host)
         case "lutheos": allowed = ["lutheos.com", "api.lutheos.com"].contains(host)
+        case "unaligned": allowed = host == UnalignedProvider.host && url.path.hasPrefix("/dashboard")
+        case "yeta":
+            // Only the balance reads. The console also exposes login, top-up, and
+            // key-minting endpoints on this host, which must never see the session.
+            allowed = host == YetaProvider.host && ["/api/user/self", "/api/status"].contains(url.path) && url.query == nil
         default: allowed = (dynamicHost != nil && host == dynamicHost)
         }
         guard url.scheme == "https", allowed else { throw ConnectorError.message("Refused to send the saved session to an unexpected host.") }
@@ -503,7 +508,7 @@ struct AIStudioProvider: BalanceProvider {
             "Accept": "application/json",
             "Content-Type": "application/json+protobuf",
             "X-Origin": "https://aistudio.google.com",
-            "X-Goog-Api-Key": "AIzaSyDdP816MREB3SkjZO04QXbjsigfcI0GWOs",
+            "X-Goog-Api-Key": GoogleWebClientKeys.resolvedAIStudio(),
             "X-Goog-AuthUser": "0",
             "X-User-Agent": "grpc-web-javascript/0.1"
         ]

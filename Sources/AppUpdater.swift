@@ -20,6 +20,19 @@ public final class AppUpdater: ObservableObject {
     @Published public var releaseURL: URL? = nil
     @Published public var downloadURL: URL? = nil
     @Published public var checkError: String? = nil
+    /// Test seam: point the release lookup at a fixture server so the update
+    /// decision can be verified without publishing a release. Unset in normal runs.
+    public static var releaseEndpointOverride: URL? {
+        // Read through getenv so a test can change it at runtime; ProcessInfo
+        // snapshots the environment at launch. A bare path is treated as a local
+        // fixture file.
+        guard let raw = getenv("APIBAR_UPDATER_ENDPOINT") else { return nil }
+        let value = String(cString: raw).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty else { return nil }
+        if value.contains("://"), let url = URL(string: value) { return url }
+        return URL(fileURLWithPath: value)
+    }
+
     @Published public var isInstalling: Bool = false
     @Published public var installStatusText: String = ""
     @Published public var statusMessage: String = ""
@@ -28,7 +41,7 @@ public final class AppUpdater: ObservableObject {
     private var lastCheckedDate: Date?
 
     public var currentVersion: String {
-        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.5.0"
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.5.1"
     }
 
     public static var localBuildDate: Date {
@@ -56,9 +69,54 @@ public final class AppUpdater: ObservableObject {
 
     public init() {}
 
+    /// Parses a GitHub release payload. Shared by the live path and the offline
+    /// fixture path so both are verified by the same rules.
+    static func releaseInfo(from json: [String: Any]) -> ReleaseInfo? {
+        guard let tagName = json["tag_name"] as? String, !tagName.isEmpty else { return nil }
+        let releaseVer = tagName.hasPrefix("v") ? String(tagName.dropFirst()) : tagName
+        guard !releaseVer.isEmpty else { return nil }
+        let title = json["name"] as? String ?? "API Bar v\(releaseVer)"
+        let notes = json["body"] as? String ?? "No release notes provided."
+        let htmlUrlStr = json["html_url"] as? String
+        let releaseHtmlURL = htmlUrlStr.flatMap { URL(string: $0) }
+
+        var zipURL: URL? = nil
+        var assetUpdatedAt: Date? = nil
+        if let assets = json["assets"] as? [[String: Any]] {
+            for asset in assets {
+                guard let name = asset["name"] as? String, name.hasSuffix(".zip"),
+                      let download = asset["browser_download_url"] as? String,
+                      let assetURL = URL(string: download) else { continue }
+                zipURL = assetURL
+                if let updatedStr = asset["updated_at"] as? String {
+                    assetUpdatedAt = ISO8601DateFormatter().date(from: updatedStr)
+                }
+                break
+            }
+        }
+        return ReleaseInfo(
+            version: releaseVer,
+            title: title,
+            notes: notes,
+            releaseURL: releaseHtmlURL,
+            downloadURL: zipURL ?? URL(string: "https://github.com/\(repoOwner)/\(repoName)/releases/download/\(tagName)/APIBar-app.zip"),
+            assetUpdatedAt: assetUpdatedAt
+        )
+    }
+
     public func fetchReleaseInfo() async throws -> ReleaseInfo {
         // Strategy 1: Try GitHub REST API
-        if let apiURL = URL(string: Self.latestReleaseEndpoint) {
+        let override = Self.releaseEndpointOverride
+        // A local fixture is read straight from disk; URLSession cannot load file URLs.
+        if let override, override.isFileURL {
+            let data = try Data(contentsOf: override)
+            guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let info = Self.releaseInfo(from: json) else {
+                throw ConnectorError.message("The update fixture at \(override.path) is not a release payload.")
+            }
+            return info
+        }
+        if let apiURL = override ?? URL(string: Self.latestReleaseEndpoint) {
             var req = URLRequest(url: apiURL)
             req.setValue("application/vnd.github.v3+json", forHTTPHeaderField: "Accept")
             req.setValue("APIBar-Updater/\(currentVersion)", forHTTPHeaderField: "User-Agent")
@@ -67,41 +125,14 @@ public final class AppUpdater: ObservableObject {
             if let (data, response) = try? await URLSession.shared.data(for: req),
                let http = response as? HTTPURLResponse, http.statusCode == 200,
                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let tagName = json["tag_name"] as? String {
-                let releaseVer = tagName.hasPrefix("v") ? String(tagName.dropFirst()) : tagName
-                let title = json["name"] as? String ?? "API Bar v\(releaseVer)"
-                let notes = json["body"] as? String ?? "No release notes provided."
-                let htmlUrlStr = json["html_url"] as? String
-                let releaseHtmlURL = htmlUrlStr.flatMap { URL(string: $0) }
-
-                var zipURL: URL? = nil
-                var assetUpdatedAt: Date? = nil
-                if let assets = json["assets"] as? [[String: Any]] {
-                    for asset in assets {
-                        if let name = asset["name"] as? String, name.hasSuffix(".zip"),
-                           let download = asset["browser_download_url"] as? String,
-                           let assetURL = URL(string: download) {
-                            zipURL = assetURL
-                            if let updatedStr = asset["updated_at"] as? String {
-                                assetUpdatedAt = ISO8601DateFormatter().date(from: updatedStr)
-                            }
-                            break
-                        }
-                    }
-                }
-                return ReleaseInfo(
-                    version: releaseVer,
-                    title: title,
-                    notes: notes,
-                    releaseURL: releaseHtmlURL,
-                    downloadURL: zipURL ?? URL(string: "https://github.com/\(Self.repoOwner)/\(Self.repoName)/releases/download/\(tagName)/APIBar-app.zip"),
-                    assetUpdatedAt: assetUpdatedAt
-                )
+               let info = Self.releaseInfo(from: json) {
+                return info
             }
         }
 
-        // Strategy 2: GitHub Releases Atom Feed (resilient to GitHub REST API 403 rate limits)
-        if let feedURL = URL(string: Self.fallbackFeedEndpoint) {
+        // Strategy 2: GitHub Releases Atom Feed (resilient to GitHub REST API 403 rate limits).
+        // A fixture endpoint that fails must not silently fall through to the live feed.
+        if override == nil, let feedURL = URL(string: Self.fallbackFeedEndpoint) {
             var req = URLRequest(url: feedURL)
             req.setValue("application/atom+xml, text/xml", forHTTPHeaderField: "Accept")
             req.setValue("APIBar-Updater/\(currentVersion)", forHTTPHeaderField: "User-Agent")
@@ -162,7 +193,7 @@ public final class AppUpdater: ObservableObject {
         }
 
         // Strategy 3: GitHub /releases/latest web redirect
-        if let latestWebURL = URL(string: Self.latestHtmlEndpoint) {
+        if override == nil, let latestWebURL = URL(string: Self.latestHtmlEndpoint) {
             var req = URLRequest(url: latestWebURL)
             req.setValue("APIBar-Updater/\(currentVersion)", forHTTPHeaderField: "User-Agent")
             req.timeoutInterval = 8

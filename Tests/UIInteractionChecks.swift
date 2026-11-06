@@ -65,6 +65,66 @@ import SwiftUI
         precondition(app.balances.contains(where: { $0.id == "refuseless" }))
         precondition(UserDefaults.standard.stringArray(forKey: "RemovedProviders")?.contains("refuseless") == false)
 
+        // Manual reordering must move the row and persist the new order.
+        app.setSortMode(.manual)
+        app.balances = [
+            Balance(id: "alpha", name: "Alpha", baseline: 0, remaining: 0, updated: .distantPast, account: ""),
+            Balance(id: "beta", name: "Beta", baseline: 0, remaining: 0, updated: .distantPast, account: ""),
+            Balance(id: "gamma", name: "Gamma", baseline: 0, remaining: 0, updated: .distantPast, account: "")
+        ]
+        app.moveProvider(from: 2, to: 0)
+        precondition(app.balances.map(\.id) == ["gamma", "alpha", "beta"], "moveProvider up produced \(app.balances.map(\.id))")
+        app.moveProvider(from: 0, to: 2)
+        precondition(app.balances.map(\.id) == ["alpha", "beta", "gamma"], "moveProvider down produced \(app.balances.map(\.id))")
+        app.moveProviderUp(index: 2)
+        precondition(app.balances.map(\.id) == ["alpha", "gamma", "beta"])
+        app.moveProviderDown(index: 0)
+        precondition(app.balances.map(\.id) == ["gamma", "alpha", "beta"])
+        // The saved file must keep the manual order rather than a computed one.
+        if let saved = try? JSONDecoder().decode([Balance].self, from: Data(contentsOf: app.dataURL)) {
+            precondition(saved.map(\.id) == ["gamma", "alpha", "beta"], "Saved order was \(saved.map(\.id))")
+        }
+        app.balances = Balance.initial
+        app.setSortMode(.manual)
+        view.updateProviders(app.balances)
+
+        // Status items must be stable handles. Thaw/Bartender/Ice anchor their own
+        // layout to each item, so a reorder must reuse the existing items instead of
+        // recreating them, and titles must follow identity rather than array index.
+        app.setMergeIcons(false)
+        app.balances = [
+            Balance(id: "alpha", name: "Alpha", baseline: 100, remaining: 90, updated: Date(), account: ""),
+            Balance(id: "beta", name: "Beta", baseline: 100, remaining: 50, updated: Date(), account: ""),
+            Balance(id: "gamma", name: "Gamma", baseline: 100, remaining: 10, updated: Date(), account: "")
+        ]
+        app.configureStatusItems()
+        let before = app.items
+        precondition(before.compactMap { $0.autosaveName } == ["alpha", "beta", "gamma"], "Status items were \(before.compactMap { $0.autosaveName })")
+        let titlesBefore = Dictionary(uniqueKeysWithValues: before.map { ($0.autosaveName ?? "", $0.button?.title ?? "") })
+        precondition(titlesBefore["alpha"] == "90%" && titlesBefore["beta"] == "50%" && titlesBefore["gamma"] == "10%", "Titles were \(titlesBefore)")
+
+        app.moveProvider(from: 2, to: 0)   // gamma, alpha, beta
+        let after = app.items
+        precondition(after.count == before.count)
+        precondition(zip(after, before).allSatisfy { $0 === $1 }, "Reorder recreated the status items, which breaks menu bar managers")
+        let titlesAfter = Dictionary(uniqueKeysWithValues: after.map { ($0.autosaveName ?? "", $0.button?.title ?? "") })
+        precondition(titlesAfter == titlesBefore, "Titles no longer match their provider after a reorder: \(titlesAfter)")
+
+        // Even if the item array is in a different order than the provider list,
+        // each button keeps its own provider's percentage.
+        app.items = Array(after.reversed())
+        app.balances[0].remaining = 1   // gamma now 1%
+        app.updateTitles()
+        let titlesShuffled = Dictionary(uniqueKeysWithValues: app.items.map { ($0.autosaveName ?? "", $0.button?.title ?? "") })
+        precondition(titlesShuffled["gamma"] == "1%", "Gamma title was \(titlesShuffled["gamma"] ?? "nil")")
+        precondition(titlesShuffled["alpha"] == "90%" && titlesShuffled["beta"] == "50%", "Shuffled titles were \(titlesShuffled)")
+        app.items = after
+        app.setMergeIcons(true)
+
+        app.balances = Balance.initial
+        app.setSortMode(.manual)
+        view.updateProviders(app.balances)
+
         // Test provider tab gauge tracking and shrinking with less tokens
         let fwIndex = tabs.items.firstIndex(where: { $0.id == "fireworks" })!
         if let fwIdxInBalances = app.balances.firstIndex(where: { $0.id == "fireworks" }) {

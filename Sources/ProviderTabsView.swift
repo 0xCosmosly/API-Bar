@@ -22,6 +22,10 @@ func providerAccentNSColor(_ id: String) -> NSColor {
         return NSColor(srgbRed: 123/255.0, green: 31/255.0, blue: 162/255.0, alpha: 1.0) // Venice Purple #7B1FA2
     case "lutheos":
         return NSColor(srgbRed: 173/255.0, green: 79/255.0, blue: 44/255.0, alpha: 1.0)   // Lutheos Terracotta #AD4F2C
+    case "unaligned":
+        return NSColor(srgbRed: 229/255.0, green: 50/255.0, blue: 45/255.0, alpha: 1.0) // Unaligned Signal Red #E5322D
+    case "yeta":
+        return NSColor(srgbRed: 202/255.0, green: 138/255.0, blue: 4/255.0, alpha: 1.0) // Yeta Amber #CA8A04
     default:
         return NSColor.systemBlue
     }
@@ -332,20 +336,23 @@ struct ProviderTabItem: Equatable {
     required init?(coder: NSCoder) { fatalError() }
 
     func updateProviders(_ balances: [Balance]) {
-        let items = ProviderTabsView.defaultItems(balances: balances)
+        // Paused providers are hidden here, matching refresh(). Passing the full
+        // list made the tab ids flip between calls, which rebuilt the buttons and
+        // left callers holding stale references.
+        let items = ProviderTabsView.defaultItems(balances: balances.filter(\.isEnabled))
         tabs.updateItems(items)
         refresh()
     }
 
     func refresh() {
         tabs.selectedID = app.mergedProvider
-        tabs.updateItems(ProviderTabsView.defaultItems(balances: app.balances))
+        tabs.updateItems(ProviderTabsView.defaultItems(balances: app.activeBalances))
         detail?.removeFromSuperview()
         let card: NSView
         if app.mergedProvider == "overview" {
             card = OverviewCard(app: app)
         } else {
-            let b = app.balances.first(where: { $0.id == app.mergedProvider }) ?? app.selectedMergedBalance
+            let b = app.activeBalances.first(where: { $0.id == app.mergedProvider }) ?? app.selectedMergedBalance
             card = BalanceCard(b, status: app.providerStatus[b.id])
         }
         let detailHeight = card.frame.height

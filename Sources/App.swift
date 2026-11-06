@@ -149,18 +149,25 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
     }
 
     func reapplyOrder() {
-        if !mergeIcons {
-            let identities = balances.isEmpty ? ["merged"] : balances.map(\.id)
-            let currentIdentities = items.compactMap { $0.autosaveName }
-            if currentIdentities != identities {
-                configureStatusItems()
-            }
-        }
-        mergedMenuView?.updateProviders(balances)
+        // Always reconcile; configureStatusItems() keeps existing items untouched
+        // when the set of providers is unchanged, so a reorder never disturbs the
+        // handles a menu bar manager is tracking.
+        configureStatusItems()
+        mergedMenuView?.updateProviders(activeBalances)
         updateTitles()
         writeDiagnostics()
     }
-    var selectedMergedBalance: Balance { balances.first(where: { $0.id == mergedProvider }) ?? balances.first ?? Balance.initial[0] }
+    /// Providers the user has not disabled. Disabled providers keep their saved
+    /// configuration and credentials but are skipped everywhere a balance is
+    /// shown, summed, or refreshed.
+    var activeBalances: [Balance] { balances.filter(\.isEnabled) }
+    var selectedMergedBalance: Balance {
+        activeBalances.first(where: { $0.id == mergedProvider })
+            ?? activeBalances.first
+            ?? balances.first(where: { $0.id == mergedProvider })
+            ?? balances.first
+            ?? Balance.initial[0]
+    }
 
     func removeProvider(id: String) {
         guard let index = balances.firstIndex(where: { $0.id == id }) else { return }
@@ -169,7 +176,6 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         KeychainVault.clear(id)
         providerStatus.removeValue(forKey: id)
         inFlight.remove(id)
-
         var removed = UserDefaults.standard.stringArray(forKey: "RemovedProviders") ?? []
         if !removed.contains(id) {
             removed.append(id)
@@ -187,7 +193,6 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
     func addProvider(_ provider: Balance) {
         guard !balances.contains(where: { $0.id == provider.id }) else { return }
         balances.append(provider)
-
         var removed = UserDefaults.standard.stringArray(forKey: "RemovedProviders") ?? []
         removed.removeAll(where: { $0 == provider.id })
         UserDefaults.standard.set(removed, forKey: "RemovedProviders")
@@ -244,6 +249,44 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         ICloudSync.shared.schedulePush()
         Task { await refreshProvider(providerID) }
     }
+
+    /// Pauses or resumes a provider without deleting its configuration, saved
+    /// credentials, or position in the list.
+    func setProviderEnabled(_ enabled: Bool, id: String) {
+        guard let index = balances.firstIndex(where: { $0.id == id }), balances[index].isEnabled != enabled else { return }
+        balances[index].isEnabled = enabled
+        UserDefaults.standard.set(Date(), forKey: "APIBarSettingsModified")
+        if enabled {
+            providerStatus[id] = isConnected(id) ? "Connected · refreshes every 5 min" : "Connect in Settings"
+        } else {
+            // Drop any in-flight work so a paused provider cannot write a balance
+            // after the user stopped tracking it.
+            inFlight.remove(id)
+            clients.removeValue(forKey: id)
+            providerStatus[id] = "Paused"
+            if mergedProvider == id {
+                mergedProvider = "overview"
+                UserDefaults.standard.set("overview", forKey: "MergedProvider")
+            }
+        }
+        save()
+        configureStatusItems()
+        reapplyOrder()
+        if enabled {
+            Task { await refreshProvider(id) }
+        }
+    }
+
+    func toggleProviderEnabled(id: String) {
+        guard let balance = balances.first(where: { $0.id == id }) else { return }
+        setProviderEnabled(!balance.isEnabled, id: id)
+    }
+
+    /// True when a secret for this provider is already stored, without ever
+    /// prompting the Keychain.
+    func hasStoredCredential(_ provider: String) -> Bool {
+        (try? KeychainVault.load(provider)) != nil
+    }
     func setMergeIcons(_ enabled: Bool) {
         guard mergeIcons != enabled else { return }
         mergeIcons = enabled
@@ -254,7 +297,7 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         ICloudSync.shared.schedulePush()
     }
     func selectMergedProvider(_ provider: String) {
-        guard provider == "overview" || balances.contains(where: { $0.id == provider }) else { return }
+        guard provider == "overview" || activeBalances.contains(where: { $0.id == provider }) else { return }
         mergedProvider = provider
         UserDefaults.standard.set(provider, forKey: "MergedProvider")
         UserDefaults.standard.set(Date(), forKey: "APIBarSettingsModified")
@@ -404,10 +447,28 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
                     balances[i].name = "Google AI Studio"
                     changed = true
                 }
+                // An early build read Unaligned's micro-dollar balance as dollars and
+                // stored a reference in the millions. A baseline that dwarfs the
+                // balance of a prepaid account is corrupt, so let it re-derive from
+                // the top-up ledger on the next refresh.
+                if balances[i].id == "unaligned", balances[i].baseline > 1_000, balances[i].remaining < 1_000 {
+                    balances[i].baseline = 0
+                    changed = true
+                }
             }
             if changed { save() }
         }
         applySorting()
+        // Unaligned shipped after this install configured its provider list. Add
+        // it enabled (respecting opt-out removals) unless onboarding is still
+        // pending, which handles the choice itself.
+        if UserDefaults.standard.bool(forKey: "HasCompletedOnboarding"),
+           UserDefaults.standard.string(forKey: "RemovedProviders")?.contains("unaligned") != true,
+           !balances.contains(where: { $0.id == "unaligned" }) {
+            balances.append(Balance(id: "unaligned", name: "Unaligned", baseline: 0, remaining: 0, updated: .distantPast, account: ""))
+            providerStatus["unaligned"] = "Connect in Settings"
+            save()
+        }
         if CommandLine.arguments.contains("--preview") {
             preview(); NSApp.terminate(nil); return
         }
@@ -424,7 +485,9 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         }
         setupMainMenuIfNeeded()
         for b in balances {
-            if b.live || (try? KeychainVault.load(b.id)) != nil || (b.dynamicAuthHeader != nil && !b.dynamicAuthHeader!.isEmpty) {
+            if !b.isEnabled {
+                providerStatus[b.id] = "Paused"
+            } else if b.live || hasStoredCredential(b.id) || (b.dynamicAuthHeader != nil && !b.dynamicAuthHeader!.isEmpty) {
                 providerStatus[b.id] = "Connected · refreshes every 5 min"
             } else {
                 providerStatus[b.id] = "Connect in Settings"
@@ -451,16 +514,26 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         }
     }
     func configureStatusItems() {
-        let identities = mergeIcons ? ["merged"] : (balances.isEmpty ? ["merged"] : balances.map(\.id))
-        let currentIdentities = items.compactMap { $0.autosaveName }
-        if currentIdentities == identities && !items.isEmpty {
+        let identities = mergeIcons ? ["merged"] : (activeBalances.isEmpty ? ["merged"] : activeBalances.map(\.id))
+        let wanted = Set(identities)
+        // Status items are stable handles. Menu bar managers (Thaw, Bartender, Ice)
+        // anchor their own layout to each item's accessibility window, so removing
+        // and recreating them on a reorder makes those managers loop and throws away
+        // the placement the user arranged by hand. Reconcile by identity instead:
+        // keep every wanted item exactly as it is, add only the missing ones, and
+        // remove only items whose provider was deleted or paused.
+        for item in items where !wanted.contains(item.autosaveName ?? "") {
+            NSStatusBar.system.removeStatusItem(item)
+        }
+        let removedAny = items.contains { !wanted.contains($0.autosaveName ?? "") }
+        items.removeAll { !wanted.contains($0.autosaveName ?? "") }
+        if removedAny || items.isEmpty { mergedMenuView = nil }
+        let present = Set(items.compactMap { $0.autosaveName })
+        if present == wanted, !items.isEmpty {
             updateTitles()
             return
         }
-        for item in items { NSStatusBar.system.removeStatusItem(item) }
-        items.removeAll()
-        mergedMenuView = nil
-        for identity in identities {
+        for identity in identities where !present.contains(identity) {
             let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
             item.autosaveName = identity
             item.button?.setAccessibilityIdentifier(identity)
@@ -476,7 +549,9 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
             // AppKit may decline to open an entirely empty status menu before
             // asking its delegate to update it. Seed its first presentation.
             menuWillOpen(menu)
-            item.isVisible = true
+            // Visibility is deliberately not forced. A menu bar manager that keeps
+            // this item concealed would re-hide it, and re-asserting it here turns
+            // the two apps into a fight; a new item is visible by default anyway.
         }
         updateTitles()
     }
@@ -532,6 +607,8 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         if provider == "cerebras" { return try await CerebrasProvider(http: client, account: balance.account).fetchBalance() }
         if provider == "refuseless" { return try await RefuselessProvider(http: client, account: balance.account).fetchBalance() }
         if provider == "lutheos" { return try await LutheosProvider(http: client, account: balance.account).fetchBalance() }
+        if provider == "unaligned" { return try await UnalignedProvider(http: client, account: balance.account).fetchBalance() }
+        if provider == "yeta" { return try await YetaProvider(http: client, account: balance.account).fetchBalance() }
         if provider == "vertex" { return try await GoogleProvider(http:client,account:balance.account).fetchBalance() }
         if balance.dynamicEndpoint != nil {
             return try await DynamicProvider(http: client, balance: balance).fetchBalance()
@@ -540,7 +617,7 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
     }
     func refreshAll() async {
         lastRefresh = Date()
-        for balance in balances {
+        for balance in balances where balance.isEnabled {
             guard !inFlight.contains(balance.id) else { continue }
             inFlight.insert(balance.id)
             do {
@@ -581,9 +658,12 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
                 case "refuseless": provName = "Refuseless"
                 case "lutheos": provName = "Lutheos"
                 case "crowbot": provName = "Crowbot"
+                case "unaligned": provName = "Unaligned"
+            case "yeta": provName = "Yeta"
+                case "yeta": provName = "Yeta"
                 default: provName = balance.name
                 }
-                let wasConnected = isConnected(balance.id) || balance.live || (try? KeychainVault.load(balance.id)) != nil || (balance.dynamicAuthHeader != nil && !balance.dynamicAuthHeader!.isEmpty)
+                let wasConnected = isConnected(balance.id) || balance.live || hasStoredCredential(balance.id) || (balance.dynamicAuthHeader != nil && !balance.dynamicAuthHeader!.isEmpty)
                 if error.localizedDescription.contains("expired") || error.localizedDescription.contains("sign in") {
                     if wasConnected {
                         providerStatus[balance.id] = "Session expired · sign in to \(provName) in Brave"
@@ -791,7 +871,7 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
                 inFlight.removeAll()
                 updateTitles()
             }
-            let targets = balances.filter { !isConnected($0.id) }
+            let targets = balances.filter { $0.isEnabled && !isConnected($0.id) }
             guard !targets.isEmpty else {
                 updateTitles()
                 return
@@ -864,14 +944,14 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
     func isConnected(_ provider: String) -> Bool {
         guard let b = balances.first(where: { $0.id == provider }) else { return false }
         if let status = providerStatus[provider] {
-            if status.contains("Connect in Settings") || status.contains("Disconnected") || status.contains("expired") || status.hasPrefix("Not connected") {
+            if status.contains("Connect in Settings") || status.contains("Disconnected") || status.contains("expired") || status.hasPrefix("Not connected") || status == "Paused" {
                 return false
             }
             if status.hasPrefix("Connected") { return true }
         }
         if b.live && providerStatus[provider]?.hasPrefix("Connected") != false { return true }
         if let auth = b.dynamicAuthHeader, !auth.isEmpty { return true }
-        if (try? KeychainVault.load(provider)) != nil && providerStatus[provider]?.contains("Connect in Settings") != true { return true }
+        if hasStoredCredential(provider) && providerStatus[provider]?.contains("Connect in Settings") != true { return true }
         return false
     }
     func disconnect(_ provider: String) {
@@ -965,16 +1045,21 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         ICloudSync.shared.schedulePush()
     }
     func updateTitles() {
-        for (i, b) in (mergeIcons ? [selectedMergedBalance] : balances).enumerated() where i < items.count {
-            if mergeIcons && mergedProvider == "overview" {
-                if balances.isEmpty {
+        for (i, item) in items.enumerated() {
+            // Resolve by the item's stable identity rather than by array index. A
+            // menu bar manager may place the items in any order, and a stale index
+            // would write one provider's percentage into another provider's button.
+            let identity = item.autosaveName ?? ""
+            let isMergedItem = mergeIcons || identity == "merged"
+            if isMergedItem && mergedProvider == "overview" {
+                if activeBalances.isEmpty {
                     if items[i].button?.title != "" { items[i].button?.title = "" }
                     items[i].button?.image = BrandMark.appIconImage(size: 18)
                     items[i].button?.toolTip = nil
                     items[i].button?.setAccessibilityValue("No providers configured")
                 } else {
-                    let usdRemaining = balances.reduce(0.0) { $0 + $1.remaining }
-                    let usdBaseline = balances.reduce(0.0) { $0 + $1.baseline }
+                    let usdRemaining = activeBalances.reduce(0.0) { $0 + $1.remaining }
+                    let usdBaseline = activeBalances.reduce(0.0) { $0 + $1.baseline }
                     let totalPercent = usdBaseline > 0 ? max(0, usdRemaining / usdBaseline * 100) : 0
                     let percentText: String = {
                         if usdBaseline <= 0 { return "—" }
@@ -989,6 +1074,7 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
                     items[i].button?.setAccessibilityValue("\(percentText) remaining across all providers")
                 }
             } else {
+                guard let b = activeBalances.first(where: { $0.id == identity }) else { continue }
                 if items[i].button?.title != b.percentageLabel {
                     items[i].button?.title = b.percentageLabel
                 }
@@ -1115,9 +1201,11 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
             case "refuseless": provName = "Refuseless"
             case "lutheos": provName = "Lutheos"
             case "crowbot": provName = "Crowbot"
+            case "unaligned": provName = "Unaligned"
+            case "yeta": provName = "Yeta"
             default: provName = balance.name
             }
-            let wasConnected = isConnected(balance.id) || balance.live || (try? KeychainVault.load(balance.id)) != nil || (balance.dynamicAuthHeader != nil && !balance.dynamicAuthHeader!.isEmpty)
+            let wasConnected = isConnected(balance.id) || balance.live || hasStoredCredential(balance.id) || (balance.dynamicAuthHeader != nil && !balance.dynamicAuthHeader!.isEmpty)
             if error.localizedDescription.contains("expired") || error.localizedDescription.contains("sign in") {
                 if wasConnected {
                     providerStatus[balance.id] = "Session expired · sign in to \(provName) in Brave"
@@ -1298,7 +1386,7 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
     }
     @objc func openMergedBilling() {
         if mergedProvider == "overview" {
-            if let first = balances.first {
+            if let first = activeBalances.first {
                 openDashboard(first)
             }
         } else {
@@ -1330,6 +1418,8 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         case "cerebras": return URL(string: "https://cloud.cerebras.ai/platform/")!
         case "refuseless": return URL(string: "https://refuseless.com/console")!
         case "lutheos": return URL(string: "https://lutheos.com/billing")!
+        case "unaligned": return URL(string: "https://unaligned.pw/dashboard")!
+        case "yeta": return URL(string: YetaProvider.dashboardURL)!
         default: return URL(string: "https://console.cloud.google.com/billing/\(b.account)/credits/all")!
         }
     }
@@ -1529,6 +1619,8 @@ enum ProviderIcon {
         case "aistudio": (targetW, targetH) = (16.0, 16.0)
         case "venice": (targetW, targetH) = (15.0, 15.0)
         case "lutheos": (targetW, targetH) = (16.0, 12.4)
+        case "unaligned": (targetW, targetH) = (15.2, 15.2)
+        case "yeta": (targetW, targetH) = (14.6, 14.6)
         default: (targetW, targetH) = (15.0, 13.8) // crowbot
         }
         let targetRect = CGRect(x: (18.0 - targetW) / 2.0, y: (18.0 - targetH) / 2.0, width: targetW, height: targetH)

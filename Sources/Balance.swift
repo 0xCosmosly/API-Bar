@@ -24,8 +24,19 @@ struct Balance: Codable, Equatable {
     var dynamicAuthHeader: String?
     var tokensPerDay: Double? = nil
     var runwayDays: Int? = nil
+    /// Optional so older `balances.json` files keep decoding. `true` is stored
+    /// for a paused provider; `nil` means enabled.
+    var disabled: Bool? = nil
 
-    init(id: String, name: String, baseline: Double, remaining: Double, updated: Date, account: String, expires: String? = nil, live: Bool = false, dynamicEndpoint: String? = nil, dynamicJsonPath: String? = nil, dynamicCookieDomain: String? = nil, dynamicAuthHeader: String? = nil, tokensPerDay: Double? = nil, runwayDays: Int? = nil) {
+    /// A disabled provider keeps its configuration, credentials, and position in
+    /// the list but is skipped by refreshes and hidden from gauges, tabs, totals,
+    /// and the menu bar.
+    var isEnabled: Bool {
+        get { disabled != true }
+        set { disabled = newValue ? nil : true }
+    }
+
+    init(id: String, name: String, baseline: Double, remaining: Double, updated: Date, account: String, expires: String? = nil, live: Bool = false, dynamicEndpoint: String? = nil, dynamicJsonPath: String? = nil, dynamicCookieDomain: String? = nil, dynamicAuthHeader: String? = nil, tokensPerDay: Double? = nil, runwayDays: Int? = nil, disabled: Bool? = nil) {
         self.id = id; self.name = name; self.baseline = baseline; self.remaining = remaining
         self.updated = updated; self.account = account; self.expires = expires; self.live = live
         self.dynamicEndpoint = dynamicEndpoint; self.dynamicJsonPath = dynamicJsonPath
@@ -33,6 +44,7 @@ struct Balance: Codable, Equatable {
         self.dynamicAuthHeader = dynamicAuthHeader
         self.tokensPerDay = tokensPerDay
         self.runwayDays = runwayDays
+        self.disabled = disabled
     }
     var percent: Double { baseline > 0 ? max(0, remaining / baseline * 100) : 0 }
     var percentageLabel: String {
@@ -55,7 +67,10 @@ struct Balance: Codable, Equatable {
         Balance(id: "aistudio", name: "Google AI Studio", baseline: 0, remaining: 0, updated: .distantPast, account: ""),
         Balance(id: "cerebras", name: "Cerebras", baseline: 0, remaining: 0, updated: .distantPast, account: ""),
         Balance(id: "refuseless", name: "Refuseless", baseline: 0, remaining: 0, updated: .distantPast, account: ""),
-        Balance(id: "lutheos", name: "Lutheos", baseline: 0, remaining: 0, updated: .distantPast, account: "")
+        Balance(id: "lutheos", name: "Lutheos", baseline: 0, remaining: 0, updated: .distantPast, account: ""),
+        Balance(id: "unaligned", name: "Unaligned", baseline: 0, remaining: 0, updated: .distantPast, account: ""),
+        // Available to add, but paused until the user turns it on.
+        Balance(id: "yeta", name: "Yeta", baseline: 0, remaining: 0, updated: .distantPast, account: "", disabled: true)
     ]
 }
 
@@ -173,6 +188,12 @@ enum ReadingValidation {
         }
         if r.provider == "lutheos" {
             return (url.host == "lutheos.com" || url.host == "api.lutheos.com") && (balance.account.isEmpty || balance.account.hasSuffix(" Account") || r.account == balance.account)
+        }
+        if r.provider == "yeta" {
+            return url.host == YetaProvider.host && url.path == "/api/user/self" && (balance.account.isEmpty || balance.account.hasSuffix(" Account") || r.account == balance.account)
+        }
+        if r.provider == "unaligned" {
+            return url.host == UnalignedProvider.host && url.path.hasPrefix("/dashboard") && (balance.account.isEmpty || balance.account.hasSuffix(" Account") || r.account == balance.account)
         }
         if let endpoint = balance.dynamicEndpoint, let dynamicURL = URL(string: endpoint) {
             return url.host == dynamicURL.host

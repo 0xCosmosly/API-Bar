@@ -25,7 +25,7 @@ python3 - "$PWD" "$APP" <<'PYBUILD'
 import sys
 from pathlib import Path
 root, app = map(Path,sys.argv[1:])
-for src,dst in [(".cache/APIBar","MacOS/APIBar"),("Resources/Info.plist","Info.plist"),("Resources/AppIcon.icns","Resources/APIBarConverge.icns"),("Resources/AppIcon.icns","Resources/AppIcon.icns"),("Resources/crowbot-mask.png","Resources/crowbot-mask.png"),("Resources/fireworks-mask.png","Resources/fireworks-mask.png"),("Resources/vertex-mask.png","Resources/vertex-mask.png"),("Resources/aistudio-mask.png","Resources/aistudio-mask.png"),("Resources/cerebras-mask.png","Resources/cerebras-mask.png"),("Resources/refuseless-mask.png","Resources/refuseless-mask.png"),("Resources/venice-mask.png","Resources/venice-mask.png"),("Resources/lutheos-mask.png","Resources/lutheos-mask.png")]:
+for src,dst in [(".cache/APIBar","MacOS/APIBar"),("Resources/Info.plist","Info.plist"),("Resources/AppIcon.icns","Resources/APIBarConverge.icns"),("Resources/AppIcon.icns","Resources/AppIcon.icns"),("Resources/crowbot-mask.png","Resources/crowbot-mask.png"),("Resources/fireworks-mask.png","Resources/fireworks-mask.png"),("Resources/vertex-mask.png","Resources/vertex-mask.png"),("Resources/aistudio-mask.png","Resources/aistudio-mask.png"),("Resources/cerebras-mask.png","Resources/cerebras-mask.png"),("Resources/refuseless-mask.png","Resources/refuseless-mask.png"),("Resources/venice-mask.png","Resources/venice-mask.png"),("Resources/lutheos-mask.png","Resources/lutheos-mask.png"),("Resources/unaligned-mask.png","Resources/unaligned-mask.png"),("Resources/yeta-mask.png","Resources/yeta-mask.png")]:
     (app/"Contents"/dst).write_bytes((root/src).read_bytes())
 (app/"Contents/MacOS/APIBar").chmod(0o755)
 PYBUILD

@@ -162,6 +162,66 @@ public final class ChangelogManager: ObservableObject {
     public static func builtInEntries() -> [ChangelogEntry] {
         return [
             ChangelogEntry(
+                version: "0.5.1",
+                releaseDate: "November 5, 2026",
+                title: "API Bar 0.5.1 — Unaligned, Yeta, Pause Providers & Menu Bar Stability",
+                summary: "Adds Unaligned and Yeta provider support, lets you pause providers instead of deleting them, and stops menu bar icons from being recreated so Thaw, Bartender and Ice keep your layout.",
+                highlights: [
+                    "Unaligned (unaligned.pw) prepaid balance from your signed-in dashboard session",
+                    "Yeta (platform.yeta.ai) gateway credit, read from the console with server-reported quota conversion",
+                    "Pause any provider instead of deleting it: keeps its settings, key and list position",
+                    "Menu bar icons are now stable handles, so Thaw/Bartender/Ice keep their placement",
+                    "Provider rows gained drag-anywhere reordering plus explicit up/down buttons",
+                    "Consolidated the OpenCode and Pi iCloud sync controls into one shared component",
+                    "Micro-dollar balance scaling fixed, with top-up ledgers driving the 100% baseline",
+                    "Release gate now audits the tree for credentials, personal paths and personal emails"
+                ],
+                notes: """
+## API Bar 0.5.1
+
+This release adds two providers, introduces pausing instead of deleting, and makes API Bar behave properly with menu bar managers.
+
+---
+
+### ✨ What's New in 0.5.1
+
+#### 1. 🆕 Unaligned (unaligned.pw)
+• Reads your prepaid balance from the signed-in dashboard using your browser session, like the other providers.
+• Balance is shown in dollars and cents; the 100% reference comes from your actual crypto top-ups in the billing ledger, so the gauge reflects what you paid in.
+• No API key is stored.
+
+#### 2. 🆕 Yeta (platform.yeta.ai)
+• Tracks prepaid gateway credit from the Yeta console session.
+• The quota conversion is read from the server (`quota_per_unit`) instead of being hardcoded, so it stays correct if the deployment changes.
+• Ships paused: turn it on in Settings when you want to track it.
+
+#### 3. ⏸️ Pause Providers Instead of Deleting
+• Each provider has an enable switch. Pausing hides it from gauges, tabs, totals and the menu bar and stops refreshes, while keeping its settings, saved session and position in the list.
+• Deleting is still available when you really want a provider gone.
+
+#### 4. 🧭 Menu Bar Stability
+• API Bar no longer removes and recreates its status items when the order changes; it reconciles them by identity.
+• This keeps Thaw, Bartender and Ice anchored to the same items, so the layout you arrange sticks instead of being reset.
+• Icon placement itself remains the job of your menu bar manager.
+
+#### 5. 🧹 Consolidation
+• The OpenCode and Pi iCloud sync controls now share one definition used by both onboarding and Settings.
+
+---
+
+### 🔧 Fixes
+• Balances reported in micro-dollars are now scaled correctly, so a $4.59 balance no longer reads as millions.
+• The 100% baseline is derived from top-up ledgers rather than a guessed tier, and a corrupted stored baseline is repaired automatically.
+• Provider tabs no longer rebuild when a paused provider is present.
+
+---
+
+### 🔒 Release Hygiene
+• Added an automated audit that fails the test suite if a credential, personal home path or personal email address appears in the tree.
+• Google's public web-client keys are centralised in one documented file, since they identify the browser client rather than an account.
+""",
+            ),
+            ChangelogEntry(
                 version: "0.5.0",
                 releaseDate: "November 3, 2026",
                 title: "API Bar 0.5.0 — Token Burn Rate Pacing, OpenCode Sync & Lutheos",

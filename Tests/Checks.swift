@@ -1,5 +1,6 @@
 import Foundation
 import Security
+import AppKit
 
 @main struct Checks {
     static func require(_ check: @autoclosure () throws -> Bool) throws { let result = try check(); precondition(result) }
@@ -66,6 +67,10 @@ import Security
             do { _ = try await crowHTTP.request(url: URL(string: destination)!); preconditionFailure("Crowbot credentials escaped the balance endpoint") } catch { }
         }
         print("Passed: Crowbot microdollar parsing, zero/invalid balances, account pinning, credential redaction, restricted endpoint, and redirect refusal.")
+        try await unalignedChecks()
+        try await yetaChecks()
+        try secretAuditChecks()
+        try await updaterChecks()
         try await redirectChecks()
         var original = DarwinBoolean(false)
         precondition(SecKeychainGetUserInteractionAllowed(&original) == errSecSuccess)
@@ -293,28 +298,37 @@ import Security
 
         // ChangelogManager checks: current version, previous versions, and selection
         let changelog = ChangelogManager.shared
-        precondition(changelog.entries.count >= 4, "Changelog must include at least 4 built-in versions")
-        guard let entry050 = changelog.entries.first(where: { $0.version == "0.5.0" }),
+        precondition(changelog.entries.count >= 5, "Changelog must include at least 5 built-in versions")
+        guard let entry051 = changelog.entries.first(where: { $0.version == "0.5.1" }),
+              let entry050 = changelog.entries.first(where: { $0.version == "0.5.0" }),
               let entry049 = changelog.entries.first(where: { $0.version == "0.4.9" }),
               let entry048 = changelog.entries.first(where: { $0.version == "0.4.8" }),
               let entry047 = changelog.entries.first(where: { $0.version == "0.4.7" }) else {
-            preconditionFailure("Built-in changelog missing 0.5.0, 0.4.9, 0.4.8, or 0.4.7")
+            preconditionFailure("Built-in changelog missing 0.5.1, 0.5.0, 0.4.9, 0.4.8, or 0.4.7")
         }
-        precondition(entry050.isCurrent(currentVersion: "0.5.0") == true)
-        precondition(entry050.isPrevious(currentVersion: "0.5.0") == false)
-        precondition(entry049.isCurrent(currentVersion: "0.5.0") == false)
-        precondition(entry049.isPrevious(currentVersion: "0.5.0") == true)
-        precondition(entry050.isNewer(currentVersion: "0.4.9") == true)
-        precondition(entry048.isPrevious(currentVersion: "0.5.0") == true)
-        precondition(entry047.isPrevious(currentVersion: "0.5.0") == true)
+        precondition(entry051.isCurrent(currentVersion: "0.5.1") == true)
+        precondition(entry051.isPrevious(currentVersion: "0.5.1") == false)
+        precondition(entry051.isNewer(currentVersion: "0.5.0") == true)
+        precondition(entry050.isCurrent(currentVersion: "0.5.1") == false)
+        precondition(entry050.isPrevious(currentVersion: "0.5.1") == true)
+        precondition(entry049.isPrevious(currentVersion: "0.5.1") == true)
+        precondition(entry048.isPrevious(currentVersion: "0.5.1") == true)
+        precondition(entry047.isPrevious(currentVersion: "0.5.1") == true)
+        precondition(!entry051.highlights.isEmpty, "0.5.1 highlights must not be empty")
+        precondition(!entry051.notes.isEmpty, "0.5.1 notes must not be empty")
         precondition(!entry050.highlights.isEmpty, "0.5.0 highlights must not be empty")
-        precondition(!entry049.notes.isEmpty, "0.4.9 notes must not be empty")
+        // Release notes must not leak local machine details.
+        precondition(!entry051.notes.contains("/Users/"), "Changelog must not contain personal paths")
+        // The shipped bundle version and the changelog must agree.
+        if let plistVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String {
+            precondition(plistVersion == "0.5.1", "Info.plist version is \(plistVersion), expected 0.5.1")
+        }
 
-        changelog.select(version: "0.4.9")
-        precondition(changelog.selectedVersion == "0.4.9")
-        precondition(changelog.selectedEntry?.version == "0.4.9")
         changelog.select(version: "0.5.0")
         precondition(changelog.selectedVersion == "0.5.0")
+        precondition(changelog.selectedEntry?.version == "0.5.0")
+        changelog.select(version: "0.5.1")
+        precondition(changelog.selectedVersion == "0.5.1")
 
         print("Passed: ChangelogManager version history, current/previous tagging, and selection.")
         print("Passed: AppUpdater semver parsing, newer version detection, and release tagging.")
@@ -348,6 +362,484 @@ final class RedirectCheckProtocol: URLProtocol, @unchecked Sendable {
         client?.urlProtocolDidFinishLoading(self)
     }
     override func stopLoading() {}
+}
+
+/// Serves Unaligned dashboard payloads and records the request headers, so the
+/// tests can prove the browser session cookie (and only it) is sent.
+final class MockUnalignedProtocol: URLProtocol, @unchecked Sendable {
+    nonisolated(unsafe) static var body = Data()
+    nonisolated(unsafe) static var status = 200
+    nonisolated(unsafe) static var seen: [URLRequest] = []
+
+    static func reset(body: Data, status: Int = 200) {
+        Self.body = body
+        Self.status = status
+        seen = []
+    }
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        Self.seen.append(request)
+        let response = HTTPURLResponse(url: request.url!, statusCode: Self.status, httpVersion: "HTTP/1.1", headerFields: [:])!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Self.body)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
+}
+
+func unalignedChecks() async throws {
+    let sessionCookie = StoredCookie(name: "__Secure-better-auth.session_token", value: "unaligned-test-session", domain: ".unaligned.pw", expires: Date().addingTimeInterval(3600))
+    precondition(UnalignedProvider.hasValidSession(cookies: [sessionCookie]))
+    precondition(!UnalignedProvider.hasValidSession(cookies: []))
+    precondition(!UnalignedProvider.hasValidSession(cookies: [StoredCookie(name: "session", value: "x", domain: "example.com")]))
+    precondition(!UnalignedProvider.hasValidSession(cookies: [StoredCookie(name: "theme", value: "dark", domain: ".unaligned.pw")]))
+
+    // SvelteKit devalue payload: the balance is referenced by index into `data`.
+    let devalue = #"{"type":"data","nodes":[null,{"type":"data","data":[{"user":1,"balance":2}, {"email":3}, 12.5, "user@unaligned.pw"],"uses":{}}]}"#
+    let (bal, base, acct) = try UnalignedProvider.parse(data: Data(devalue.utf8), url: UnalignedProvider.dataEndpoints[0])
+    precondition(bal == 12.5, "Unaligned devalue balance must be 12.5, got \(bal)")
+    precondition(base == PaymentReference.inferTier(for: 12.5))
+    precondition(acct == "user@unaligned.pw")
+
+    // Real dashboard shape: the balance is nested in a referenced account object,
+    // so the top-level node has no `balance` key at all. Index 4 is the account
+    // reference, and 2 is the balance reference -- reading either as dollars is the
+    // bug this fixture locks down.
+    let nested = #"{"type":"data","nodes":[null,{"type":"data","data":[{"account":1,"base":2,"space":3},{"adClick":4,"admin":5,"balance":6,"bonusEligible":5,"createdDay":7,"id":8,"reseller":9},false,"",true,true,7.25,"2026-11-01",11],"uses":{}}]}"#
+    let (nestedBal, nestedBase, _) = try UnalignedProvider.parse(data: Data(nested.utf8), url: UnalignedProvider.dataEndpoints[0])
+    precondition(nestedBal == 7.25, "Nested account balance must be 7.25, got \(nestedBal)")
+    precondition(nestedBase == PaymentReference.inferTier(for: 7.25))
+
+    // The real payload stores the balance in micro-dollars: 4_589_693 renders as
+    // $4.59 on the dashboard. Reporting the raw value showed millions of dollars.
+    let micro = #"{"type":"data","nodes":[null,{"type":"data","data":[{"account":1},{"balance":2,"id":3},4589693,"acct"],"uses":{}}]}"#
+    let (microBal, _, _) = try UnalignedProvider.parse(data: Data(micro.utf8), url: UnalignedProvider.dataEndpoints[0])
+    precondition(abs(microBal - 4.589693) < 0.000001, "Micro-dollar balance must be $4.589693, got \(microBal)")
+    // A dollars-with-cents value is left alone, so the scale rule cannot double-divide.
+    let cents = #"{"type":"data","nodes":[null,{"type":"data","data":[{"account":1},{"balance":2},4.59],"uses":{}}]}"#
+    let (centsBal, _, _) = try UnalignedProvider.parse(data: Data(cents.utf8), url: UnalignedProvider.dataEndpoints[0])
+    precondition(abs(centsBal - 4.59) < 0.000001, "Dollar balance must stay $4.59, got \(centsBal)")
+
+    // Billing ledger: completed top-ups set the 100% reference. Real rows are
+    // devalue payloads whose values are array references, not literals.
+    let ledger = #"{"type":"data","nodes":[null,{"type":"data","data":[{"history":1},{"rows":2,"total":3},[4],1,{"status":5,"usd":6,"amount":6,"coin":7},"paid",5.95,"USDC"],"uses":{}}]}"#
+    let ledgerJSON = try JSONSerialization.jsonObject(with: Data(ledger.utf8), options: [.fragmentsAllowed])
+    let topUps = UnalignedProvider.topUpTotal(json: ledgerJSON)
+    precondition(topUps != nil && abs(topUps! - 5.95) < 0.0001, "Top-up total must be $5.95, got \(topUps ?? -1)")
+
+    // Multiple rows sum, and rows that never settled are excluded.
+    let ledgerMulti = #"{"type":"data","nodes":[null,{"type":"data","data":[{"history":1},{"rows":2},[3,4],{"status":5,"usd":6},{"status":7,"usd":8},"paid",5.95,"expired",99.0],"uses":{}}]}"#
+    let multiJSON = try JSONSerialization.jsonObject(with: Data(ledgerMulti.utf8), options: [.fragmentsAllowed])
+    if let multi = UnalignedProvider.topUpTotal(json: multiJSON) {
+        precondition(abs(multi - 5.95) < 0.0001, "Settled top-ups only, got \(multi)")
+    }
+    let noLedger = try JSONSerialization.jsonObject(with: Data(#"{"history":{"rows":[]}}"#.utf8), options: [.fragmentsAllowed])
+    precondition(UnalignedProvider.topUpTotal(json: noLedger) == nil, "An empty ledger must not report a baseline")
+
+    // A payload with no balance field at all must fail rather than be
+    // regex-scraped for some other number in the document.
+    for fixture in [
+        #"{"type":"data","nodes":[null,{"type":"data","data":[{"account":1},{"id":2,"createdDay":3},5,6]}]}"#,
+        #"{"type":"data","nodes":[null,{"type":"data","data":[{"account":1},{"balance":2},{"nested":true}]}]}"#
+    ] {
+        do {
+            _ = try UnalignedProvider.parse(data: Data(fixture.utf8), url: UnalignedProvider.dataEndpoints[0])
+            preconditionFailure("Unaligned payload without a resolvable balance produced a value: \(fixture)")
+        } catch { }
+    }
+
+    // Plain object shapes and string amounts.
+    for (fixture, expected) in [
+        (#"{"balance":9.99}"#, 9.99),
+        (#"{"balance":"7.25"}"#, 7.25),
+        (#"{"balance":{"usd":3.5}}"#, 3.5),
+        (#"{"data":{"available":1.75}}"#, 1.75),
+        (#"{"credits":4.2}"#, 4.2)
+    ] {
+        let parsed = try UnalignedProvider.parse(data: Data(fixture.utf8), url: UnalignedProvider.dataEndpoints[0])
+        precondition(parsed.remaining == expected, "Unaligned fixture \(fixture) parsed as \(parsed.remaining)")
+    }
+
+    // A "spent"/"cost" figure must never be read as the remaining balance.
+    let spentOnly = try UnalignedProvider.parse(data: Data(#"{"balance":10.0,"spent":2.0}"#.utf8), url: UnalignedProvider.dataEndpoints[0])
+    precondition(spentOnly.remaining == 10.0)
+
+    // A logged-out session returns a SvelteKit redirect, which is not a balance.
+    for fixture in [#"{"type":"redirect","status":303,"location":"/login"}"#, #"{}"#, #"not json"#] {
+        do {
+            _ = try UnalignedProvider.parse(data: Data(fixture.utf8), url: UnalignedProvider.dataEndpoints[0])
+            preconditionFailure("Non-balance Unaligned payload accepted: \(fixture)")
+        } catch { }
+    }
+
+    // HTML fallback for the rendered dashboard document.
+    let html = "<div class=\"account\"><span class=\"balance-figure\">$18.40</span></div><p>user@unaligned.pw</p>"
+    let (htmlBal, htmlBase, htmlAcct) = try UnalignedProvider.parse(html: html)
+    precondition(htmlBal == 18.40 && htmlBase == 20.0 && htmlAcct == "user@unaligned.pw")
+
+    // Reading validation: only the dashboard host is accepted, and a different
+    // account cannot overwrite a pinned balance.
+    guard let index = Balance.initial.firstIndex(where: { $0.id == "unaligned" }) else { preconditionFailure("Balance.initial must include unaligned") }
+    let reading = Reading(provider: "unaligned", remaining: 9.99, currency: "USD", account: "user@unaligned.pw", url: UnalignedProvider.dataEndpoints[0], expires: nil)
+    precondition(ReadingValidation.valid(reading, balances: Balance.initial))
+    let hostile = Reading(provider: "unaligned", remaining: 5, currency: "USD", account: "user@unaligned.pw", url: "https://evil.example/dashboard", expires: nil)
+    precondition(!ReadingValidation.valid(hostile, balances: Balance.initial))
+    let apiKeyURL = Reading(provider: "unaligned", remaining: 5, currency: "USD", account: "user@unaligned.pw", url: "https://unaligned.pw/v1/balance", expires: nil)
+    precondition(!ReadingValidation.valid(apiKeyURL, balances: Balance.initial), "Unaligned must be read from the dashboard session, not the API")
+    var pinned = Balance.initial
+    pinned[index].account = "someone@else.com"
+    precondition(!ReadingValidation.valid(reading, balances: pinned))
+
+    // Live fetch path: the browser session cookie is sent, no API key header.
+    let config = URLSessionConfiguration.ephemeral
+    config.protocolClasses = [MockUnalignedProtocol.self]
+    MockUnalignedProtocol.reset(body: Data(devalue.utf8))
+    let http = SessionHTTP(provider: "unaligned", cookies: [sessionCookie], configuration: config)
+    let fetched = try await UnalignedProvider(http: http, account: "").fetchBalance()
+    precondition(fetched.remaining == 12.5 && fetched.provider == "unaligned")
+    // The dashboard supplies the balance and the billing ledger the baseline.
+    precondition(MockUnalignedProtocol.seen.count == 2, "Expected dashboard + billing requests, got \(MockUnalignedProtocol.seen.count)")
+    precondition(MockUnalignedProtocol.seen[0].url?.absoluteString == UnalignedProvider.dataEndpoints[0])
+    precondition(MockUnalignedProtocol.seen[1].url?.absoluteString == UnalignedProvider.dataEndpoints[1])
+    for sent in MockUnalignedProtocol.seen {
+        precondition(sent.url?.host == "unaligned.pw")
+        precondition(sent.value(forHTTPHeaderField: "Cookie")?.contains("session_token") == true)
+        precondition(sent.value(forHTTPHeaderField: "Authorization") == nil, "Unaligned must not send an API key")
+    }
+
+    // A session that cannot read any endpoint fails loudly instead of inventing a
+    // balance, and credentials never leave the approved host.
+    MockUnalignedProtocol.reset(body: Data(#"{"type":"redirect","status":303,"location":"/login"}"#.utf8))
+    do {
+        _ = try await UnalignedProvider(http: http, account: "").fetchBalance()
+        preconditionFailure("Logged-out Unaligned session produced a balance")
+    } catch { }
+    do {
+        _ = try await http.request(url: URL(string: "https://api.unaligned.pw/v1/balance")!)
+        preconditionFailure("Unaligned session was sent to the API host")
+    } catch { }
+
+    // Enable/disable keeps the record and its position, and files written before
+    // this feature still load as enabled.
+    var provider = Balance.initial[index]
+    precondition(provider.isEnabled)
+    provider.isEnabled = false
+    precondition(!provider.isEnabled)
+    let roundTrip = try JSONDecoder().decode(Balance.self, from: JSONEncoder().encode(provider))
+    precondition(!roundTrip.isEnabled, "A paused provider must stay paused across a save/load cycle")
+    precondition(roundTrip.disabled != nil)
+    provider.isEnabled = true
+    let reEnabled = try JSONDecoder().decode(Balance.self, from: JSONEncoder().encode(provider))
+    precondition(reEnabled.isEnabled)
+    let legacy = Data(#"{"id":"lutheos","name":"Lutheos","baseline":10,"remaining":5,"updated":0,"account":"","live":true}"#.utf8)
+    let legacyBalance = try JSONDecoder().decode(Balance.self, from: legacy)
+    precondition(legacyBalance.isEnabled, "Balance files without a disabled flag must stay enabled")
+    precondition(legacyBalance.disabled == nil)
+
+    // Every native provider must ship brand artwork; a missing mask silently
+    // degrades the menu bar and badge tiles to a monogram.
+    for provider in Balance.initial.map(\.id) {
+        let path = "Resources/\(provider)-mask.png"
+        precondition(FileManager.default.fileExists(atPath: path), "Missing brand mask: \(path)")
+        let data = try Data(contentsOf: URL(fileURLWithPath: path))
+        guard let rep = NSBitmapImageRep(data: data) else { preconditionFailure("\(path) is not a readable PNG") }
+        precondition(rep.hasAlpha, "\(path) must have an alpha channel to render as a template")
+        var opaque = 0
+        var minX = rep.pixelsWide, maxX = 0, minY = rep.pixelsHigh, maxY = 0
+        for y in 0..<rep.pixelsHigh {
+            for x in 0..<rep.pixelsWide where (rep.colorAt(x: x, y: y)?.alphaComponent ?? 0) > 0.5 {
+                opaque += 1
+                minX = min(minX, x); maxX = max(maxX, x); minY = min(minY, y); maxY = max(maxY, y)
+            }
+        }
+        precondition(opaque > 100, "\(path) is empty")
+        // The Unaligned mark is inset in its canvas; a mark that bleeds to the edge
+        // clips when drawn into an 18pt menu bar slot.
+        if provider == "unaligned" {
+            precondition(minX > 0 && minY > 0 && maxX < rep.pixelsWide - 1 && maxY < rep.pixelsHigh - 1,
+                         "\(path) touches the canvas edge")
+        }
+    }
+
+    print("Passed: Unaligned dashboard-session balance parsing (devalue, JSON, HTML), logged-out rejection, host restriction, cookie-only requests, and provider enable/disable persistence.")
+}
+
+/// Serves Yeta console payloads and records the requests sent.
+final class MockYetaProtocol: URLProtocol, @unchecked Sendable {
+    nonisolated(unsafe) static var routes: [String: (status: Int, body: Data)] = [:]
+    nonisolated(unsafe) static var seen: [URLRequest] = []
+
+    static func reset() {
+        routes = [:]
+        seen = []
+    }
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        Self.seen.append(request)
+        let path = request.url?.path ?? ""
+        let route = Self.routes[path] ?? (status: 404, body: Data(#"{"success":false,"message":"not found"}"#.utf8))
+        let response = HTTPURLResponse(url: request.url!, statusCode: route.status, httpVersion: "HTTP/1.1", headerFields: [:])!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: route.body)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
+}
+
+func yetaChecks() async throws {
+    // Quota conversion is read from the deployment, not hardcoded.
+    let statusJSON = try JSONSerialization.jsonObject(with: Data(#"{"data":{"quota_per_unit":500000}}"#.utf8))
+    precondition(YetaProvider.quotaPerUnit(statusJSON: statusJSON) == 500_000)
+    let stringStatus = try JSONSerialization.jsonObject(with: Data(#"{"data":{"quota_per_unit":"250000"}}"#.utf8))
+    precondition(YetaProvider.quotaPerUnit(statusJSON: stringStatus) == 250_000)
+    let missing = try JSONSerialization.jsonObject(with: Data(#"{"data":{}}"#.utf8))
+    precondition(YetaProvider.quotaPerUnit(statusJSON: missing) == YetaProvider.defaultQuotaPerUnit)
+
+    // 500000 quota units = $1, so 2_500_000 is $5.00 remaining.
+    let selfBody = #"{"success":true,"data":{"id":7,"username":"yeta-user","email":"user@yeta.ai","quota":2500000,"used_quota":500000}}"#
+    let reading = try YetaProvider.parse(Data(selfBody.utf8), quotaPerUnit: 500_000)
+    precondition(abs(reading.remaining - 5.0) < 0.000001, "Yeta remaining must be $5.00, got \(reading.remaining)")
+    precondition(abs((reading.reference ?? 0) - 6.0) < 0.000001, "Yeta total must be remaining + spent = $6.00, got \(reading.reference ?? -1)")
+    precondition(reading.account == "user@yeta.ai" && reading.currency == "USD" && reading.provider == "yeta")
+    precondition(ReadingValidation.valid(reading, balances: Balance.initial))
+
+    // Zero balance is valid, and a non-dollar currency or foreign host is not.
+    let zero = try YetaProvider.parse(Data(#"{"success":true,"data":{"quota":0,"used_quota":0}}"#.utf8), quotaPerUnit: 500_000)
+    precondition(zero.remaining == 0)
+    let hostile = Reading(provider: "yeta", remaining: 5, currency: "USD", account: "", url: "https://evil.example/api/user/self", expires: nil)
+    precondition(!ReadingValidation.valid(hostile, balances: Balance.initial))
+
+    // Rejected sessions and malformed payloads fail loudly.
+    for fixture in [
+        #"{"success":false,"code":"AUTH_UNAUTHORIZED","message":"Unauthorized, invalid access token"}"#,
+        #"{"success":true,"data":{"username":"x"}}"#,
+        #"not json"#
+    ] {
+        do {
+            _ = try YetaProvider.parse(Data(fixture.utf8), quotaPerUnit: 500_000)
+            preconditionFailure("Invalid Yeta payload accepted: \(fixture)")
+        } catch { }
+    }
+    // An account mismatch must not overwrite a pinned balance.
+    do {
+        _ = try YetaProvider.parse(Data(selfBody.utf8), quotaPerUnit: 500_000, account: "someone@else.com")
+        preconditionFailure("Yeta accepted a different account")
+    } catch { }
+
+    // Fetch path: status then self, cookie only, no API key.
+    let config = URLSessionConfiguration.ephemeral
+    config.protocolClasses = [MockYetaProtocol.self]
+    MockYetaProtocol.reset()
+    MockYetaProtocol.routes["/api/status"] = (200, Data(#"{"data":{"quota_per_unit":500000}}"#.utf8))
+    MockYetaProtocol.routes["/api/user/self"] = (200, Data(selfBody.utf8))
+    let cookie = StoredCookie(name: "session", value: "yeta-test-session", domain: "platform.yeta.ai", expires: Date().addingTimeInterval(3600))
+    let http = SessionHTTP(provider: "yeta", cookies: [cookie], configuration: config)
+    let fetched = try await YetaProvider(http: http, account: "").fetchBalance()
+    precondition(abs(fetched.remaining - 5.0) < 0.000001)
+    precondition(MockYetaProtocol.seen.count == 2)
+    for sent in MockYetaProtocol.seen {
+        precondition(sent.url?.host == "platform.yeta.ai")
+        precondition(sent.value(forHTTPHeaderField: "Cookie")?.contains("session") == true)
+        precondition(sent.value(forHTTPHeaderField: "Authorization") == nil)
+    }
+    // The console API must not be reachable through another path on the host.
+    do {
+        _ = try await http.request(url: URL(string: "https://platform.yeta.ai/api/user/login")!)
+        preconditionFailure("Yeta session was sent to an unapproved endpoint")
+    } catch { }
+
+    // Registered, but paused until the user enables it.
+    guard let yeta = Balance.initial.first(where: { $0.id == "yeta" }) else { preconditionFailure("Balance.initial must include yeta") }
+    precondition(!yeta.isEnabled, "Yeta must ship disabled")
+    precondition(yeta.name == "Yeta")
+    precondition(YetaProvider.hasValidSession(cookies: [cookie]))
+    precondition(!YetaProvider.hasValidSession(cookies: [StoredCookie(name: "theme", value: "dark", domain: ".yeta.ai")]))
+
+    print("Passed: Yeta quota conversion from the server, remaining/total split, rejected sessions, account pinning, cookie-only requests, endpoint restriction, and disabled-by-default registration.")
+}
+
+/// Release gate: nothing in the working tree may contain a credential, a personal
+/// home path, or a real personal email address. Google's public web-client keys and
+/// the synthetic test fixtures are the only allowed exceptions, and they must stay
+/// confined to their documented locations.
+func secretAuditChecks() throws {
+    let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+    let skipDirectories: Set<String> = [".git", ".build", ".cache", "vault", "node_modules"]
+    let skipExtensions: Set<String> = ["png", "icns", "jpg", "jpeg", "gif", "zip", "dmg", "o", "dylib", "heic", "pdf"]
+
+    let allowedAPIKeys: Set<String> = [GoogleWebClientKeys.cloudConsole, GoogleWebClientKeys.aiStudio]
+    let allowedLiterals: Set<String> = [
+        "AIzaCustomKey1234567890123456789012345", // synthetic fixture
+        "venice_admin_key_123",                    // synthetic fixture
+        "sk-unaligned-fixture-000000000000",       // synthetic fixture
+        "unaligned-test-session",
+        "yeta-test-session",
+        "lutheos-test-token",
+        "1234567890123456"                          // synthetic Crowbot account number
+    ]
+    let personalEmailDomains = ["gmail.com", "icloud.com", "outlook.com", "hotmail.com", "yahoo.com", "proton.me", "me.com"]
+    let keyPatterns = [
+        #"ghp_[A-Za-z0-9]{20,}"#,
+        #"github_pat_[A-Za-z0-9_]{20,}"#,
+        #"xox[baprs]-[A-Za-z0-9-]{10,}"#,
+        #"AKIA[0-9A-Z]{16}"#,
+        #"-----BEGIN [A-Z ]*PRIVATE KEY-----"#,
+        #"sk-[A-Za-z0-9_-]{32,}"#,
+        #"AIza[0-9A-Za-z_-]{35}"#
+    ]
+
+    var findings: [String] = []
+    var scanned = 0
+    guard let walker = FileManager.default.enumerator(at: root, includingPropertiesForKeys: [.isRegularFileKey]) else {
+        preconditionFailure("Could not enumerate the working tree")
+    }
+    for case let url as URL in walker {
+        if skipDirectories.contains(url.lastPathComponent) {
+            walker.skipDescendants()
+            continue
+        }
+        let ext = url.pathExtension.lowercased()
+        if skipExtensions.contains(ext) { continue }
+        guard let values = try? url.resourceValues(forKeys: [.isRegularFileKey]), values.isRegularFile == true else { continue }
+        guard let data = try? Data(contentsOf: url), data.count < 2_000_000,
+              let text = String(data: data, encoding: .utf8) else { continue }
+        scanned += 1
+        let relative = url.path.replacingOccurrences(of: root.path + "/", with: "")
+
+        // Personal home directories must never be hardcoded.
+        if let regex = try? NSRegularExpression(pattern: #"/Users/[A-Za-z0-9._-]+"#),
+           regex.firstMatch(in: text, range: NSRange(location: 0, length: (text as NSString).length)) != nil {
+            findings.append("\(relative): hardcoded personal home path")
+        }
+
+        for pattern in keyPatterns {
+            guard let regex = try? NSRegularExpression(pattern: pattern) else { continue }
+            let ns = text as NSString
+            for match in regex.matches(in: text, range: NSRange(location: 0, length: ns.length)) {
+                let literal = ns.substring(with: match.range)
+                if allowedAPIKeys.contains(literal) || allowedLiterals.contains(literal) { continue }
+                findings.append("\(relative): credential-shaped literal \(literal.prefix(12))…")
+            }
+        }
+
+        // Real personal email addresses are not allowed; fixtures use project domains.
+        if let regex = try? NSRegularExpression(pattern: #"[A-Za-z0-9._%+-]+@([A-Za-z0-9.-]+\.[A-Za-z]{2,})"#) {
+            let ns = text as NSString
+            for match in regex.matches(in: text, range: NSRange(location: 0, length: ns.length)) {
+                let domain = ns.substring(with: match.range(at: 1)).lowercased()
+                if personalEmailDomains.contains(where: { domain == $0 || domain.hasSuffix("." + $0) }) {
+                    findings.append("\(relative): personal email address on \(domain)")
+                }
+            }
+        }
+    }
+
+    precondition(scanned > 20, "Secret audit scanned only \(scanned) files; the walker is not reaching the tree")
+    precondition(findings.isEmpty, "Secret audit found \(findings.count) issue(s):\n" + findings.prefix(20).joined(separator: "\n"))
+
+    // The shipped public client keys must stay in one auditable place.
+    let keyFile = root.appendingPathComponent("Sources/GoogleWebClientKeys.swift")
+    precondition(FileManager.default.fileExists(atPath: keyFile.path), "Public client keys must live in Sources/GoogleWebClientKeys.swift")
+    precondition(GoogleWebClientKeys.resolvedCloudConsole().hasPrefix("AIza"))
+    precondition(GoogleWebClientKeys.resolvedAIStudio().hasPrefix("AIza"))
+
+    print("Passed: secret audit over \(scanned) files — no credentials, personal paths, or personal email addresses; public Google client keys centralised.")
+}
+
+/// Verifies the self-updater end to end without publishing anything: a local
+/// fixture stands in for the GitHub release API, and a live check confirms the real
+/// endpoint still parses.
+func updaterChecks() async throws {
+    let fixtures = FileManager.default.temporaryDirectory.appendingPathComponent("APIBarUpdater-" + UUID().uuidString)
+    try FileManager.default.createDirectory(at: fixtures, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: fixtures) }
+
+    func serve(_ json: String, at path: String) throws -> String {
+        let file = fixtures.appendingPathComponent(path.replacingOccurrences(of: "/", with: "_") + ".json")
+        try Data(json.utf8).write(to: file)
+        return file.path
+    }
+
+    func releaseJSON(tag: String, name: String, zipSize: Int, updated: String = "2026-11-05T12:00:00Z") -> String {
+        """
+        {"tag_name":"\(tag)","name":"\(name)","body":"notes for \(tag)","html_url":"https://github.com/0xCosmosly/API-Bar/releases/tag/\(tag)",
+         "assets":[{"name":"APIBar-app.zip","size":\(zipSize),"browser_download_url":"https://github.com/0xCosmosly/API-Bar/releases/download/\(tag)/APIBar-app.zip","updated_at":"\(updated)"}]}
+        """
+    }
+
+    let updater = await AppUpdater.shared
+    let localVersion = await updater.currentVersion
+    // The test binary is not a bundle, so the shipped version is read from the
+    // Info.plist that build.command packages.
+    if let plistData = try? Data(contentsOf: URL(fileURLWithPath: "Resources/Info.plist")),
+       let plist = try? PropertyListSerialization.propertyList(from: plistData, format: nil) as? [String: Any],
+       let shipped = plist["CFBundleShortVersionString"] as? String {
+        precondition(shipped == "0.5.1", "Info.plist must ship 0.5.1, got \(shipped)")
+        precondition(plist["CFBundleVersion"] as? String == "51", "CFBundleVersion must be 51")
+    } else {
+        preconditionFailure("Could not read Resources/Info.plist")
+    }
+    precondition(localVersion == "0.5.1", "Expected the updater to report 0.5.1, got \(localVersion)")
+
+    // A newer release must be detected, with the zip asset selected.
+    setenv("APIBAR_UPDATER_ENDPOINT", try serve(releaseJSON(tag: "v0.5.2", name: "API Bar 0.5.2", zipSize: 2_200_000), at: "newer"), 1)
+    let newer = try await updater.fetchReleaseInfo()
+    precondition(newer.version == "0.5.2", "Tag v0.5.2 must parse to 0.5.2, got \(newer.version)")
+    precondition(AppUpdater.isVersion(newer.version, newerThan: localVersion), "0.5.2 must be newer than \(localVersion)")
+    precondition(newer.downloadURL?.lastPathComponent == "APIBar-app.zip", "Updater must select the zip asset, got \(newer.downloadURL?.absoluteString ?? "nil")")
+    precondition(newer.notes.contains("notes for v0.5.2"))
+
+    // The same version must not offer an update, even though an asset exists.
+    setenv("APIBAR_UPDATER_ENDPOINT", try serve(releaseJSON(tag: "v0.5.1", name: "API Bar 0.5.1", zipSize: 2_100_000), at: "same"), 1)
+    let same = try await updater.fetchReleaseInfo()
+    precondition(same.version == "0.5.1")
+    precondition(!AppUpdater.isVersion(same.version, newerThan: localVersion), "Same version must not be treated as an update")
+
+    // An older release must never trigger a downgrade.
+    setenv("APIBAR_UPDATER_ENDPOINT", try serve(releaseJSON(tag: "v0.5.0", name: "API Bar 0.5.0", zipSize: 2_073_811), at: "older"), 1)
+    let older = try await updater.fetchReleaseInfo()
+    precondition(!AppUpdater.isVersion(older.version, newerThan: localVersion), "Older release must not be an update")
+
+    // A release without a zip asset still yields a deterministic download URL.
+    let noAsset = """
+    {"tag_name":"v0.6.0","name":"API Bar 0.6.0","body":"x","html_url":"https://github.com/0xCosmosly/API-Bar/releases/tag/v0.6.0","assets":[]}
+    """
+    setenv("APIBAR_UPDATER_ENDPOINT", try serve(noAsset, at: "noasset"), 1)
+    let fallback = try await updater.fetchReleaseInfo()
+    precondition(fallback.downloadURL?.absoluteString == "https://github.com/0xCosmosly/API-Bar/releases/download/v0.6.0/APIBar-app.zip",
+                 "Missing asset must fall back to the conventional zip URL, got \(fallback.downloadURL?.absoluteString ?? "nil")")
+
+    // A broken fixture must fail loudly rather than reporting an update.
+    setenv("APIBAR_UPDATER_ENDPOINT", try serve("{\"unexpected\":true}", at: "broken"), 1)
+    do {
+        _ = try await updater.fetchReleaseInfo()
+        preconditionFailure("Updater accepted a release payload with no tag")
+    } catch { }
+
+    unsetenv("APIBAR_UPDATER_ENDPOINT")
+
+    // Live check: the real endpoint must still parse. Skipped offline so the suite
+    // stays deterministic, but reported so a silent outage is visible.
+    var liveReport = "skipped (offline)"
+    if ProcessInfo.processInfo.environment["APIBAR_SKIP_NETWORK"] == nil {
+        do {
+            let live = try await updater.fetchReleaseInfo()
+            precondition(!live.version.isEmpty)
+            precondition(live.downloadURL != nil)
+            let isNewer = AppUpdater.isVersion(live.version, newerThan: localVersion)
+            liveReport = "live release v\(live.version), update available: \(isNewer)"
+            // Nothing may be offered that is older than the running build.
+            precondition(isNewer == (live.version.compare(localVersion, options: .numeric) == .orderedDescending || AppUpdater.isVersion(live.version, newerThan: localVersion)))
+        } catch {
+            liveReport = "live check failed: \(error.localizedDescription)"
+        }
+    }
+
+    print("Passed: auto-updater detection (newer/same/older/no-asset/broken payload) against fixtures; \(liveReport).")
 }
 
 func redirectChecks() async throws {

@@ -19,6 +19,10 @@ func providerAccentColor(_ id: String) -> Color {
         return Color(red: 123/255.0, green: 31/255.0, blue: 162/255.0) // Venice Purple #7B1FA2
     case "lutheos":
         return Color(red: 173/255.0, green: 79/255.0, blue: 44/255.0)  // Lutheos Terracotta #AD4F2C
+    case "unaligned":
+        return Color(red: 229/255.0, green: 50/255.0, blue: 45/255.0) // Unaligned Signal Red #E5322D
+    case "yeta":
+        return Color(red: 202/255.0, green: 138/255.0, blue: 4/255.0) // Yeta Amber #CA8A04
     default:
         return Color.accentColor
     }
@@ -287,15 +291,15 @@ struct OverviewCardContent: View {
     @ObservedObject var app: APIBarApp
 
     var connectedCount: Int {
-        app.balances.filter { app.isConnected($0.id) }.count
+        app.activeBalances.filter { app.isConnected($0.id) }.count
     }
 
     var totalUsdRemaining: Double {
-        app.balances.reduce(0.0) { $0 + $1.remaining }
+        app.activeBalances.reduce(0.0) { $0 + $1.remaining }
     }
 
     var totalBaseline: Double {
-        app.balances.reduce(0.0) { $0 + $1.baseline }
+        app.activeBalances.reduce(0.0) { $0 + $1.baseline }
     }
 
     var totalPercent: Double {
@@ -336,7 +340,7 @@ struct OverviewCardContent: View {
                     }
                 }
                 HStack {
-                    Text("\(connectedCount) of \(app.balances.count) connected · All active providers")
+                    Text("\(connectedCount) of \(app.activeBalances.count) connected · All active providers")
                         .font(.system(size: 12.5))
                         .foregroundStyle(Color.secondary)
                 }
@@ -348,7 +352,7 @@ struct OverviewCardContent: View {
 
             // Provider Rows
             VStack(alignment: .leading, spacing: 8) {
-                ForEach(app.balances, id: \.id) { balance in
+                ForEach(app.activeBalances, id: \.id) { balance in
                     VStack(alignment: .leading, spacing: 4) {
                         HStack(alignment: .center, spacing: 8) {
                             PaperProviderBadge(id: balance.id, name: balance.name, size: 22)
@@ -607,7 +611,296 @@ struct ManageProvidersSheet: View {
         case "crowbot": return "Crowbot Chat & API Credits"
         case "refuseless": return "Refuseless Balance"
         case "lutheos": return "Lutheos Private Inference Balance"
+        case "unaligned": return "Unaligned Prepaid API Balance (API key)"
+        case "yeta": return "Yeta Prepaid Gateway Credit"
         default: return "API Balance & Credit Monitor"
+        }
+    }
+}
+
+
+/// One provider row in Settings. Extracted from SettingsPane so the SwiftUI type
+/// checker can handle it and so the row's behavior is testable in isolation.
+struct ProviderSettingsRow: View {
+    @ObservedObject var app: APIBarApp
+    let index: Int
+    let balance: Balance
+    @Binding var draggedBalance: Balance?
+
+    private var isFirst: Bool { index == 0 }
+    private var isLast: Bool { index >= app.balances.count - 1 }
+
+    private var statusDot: Color {
+        if !balance.isEnabled { return Color.secondary.opacity(0.4) }
+        if app.isConnected(balance.id) { return Color.green }
+        if app.inFlight.contains(balance.id) { return Color.orange }
+        return Color.secondary.opacity(0.4)
+    }
+
+    private var statusText: Color {
+        if app.isConnected(balance.id) { return Color.secondary }
+        if app.inFlight.contains(balance.id) { return Color.orange }
+        return Color.secondary.opacity(0.8)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .center, spacing: 10) {
+                reorderHandle
+                PaperProviderBadge(id: balance.id, name: balance.name, size: 28)
+                nameAndStatus
+                Spacer()
+                enabledToggle
+                baselineButton
+                connectButton
+                removeButton
+            }
+            if balance.dynamicEndpoint != nil {
+                apiKeyField
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.025)))
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.primary.opacity(0.06), lineWidth: 1))
+        .onDrag {
+            draggedBalance = balance
+            return NSItemProvider(object: balance.id as NSString)
+        }
+        .onDrop(of: [UTType.text], delegate: ProviderDropDelegate(item: balance, app: app, draggedItem: $draggedBalance))
+    }
+
+    /// Drag affordance plus explicit arrows, so ordering never depends on hitting
+    /// a small drag target.
+    private var reorderHandle: some View {
+        VStack(spacing: 0) {
+            Image(systemName: "line.3.horizontal")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Color.secondary)
+            HStack(spacing: 2) {
+                Button {
+                    app.moveProviderUp(index: index)
+                } label: {
+                    Image(systemName: "chevron.up")
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundStyle(isFirst ? Color.secondary.opacity(0.3) : Color.secondary)
+                }
+                .buttonStyle(.plain)
+                .disabled(isFirst)
+                .help("Move \(balance.name) up")
+
+                Button {
+                    app.moveProviderDown(index: index)
+                } label: {
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundStyle(isLast ? Color.secondary.opacity(0.3) : Color.secondary)
+                }
+                .buttonStyle(.plain)
+                .disabled(isLast)
+                .help("Move \(balance.name) down")
+            }
+        }
+        .frame(width: 20, height: 26)
+        .contentShape(Rectangle())
+        .help("Drag or use the arrows to reorder \(balance.name)")
+        .onDrag {
+            draggedBalance = balance
+            return NSItemProvider(object: balance.id as NSString)
+        }
+    }
+
+    private var nameAndStatus: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 6) {
+                Text(balance.name)
+                    .font(.system(size: 14.5, weight: .semibold))
+                    .foregroundStyle(Color.primary)
+                if !balance.isEnabled {
+                    Text("Paused")
+                        .font(.system(size: 10.5, weight: .semibold))
+                        .foregroundStyle(Color.secondary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 1.5)
+                        .background(Capsule().fill(Color.primary.opacity(0.07)))
+                }
+            }
+            HStack(spacing: 5) {
+                Circle().fill(statusDot).frame(width: 6, height: 6)
+                Text(app.providerStatus[balance.id] ?? "Not connected")
+                    .font(.system(size: 12))
+                    .foregroundStyle(statusText)
+                    .lineLimit(2)
+            }
+        }
+    }
+
+    private var enabledToggle: some View {
+        Toggle(isOn: Binding(
+            get: { balance.isEnabled },
+            set: { app.setProviderEnabled($0, id: balance.id) }
+        )) {
+            Text("Enabled")
+        }
+        .toggleStyle(.switch)
+        .controlSize(.mini)
+        .labelsHidden()
+        .fixedSize()
+        .help(balance.isEnabled
+              ? "Pause \(balance.name). It keeps its settings and saved key but stops refreshing and leaves the menu bar."
+              : "Resume \(balance.name).")
+    }
+
+    private var baselineButton: some View {
+        Button("100%: \(balance.baseline.formatted(.currency(code: "USD")))") {
+            app.setBaseline(for: index)
+        }
+        .buttonStyle(PaperPillButtonStyle(tintColor: .accentColor))
+        .fixedSize(horizontal: true, vertical: false)
+        .help("Click to edit the 100% baseline reference for \(balance.name)")
+    }
+
+    @ViewBuilder
+    private var connectButton: some View {
+        if app.isConnected(balance.id) {
+            Button("Disconnect") { app.disconnect(balance.id) }
+                .buttonStyle(PaperPillButtonStyle(tintColor: .red))
+                .disabled(app.inFlight.contains(balance.id))
+                .fixedSize(horizontal: true, vertical: false)
+        } else {
+            Button("Connect") { app.connect(balance.id) }
+                .buttonStyle(PaperWhiteButtonStyle())
+                .disabled(app.inFlight.contains(balance.id) || !balance.isEnabled)
+                .fixedSize(horizontal: true, vertical: false)
+        }
+    }
+
+    private var removeButton: some View {
+        Button {
+            app.removeProvider(id: balance.id)
+        } label: {
+            Image(systemName: "trash")
+                .font(.system(size: 13))
+                .foregroundStyle(Color.secondary)
+                .frame(width: 22, height: 22)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("Remove \(balance.name)")
+    }
+
+    private var apiKeyField: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "key.fill")
+                .font(.caption)
+                .foregroundStyle(Color.secondary)
+            TextField("Admin API Key (Bearer token)", text: Binding(
+                get: { balance.dynamicAuthHeader ?? "" },
+                set: { app.setAuthHeader($0, for: balance.id) }
+            ))
+            .textFieldStyle(.roundedBorder)
+            .font(.system(size: 12.5, design: .monospaced))
+
+            Button("Paste Key") {
+                if let clip = NSPasteboard.general.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines), !clip.isEmpty {
+                    app.setAuthHeader(clip, for: balance.id)
+                }
+            }
+            .buttonStyle(PaperWhiteButtonStyle())
+        }
+        .padding(.leading, 38)
+        .padding(.top, 2)
+    }
+}
+
+/// One optional integration that API Bar mirrors through iCloud Drive.
+struct IntegrationSyncRow: View {
+    let title: String
+    let detail: String
+    let credentialDetail: String
+    @Binding var isOn: Bool
+    @Binding var syncCredentials: Bool
+    var compact = false
+
+    private var titleFont: Font { compact ? .subheadline : .body }
+    private var detailFont: Font { compact ? .caption : .subheadline }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: compact ? 3 : 6) {
+            Toggle(title, isOn: $isOn)
+                .font(titleFont)
+                .foregroundStyle(Color.primary)
+
+            Text(detail)
+                .font(detailFont)
+                .foregroundStyle(Color.secondary)
+
+            if isOn {
+                VStack(alignment: .leading, spacing: compact ? 2 : 4) {
+                    Toggle("Sync API Keys & Credentials", isOn: $syncCredentials)
+                        .font(compact ? .caption : .body)
+                        .fontWeight(compact ? .regular : .medium)
+                        .foregroundStyle(Color.primary)
+
+                    Text(credentialDetail)
+                        .font(detailFont)
+                        .foregroundStyle(Color.secondary)
+                }
+                .padding(compact ? 0 : 10)
+                .padding(.leading, compact ? 16 : 0)
+                .background(
+                    Group {
+                        if compact {
+                            Color.clear
+                        } else {
+                            RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.025))
+                        }
+                    }
+                )
+                .overlay(
+                    Group {
+                        if compact {
+                            Color.clear
+                        } else {
+                            RoundedRectangle(cornerRadius: 8).stroke(Color.primary.opacity(0.06), lineWidth: 1)
+                        }
+                    }
+                )
+                .padding(.top, compact ? 0 : 2)
+            }
+        }
+    }
+}
+
+/// The coding-agent integrations API Bar can sync. Onboarding and Settings used to
+/// each hand-roll these two blocks; they now share one definition so the copy and
+/// the toggles cannot drift apart.
+struct IntegrationSyncSection: View {
+    @ObservedObject var app: APIBarApp
+    @ObservedObject private var icloud = ICloudSync.shared
+    var compact = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: compact ? 10 : 14) {
+            IntegrationSyncRow(
+                title: "Sync OpenCode Configuration (Optional)",
+                detail: "Syncs models and providers configured in OpenCode (~/.config/opencode/opencode.json) across devices via iCloud Drive.",
+                credentialDetail: "Synchronizes your OpenCode API keys and authentication tokens via your private iCloud vault, so models connect without re-authenticating.",
+                isOn: Binding(get: { app.isOpenCodeSyncEnabled }, set: { app.setOpenCodeSyncEnabled($0) }),
+                syncCredentials: Binding(get: { app.isOpenCodeCredentialsSyncEnabled }, set: { app.setOpenCodeCredentialsSyncEnabled($0) }),
+                compact: compact
+            )
+
+            if !compact { Divider().opacity(0.6) }
+
+            IntegrationSyncRow(
+                title: "Sync Pi Configuration (Optional)",
+                detail: "Syncs models and settings configured in Pi (~/.pi/agent) across devices via iCloud Drive.",
+                credentialDetail: "Synchronizes your Pi API keys and authentication tokens (~/.pi/agent/auth.json) via your private iCloud vault.",
+                isOn: Binding(get: { app.isPiSyncEnabled }, set: { app.setPiSyncEnabled($0) }),
+                syncCredentials: Binding(get: { app.isPiCredentialsSyncEnabled }, set: { app.setPiCredentialsSyncEnabled($0) }),
+                compact: compact
+            )
         }
     }
 }
@@ -699,7 +992,7 @@ struct OnboardingView: View {
                 .fontWeight(.bold)
 
             VStack(alignment: .leading, spacing: 14) {
-                featureRow(icon: "chart.bar.xaxis", title: "Live Credit Gauges", description: "Monitor remaining balance and automatic 100% baseline usage across Vertex AI, Fireworks, Cerebras, Google AI Studio, Refuseless, Lutheos, and Crowbot.")
+                featureRow(icon: "chart.bar.xaxis", title: "Live Credit Gauges", description: "Monitor remaining balance and automatic 100% baseline usage across Vertex AI, Fireworks, Cerebras, Google AI Studio, Refuseless, Lutheos, Unaligned, and Crowbot.")
                 featureRow(icon: "shield.checkered", title: "Zero API Key Hassle", description: "API Bar securely reads authenticated sessions from \(app.browserName) Browser directly on your device. No credentials ever leave your Mac.")
                 featureRow(icon: "menubar.rectangle", title: "Flexible Menu Bar Display", description: "View all providers in a single compact merged gauge or separate icons for each provider.")
                 featureRow(icon: "lock.shield", title: "100% Private & Local", description: "Zero telemetry or external servers. All credentials stay strictly in your local macOS Keychain.")
@@ -967,51 +1260,9 @@ struct OnboardingView: View {
                         .foregroundStyle(Color.secondary)
 
                     if app.iCloudSyncEnabled {
-                        VStack(alignment: .leading, spacing: 3) {
-                            Toggle("Sync OpenCode Configuration (Optional)", isOn: Binding(
-                                get: { app.isOpenCodeSyncEnabled },
-                                set: { app.setOpenCodeSyncEnabled($0) }
-                            ))
-                            .font(.subheadline)
-
-                            Text("Optional. Syncs models and providers (~/.config/opencode/opencode.json).")
-                                .font(.caption)
-                                .foregroundStyle(Color.secondary)
-
-                            if app.isOpenCodeSyncEnabled {
-                                Toggle("Sync API Keys & Credentials", isOn: Binding(
-                                    get: { app.isOpenCodeCredentialsSyncEnabled },
-                                    set: { app.setOpenCodeCredentialsSyncEnabled($0) }
-                                ))
-                                .font(.caption)
-                                .padding(.leading, 16)
-                            }
-                        }
-                        .padding(.top, 4)
-                        .padding(.leading, 8)
-
-                        VStack(alignment: .leading, spacing: 3) {
-                            Toggle("Sync Pi Configuration (Optional)", isOn: Binding(
-                                get: { app.isPiSyncEnabled },
-                                set: { app.setPiSyncEnabled($0) }
-                            ))
-                            .font(.subheadline)
-
-                            Text("Optional. Syncs models and settings (~/.pi/agent).")
-                                .font(.caption)
-                                .foregroundStyle(Color.secondary)
-
-                            if app.isPiSyncEnabled {
-                                Toggle("Sync API Keys & Credentials", isOn: Binding(
-                                    get: { app.isPiCredentialsSyncEnabled },
-                                    set: { app.setPiCredentialsSyncEnabled($0) }
-                                ))
-                                .font(.caption)
-                                .padding(.leading, 16)
-                            }
-                        }
-                        .padding(.top, 4)
-                        .padding(.leading, 8)
+                        IntegrationSyncSection(app: app, compact: true)
+                            .padding(.top, 4)
+                            .padding(.leading, 8)
                     }
                 }
 
@@ -1071,6 +1322,8 @@ struct OnboardingView: View {
         case "crowbot": return "Crowbot Chat & API Credits"
         case "refuseless": return "Refuseless Balance"
         case "lutheos": return "Lutheos Private Inference Balance"
+        case "unaligned": return "Unaligned Prepaid API Balance (API key)"
+        case "yeta": return "Yeta Prepaid Gateway Credit"
         default: return "API Balance & Credit Monitor"
         }
     }
@@ -1113,6 +1366,14 @@ struct SettingsPane: View {
 
     var allNativeSelected: Bool {
         Balance.initial.allSatisfy { initB in app.balances.contains(where: { $0.id == initB.id }) }
+    }
+
+    var providersCardTitle: String {
+        let paused = app.balances.count - app.activeBalances.count
+        if paused > 0 {
+            return "Monitored Providers (\(app.activeBalances.count) active, \(paused) paused)"
+        }
+        return "Monitored Providers (\(app.balances.count))"
     }
 
     var body: some View {
@@ -1305,73 +1566,7 @@ struct SettingsPane: View {
                 if icloud.isEnabled {
                     Divider().opacity(0.6)
 
-                    VStack(alignment: .leading, spacing: 6) {
-                        Toggle("Sync OpenCode Configuration (Optional)", isOn: Binding(
-                            get: { icloud.isOpenCodeSyncEnabled },
-                            set: { icloud.setOpenCodeSyncEnabled($0) }
-                        ))
-                        .font(.body)
-                        .foregroundStyle(Color.primary)
-
-                        Text("Optional. Syncs models and providers configured in OpenCode (~/.config/opencode/opencode.json) across devices via iCloud Drive.")
-                            .font(.subheadline)
-                            .foregroundStyle(Color.secondary)
-
-                        if icloud.isOpenCodeSyncEnabled {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Toggle("Sync API Keys & Credentials", isOn: Binding(
-                                    get: { icloud.isOpenCodeCredentialsSyncEnabled },
-                                    set: { icloud.setOpenCodeCredentialsSyncEnabled($0) }
-                                ))
-                                .font(.body)
-                                .fontWeight(.medium)
-                                .foregroundStyle(Color.primary)
-
-                                Text("Synchronizes your OpenCode stored API keys and authentication tokens via your private iCloud vault so models connect immediately without re-authenticating.")
-                                    .font(.subheadline)
-                                    .foregroundStyle(Color.secondary)
-                            }
-                            .padding(10)
-                            .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.025)))
-                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.primary.opacity(0.06), lineWidth: 1))
-                            .padding(.top, 2)
-                        }
-                    }
-
-                    Divider().opacity(0.6)
-
-                    VStack(alignment: .leading, spacing: 6) {
-                        Toggle("Sync Pi Configuration (Optional)", isOn: Binding(
-                            get: { icloud.isPiSyncEnabled },
-                            set: { icloud.setPiSyncEnabled($0) }
-                        ))
-                        .font(.body)
-                        .foregroundStyle(Color.primary)
-
-                        Text("Optional. Syncs models and settings configured in Pi (~/.pi/agent) across devices via iCloud Drive.")
-                            .font(.subheadline)
-                            .foregroundStyle(Color.secondary)
-
-                        if icloud.isPiSyncEnabled {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Toggle("Sync API Keys & Credentials", isOn: Binding(
-                                    get: { icloud.isPiCredentialsSyncEnabled },
-                                    set: { icloud.setPiCredentialsSyncEnabled($0) }
-                                ))
-                                .font(.body)
-                                .fontWeight(.medium)
-                                .foregroundStyle(Color.primary)
-
-                                Text("Synchronizes your Pi stored API keys and authentication tokens (~/.pi/agent/auth.json) via your private iCloud vault.")
-                                    .font(.subheadline)
-                                    .foregroundStyle(Color.secondary)
-                            }
-                            .padding(10)
-                            .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.025)))
-                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.primary.opacity(0.06), lineWidth: 1))
-                            .padding(.top, 2)
-                        }
-                    }
+                    IntegrationSyncSection(app: app)
 
                     Divider().opacity(0.6)
 
@@ -1422,11 +1617,11 @@ struct SettingsPane: View {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(alignment: .center) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Monitored Providers (\(app.balances.count))")
+                        Text(providersCardTitle)
                             .font(.title3)
                             .fontWeight(.bold)
                             .foregroundStyle(Color.primary)
-                        Text("Drag ≡ to reorder. 100% baseline updates automatically from payments.")
+                        Text("Drag a row or use ▲▼ to reorder this list and the popover tabs. Menu bar icon placement is managed by your menu bar app (Thaw, Bartender, Ice). Switch a provider off to pause it without deleting its settings. 100% baseline updates automatically from payments.")
                             .font(.subheadline)
                             .foregroundStyle(Color.secondary)
                     }
@@ -1472,102 +1667,7 @@ struct SettingsPane: View {
                         .padding(.vertical, 28)
                     } else {
                         ForEach(Array(app.balances.enumerated()), id: \.element.id) { index, balance in
-                            VStack(alignment: .leading, spacing: 6) {
-                                HStack(alignment: .center, spacing: 10) {
-                                    // Draggable three lines handle
-                                    Image(systemName: "line.3.horizontal")
-                                        .font(.system(size: 13, weight: .semibold))
-                                        .foregroundStyle(Color.secondary)
-                                        .frame(width: 18, height: 18)
-                                        .contentShape(Rectangle())
-                                        .help("Drag to reorder \(balance.name)")
-                                        .onDrag {
-                                            self.draggedBalance = balance
-                                            return NSItemProvider(object: balance.id as NSString)
-                                        }
-
-                                    PaperProviderBadge(id: balance.id, name: balance.name, size: 28)
-
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(balance.name)
-                                            .font(.system(size: 14.5, weight: .semibold))
-                                            .foregroundStyle(Color.primary)
-                                        HStack(spacing: 5) {
-                                            if app.isConnected(balance.id) {
-                                                Circle().fill(Color.green).frame(width: 6, height: 6)
-                                            } else if app.inFlight.contains(balance.id) {
-                                                Circle().fill(Color.orange).frame(width: 6, height: 6)
-                                            } else {
-                                                Circle().fill(Color.secondary.opacity(0.4)).frame(width: 6, height: 6)
-                                            }
-                                            Text(app.providerStatus[balance.id] ?? "Not connected")
-                                                .font(.system(size: 12))
-                                                .foregroundStyle(app.isConnected(balance.id) ? Color.secondary : (app.inFlight.contains(balance.id) ? Color.orange : Color.secondary.opacity(0.8)))
-                                        }
-                                    }
-
-                                    Spacer()
-
-                                    Button("100%: \(balance.baseline.formatted(.currency(code: "USD")))") {
-                                        app.setBaseline(for: index)
-                                    }
-                                    .buttonStyle(PaperPillButtonStyle(tintColor: .accentColor))
-                                    .fixedSize(horizontal: true, vertical: false)
-                                    .help("Click to edit the 100% baseline reference for \(balance.name)")
-
-                                    if app.isConnected(balance.id) {
-                                        Button("Disconnect") { app.disconnect(balance.id) }
-                                            .buttonStyle(PaperPillButtonStyle(tintColor: .red))
-                                            .disabled(app.inFlight.contains(balance.id))
-                                            .fixedSize(horizontal: true, vertical: false)
-                                    } else {
-                                        Button("Connect") { app.connect(balance.id) }
-                                            .buttonStyle(PaperWhiteButtonStyle())
-                                            .disabled(app.inFlight.contains(balance.id))
-                                            .fixedSize(horizontal: true, vertical: false)
-                                    }
-
-                                    Button {
-                                        app.removeProvider(id: balance.id)
-                                    } label: {
-                                        Image(systemName: "trash")
-                                            .font(.system(size: 13))
-                                            .foregroundStyle(Color.secondary)
-                                            .frame(width: 22, height: 22)
-                                            .contentShape(Rectangle())
-                                    }
-                                    .buttonStyle(.plain)
-                                    .help("Remove \(balance.name)")
-                                }
-
-                                if balance.dynamicEndpoint != nil {
-                                    HStack(spacing: 8) {
-                                        Image(systemName: "key.fill")
-                                            .font(.caption)
-                                            .foregroundStyle(Color.secondary)
-                                        TextField("Admin API Key (Bearer token)", text: Binding(
-                                            get: { balance.dynamicAuthHeader ?? "" },
-                                            set: { app.setAuthHeader($0, for: balance.id) }
-                                        ))
-                                        .textFieldStyle(.roundedBorder)
-                                        .font(.system(size: 12.5, design: .monospaced))
-
-                                        Button("Paste Key") {
-                                            if let clip = NSPasteboard.general.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines), !clip.isEmpty {
-                                                app.setAuthHeader(clip, for: balance.id)
-                                            }
-                                        }
-                                        .buttonStyle(PaperWhiteButtonStyle())
-                                    }
-                                    .padding(.leading, 38)
-                                    .padding(.top, 2)
-                                }
-                            }
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 8)
-                            .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.025)))
-                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.primary.opacity(0.06), lineWidth: 1))
-                            .onDrop(of: [UTType.text], delegate: ProviderDropDelegate(item: balance, app: app, draggedItem: $draggedBalance))
+                            ProviderSettingsRow(app: app, index: index, balance: balance, draggedBalance: $draggedBalance)
                         }
                     }
                 }
@@ -1875,7 +1975,7 @@ struct SettingsPane: View {
 
     @ViewBuilder
     private var browserSessionActions: some View {
-        let allConnected = !app.inFlight.isEmpty || app.balances.allSatisfy { app.isConnected($0.id) }
+        let allConnected = !app.inFlight.isEmpty || app.activeBalances.allSatisfy { app.isConnected($0.id) }
         HStack(spacing: 8) {
             Button(app.braveAccessKind == .fullDisk ? "Full Disk Access ✓" : "Grant Full Disk Access") {
                 app.openFullDiskAccessSettings()

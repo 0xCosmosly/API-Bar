@@ -47,6 +47,7 @@
 - ⏱️ **Runway & Burn Velocity**: Real-time pacing estimates calculated from your actual usage (e.g. `1.9M tokens/day · Runs out in 3 days`) so you're never caught off guard.
 - 🔑 **Zero API Key Hassle**: Automatically connects to your signed-in browser sessions (Brave, Google Chrome, Arc, Microsoft Edge, Vivaldi, Chromium). No hunting down administrative secret keys.
 - 🎛️ **Single or Individual Icons**: Merge all your AI platforms into one smart, compact menu bar gauge or pin individual provider badges side-by-side.
+- ⏸️ **Pause Instead of Delete**: Switch a provider off to stop tracking it while keeping its settings, saved session and position in the list.
 - ☁️ **iCloud Sync Across Macs**: Monitored platforms, baseline targets, and optional OpenCode configs (`opencode.json`) automatically sync between your desktop and laptop via your private iCloud Drive.
 - 🪄 **Add Any AI API in Seconds**: Paste a cURL command or JSON payload from any provider (OpenRouter, Groq, Together, DeepSeek, local Ollama/vLLM), and on-device intelligence configures it automatically.
 - 🎯 **Automatic 100% Baseline Targets**: Automatically detects top-ups, deposits, and trial grants to calculate remaining percentage capacity accurately.
@@ -85,8 +86,10 @@
 | **Google AI Studio** | Token credits, project allocation & developer quota | Browser session (`__Secure-` auth) | Project allocation |
 | **Refuseless** | Prepaid USD balance, deposit ledger & burn velocity | Browser session | Total deposits sum |
 | **Lutheos** | Private inference prepaid balance & runway pacing | Browser session or Bearer key | Credited top-up tier |
+| **Unaligned** | Prepaid USD balance (micro-dollar precision) | Browser session (dashboard) | Crypto top-up ledger |
 | **Venice AI** | Dual consumption balances (USD fiat & DIEM token) | Browser session or Bearer key | Inferred baseline |
 | **Crowbot** | Chat & API usage credits (microdollar precision) | Browser session (`crowbot_session`) | Account quota |
+| **Yeta** | Prepaid gateway credit (ships paused) | Browser session (console) | Remaining + spent quota |
 | **OpenCode Sync (Optional)** | Model & provider configuration synchronization | Apple iCloud Drive container | Automatic `.bak` safety |
 | **Custom / Any AI API** | OpenRouter, Groq, Together, DeepSeek, Local Ollama | cURL / JSON via on-device extractor | Custom reference |
 
@@ -140,7 +143,7 @@ API Bar is built from the ground up for privacy-conscious developers:
 ## ❓ FAQ
 
 **Q: Do I need to generate API keys for every provider?**  
-No. For natively supported providers (Vertex AI, Fireworks, Cerebras, Google AI Studio, Refuseless, Lutheos, Crowbot), API Bar reads your existing signed-in browser session. You can also provide manual Bearer tokens if preferred.
+No. For natively supported providers (Vertex AI, Fireworks, Cerebras, Google AI Studio, Refuseless, Lutheos, Unaligned, Yeta, Crowbot), API Bar reads your existing signed-in browser session. You can also provide manual Bearer tokens if preferred.
 
 **Q: Which browsers are supported for automatic session import?**  
 API Bar automatically detects your primary browser and supports **Brave Browser**, **Google Chrome**, **Arc**, **Microsoft Edge**, **Vivaldi**, and **Chromium**.

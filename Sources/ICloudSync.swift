@@ -518,7 +518,13 @@ final class ICloudSync: ObservableObject {
 
             for remote in remoteBalances {
                 if let localIdx = current.firstIndex(where: { $0.id == remote.id }) {
-                    if remote.baseline > 0 && remote.baseline != current[localIdx].baseline {
+                    // A prepaid balance reference cannot be thousands of times the
+                    // remaining balance. An early Unaligned build stored its
+                    // micro-dollar balance as the reference, and re-adopting that
+                    // from the cloud would undo the local repair on every pull.
+                    let implausibleBaseline = remote.baseline > 1_000 && remote.remaining < 1_000
+                        && remote.baseline > remote.remaining * 1_000
+                    if remote.baseline > 0 && remote.baseline != current[localIdx].baseline && !implausibleBaseline {
                         if remote.updated >= current[localIdx].updated || current[localIdx].baseline == 0 {
                             current[localIdx].baseline = max(remote.baseline, current[localIdx].remaining)
                             didChangeLocally = true

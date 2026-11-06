@@ -7,8 +7,8 @@ struct GoogleProvider: BalanceProvider {
     let account: String
     static let endpoint = "https://cloudconsole-pa.clients6.google.com/v3/entityServices/BillingpricefactorsEntityService/schemas/BILLINGPRICEFACTORS_GRAPHQL:batchGraphql"
     static let signature = "2/PydlIw7s18h/dddSmzGlmxPZVxi71ZcnKjkR278Ovtw="
-    static let defaultConsumerKey = "AIzaSyCI-zsRP85UVOi0DjtiCwWBwQ1djDy741g"
-    static let consumerKeyDefaultsKey = "GoogleConsumerKey"
+    static let defaultConsumerKey = GoogleWebClientKeys.cloudConsole
+    static let consumerKeyDefaultsKey = GoogleWebClientKeys.cloudConsoleDefaultsKey
 
     static func consumerKey(in html: String) throws -> String {
         // Cloud Console's bootstrap names its client key LjgHrc. Other Google
@@ -25,7 +25,7 @@ struct GoogleProvider: BalanceProvider {
     }
 
     static func resolvedConsumerKey() -> String {
-        UserDefaults.standard.string(forKey: consumerKeyDefaultsKey) ?? defaultConsumerKey
+        GoogleWebClientKeys.resolvedCloudConsole()
     }
 
     func discoverConsumerKey(account: String = "") async throws -> String {
