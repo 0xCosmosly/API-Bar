@@ -2,7 +2,34 @@ import AppKit
 import SwiftUI
 
 @main struct UIInteractionChecks {
+    /// These checks deliberately rewrite configs, vault files, and balances. They
+    /// must never touch the live home directory when someone runs the binary
+    /// directly instead of through `check.command`.
+    private static func requireIsolatedTestEnvironment() {
+        let env = ProcessInfo.processInfo.environment
+        let keys = [
+            "APIBAR_VAULT_DIR",
+            "APIBAR_DATA_DIR",
+            "APIBAR_ICLOUD_DIR",
+            "APIBAR_OPENCODE_FILE",
+            "APIBAR_PI_DIR",
+        ]
+        let tempRoots = ["/tmp", "/private/tmp", "/var/folders", "/private/var/folders"]
+        for key in keys {
+            guard let path = env[key], !path.isEmpty else {
+                FileHandle.standardError.write(Data("Refusing to run destructive UI checks: \(key) is not set. Run ./check.command so the tests use a temporary sandbox.\n".utf8))
+                exit(2)
+            }
+            let resolved = URL(fileURLWithPath: path).resolvingSymlinksInPath().standardizedFileURL.path
+            guard tempRoots.contains(where: { resolved == $0 || resolved.hasPrefix($0 + "/") }) else {
+                FileHandle.standardError.write(Data("Refusing to run destructive UI checks: \(key)=\(path) is outside a temporary directory. Run ./check.command.\n".utf8))
+                exit(2)
+            }
+        }
+    }
+
     @MainActor static func main() async throws {
+        requireIsolatedTestEnvironment()
         _ = NSApplication.shared
         let app = APIBarApp()
         app.setSortMode(.manual)
@@ -87,6 +114,34 @@ import SwiftUI
         app.balances = Balance.initial
         app.setSortMode(.manual)
         view.updateProviders(app.balances)
+
+        // A provider whose mask PNG is missing must still render its real mark from
+        // vector geometry. This is what an older build shows when a newer provider
+        // list arrives over iCloud, and it must never degrade to a letter monogram.
+        for provider in ["unaligned", "yeta"] {
+            precondition(ProviderMarkGeometry.mark(for: provider) != nil, "\(provider) must have vector geometry")
+            let vector = ProviderMarkGeometry.image(for: provider, pixels: 54)
+            precondition(vector != nil, "\(provider) vector mask failed to render")
+            guard let cg = vector else { continue }
+            precondition(cg.width == 54 && cg.height == 54)
+            // The drawn mark must be inset from the edges and actually cover pixels.
+            guard let rep = NSBitmapImageRep(cgImage: cg) as NSBitmapImageRep? else { continue }
+            var opaque = 0
+            var minX = cg.width, maxX = 0, minY = cg.height, maxY = 0
+            for y in 0..<cg.height {
+                for x in 0..<cg.width where (rep.colorAt(x: x, y: y)?.alphaComponent ?? 0) > 0.5 {
+                    opaque += 1
+                    minX = min(minX, x); maxX = max(maxX, x); minY = min(minY, y); maxY = max(maxY, y)
+                }
+            }
+            precondition(opaque > 100, "\(provider) vector mask is empty")
+            precondition(minX > 0 && minY > 0 && maxX < cg.width - 1 && maxY < cg.height - 1,
+                         "\(provider) vector mask touches the canvas edge")
+            // And the icon pipeline must accept it as a real mask, not a monogram.
+            precondition(ProviderIcon.hasMask(for: provider), "\(provider) must resolve to a mask")
+        }
+        // Providers without geometry still fall back to a monogram rather than crashing.
+        precondition(ProviderMarkGeometry.mark(for: "definitely-not-a-provider") == nil)
 
         // Status items must be stable handles. Thaw/Bartender/Ice anchor their own
         // layout to each item, so a reorder must reuse the existing items instead of
