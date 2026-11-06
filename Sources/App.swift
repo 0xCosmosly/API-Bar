@@ -1548,6 +1548,13 @@ enum ProviderIcon {
                 return cg
             }
         }
+        // A provider whose mask is not in the bundle (an older build, or a provider
+        // list that arrived over iCloud before the matching binary) still gets its
+        // real mark drawn from vector geometry instead of a letter monogram.
+        if let vector = ProviderMarkGeometry.image(for: provider, pixels: 54) {
+            maskCache[provider] = vector
+            return vector
+        }
         return nil
     }
 
