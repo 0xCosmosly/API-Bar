@@ -300,36 +300,42 @@ import AppKit
         // ChangelogManager checks: current version, previous versions, and selection
         let changelog = ChangelogManager.shared
         precondition(changelog.entries.count >= 5, "Changelog must include at least 5 built-in versions")
-        guard let entry051 = changelog.entries.first(where: { $0.version == "0.5.1" }),
+        guard let entry052 = changelog.entries.first(where: { $0.version == "0.5.2" }),
+              let entry051 = changelog.entries.first(where: { $0.version == "0.5.1" }),
               let entry050 = changelog.entries.first(where: { $0.version == "0.5.0" }),
               let entry049 = changelog.entries.first(where: { $0.version == "0.4.9" }),
               let entry048 = changelog.entries.first(where: { $0.version == "0.4.8" }),
               let entry047 = changelog.entries.first(where: { $0.version == "0.4.7" }) else {
-            preconditionFailure("Built-in changelog missing 0.5.1, 0.5.0, 0.4.9, 0.4.8, or 0.4.7")
+            preconditionFailure("Built-in changelog missing 0.5.2, 0.5.1, 0.5.0, 0.4.9, 0.4.8, or 0.4.7")
         }
-        precondition(entry051.isCurrent(currentVersion: "0.5.1") == true)
-        precondition(entry051.isPrevious(currentVersion: "0.5.1") == false)
-        precondition(entry051.isNewer(currentVersion: "0.5.0") == true)
-        precondition(entry050.isCurrent(currentVersion: "0.5.1") == false)
-        precondition(entry050.isPrevious(currentVersion: "0.5.1") == true)
-        precondition(entry049.isPrevious(currentVersion: "0.5.1") == true)
-        precondition(entry048.isPrevious(currentVersion: "0.5.1") == true)
-        precondition(entry047.isPrevious(currentVersion: "0.5.1") == true)
+        precondition(entry052.isCurrent(currentVersion: "0.5.2") == true)
+        precondition(entry052.isPrevious(currentVersion: "0.5.2") == false)
+        precondition(entry052.isNewer(currentVersion: "0.5.1") == true)
+        precondition(entry051.isCurrent(currentVersion: "0.5.2") == false)
+        precondition(entry051.isPrevious(currentVersion: "0.5.2") == true)
+        precondition(entry050.isCurrent(currentVersion: "0.5.2") == false)
+        precondition(entry050.isPrevious(currentVersion: "0.5.2") == true)
+        precondition(entry049.isPrevious(currentVersion: "0.5.2") == true)
+        precondition(entry048.isPrevious(currentVersion: "0.5.2") == true)
+        precondition(entry047.isPrevious(currentVersion: "0.5.2") == true)
+        precondition(!entry052.highlights.isEmpty, "0.5.2 highlights must not be empty")
+        precondition(!entry052.notes.isEmpty, "0.5.2 notes must not be empty")
         precondition(!entry051.highlights.isEmpty, "0.5.1 highlights must not be empty")
         precondition(!entry051.notes.isEmpty, "0.5.1 notes must not be empty")
         precondition(!entry050.highlights.isEmpty, "0.5.0 highlights must not be empty")
         // Release notes must not leak local machine details.
+        precondition(!entry052.notes.contains("/Users/"), "Changelog must not contain personal paths")
         precondition(!entry051.notes.contains("/Users/"), "Changelog must not contain personal paths")
         // The shipped bundle version and the changelog must agree.
         if let plistVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String {
-            precondition(plistVersion == "0.5.1", "Info.plist version is \(plistVersion), expected 0.5.1")
+            precondition(plistVersion == "0.5.2", "Info.plist version is \(plistVersion), expected 0.5.2")
         }
 
-        changelog.select(version: "0.5.0")
-        precondition(changelog.selectedVersion == "0.5.0")
-        precondition(changelog.selectedEntry?.version == "0.5.0")
         changelog.select(version: "0.5.1")
         precondition(changelog.selectedVersion == "0.5.1")
+        precondition(changelog.selectedEntry?.version == "0.5.1")
+        changelog.select(version: "0.5.2")
+        precondition(changelog.selectedVersion == "0.5.2")
 
         print("Passed: ChangelogManager version history, current/previous tagging, and selection.")
         print("Passed: AppUpdater semver parsing, newer version detection, and release tagging.")
@@ -902,29 +908,29 @@ func updaterChecks() async throws {
     if let plistData = try? Data(contentsOf: URL(fileURLWithPath: "Resources/Info.plist")),
        let plist = try? PropertyListSerialization.propertyList(from: plistData, format: nil) as? [String: Any],
        let shipped = plist["CFBundleShortVersionString"] as? String {
-        precondition(shipped == "0.5.1", "Info.plist must ship 0.5.1, got \(shipped)")
-        precondition(plist["CFBundleVersion"] as? String == "51", "CFBundleVersion must be 51")
+        precondition(shipped == "0.5.2", "Info.plist must ship 0.5.2, got \(shipped)")
+        precondition(plist["CFBundleVersion"] as? String == "52", "CFBundleVersion must be 52")
     } else {
         preconditionFailure("Could not read Resources/Info.plist")
     }
-    precondition(localVersion == "0.5.1", "Expected the updater to report 0.5.1, got \(localVersion)")
+    precondition(localVersion == "0.5.2", "Expected the updater to report 0.5.2, got \(localVersion)")
 
     // A newer release must be detected, with the zip asset selected.
-    setenv("APIBAR_UPDATER_ENDPOINT", try serve(releaseJSON(tag: "v0.5.2", name: "API Bar 0.5.2", zipSize: 2_200_000), at: "newer"), 1)
+    setenv("APIBAR_UPDATER_ENDPOINT", try serve(releaseJSON(tag: "v0.5.3", name: "API Bar 0.5.3", zipSize: 2_200_000), at: "newer"), 1)
     let newer = try await updater.fetchReleaseInfo()
-    precondition(newer.version == "0.5.2", "Tag v0.5.2 must parse to 0.5.2, got \(newer.version)")
-    precondition(AppUpdater.isVersion(newer.version, newerThan: localVersion), "0.5.2 must be newer than \(localVersion)")
+    precondition(newer.version == "0.5.3", "Tag v0.5.3 must parse to 0.5.3, got \(newer.version)")
+    precondition(AppUpdater.isVersion(newer.version, newerThan: localVersion), "0.5.3 must be newer than \(localVersion)")
     precondition(newer.downloadURL?.lastPathComponent == "APIBar-app.zip", "Updater must select the zip asset, got \(newer.downloadURL?.absoluteString ?? "nil")")
-    precondition(newer.notes.contains("notes for v0.5.2"))
+    precondition(newer.notes.contains("notes for v0.5.3"))
 
     // The same version must not offer an update, even though an asset exists.
-    setenv("APIBAR_UPDATER_ENDPOINT", try serve(releaseJSON(tag: "v0.5.1", name: "API Bar 0.5.1", zipSize: 2_100_000), at: "same"), 1)
+    setenv("APIBAR_UPDATER_ENDPOINT", try serve(releaseJSON(tag: "v0.5.2", name: "API Bar 0.5.2", zipSize: 2_100_000), at: "same"), 1)
     let same = try await updater.fetchReleaseInfo()
-    precondition(same.version == "0.5.1")
+    precondition(same.version == "0.5.2")
     precondition(!AppUpdater.isVersion(same.version, newerThan: localVersion), "Same version must not be treated as an update")
 
     // An older release must never trigger a downgrade.
-    setenv("APIBAR_UPDATER_ENDPOINT", try serve(releaseJSON(tag: "v0.5.0", name: "API Bar 0.5.0", zipSize: 2_073_811), at: "older"), 1)
+    setenv("APIBAR_UPDATER_ENDPOINT", try serve(releaseJSON(tag: "v0.5.1", name: "API Bar 0.5.1", zipSize: 2_073_811), at: "older"), 1)
     let older = try await updater.fetchReleaseInfo()
     precondition(!AppUpdater.isVersion(older.version, newerThan: localVersion), "Older release must not be an update")
 

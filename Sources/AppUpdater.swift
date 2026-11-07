@@ -41,7 +41,7 @@ public final class AppUpdater: ObservableObject {
     private var lastCheckedDate: Date?
 
     public var currentVersion: String {
-        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.5.1"
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.5.2"
     }
 
     public static var localBuildDate: Date {

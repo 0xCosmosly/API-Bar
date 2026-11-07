@@ -84,7 +84,7 @@ Before pushing or committing changes to GitHub, always execute these four steps 
    - Run `git status` to verify staged/unstaged/untracked files.
 2. **Check for secrets and remove**:
    - Run exhaustive two-pass secret checks across all changes (`git diff` and untracked files).
-   - Verify zero API keys, bearer tokens, passwords, personal email addresses (`@proton.me`, `@gmail.com`, `@icloud.com`, etc.), or personal home paths (`/Users/...`).
+   - Verify zero API keys, bearer tokens, passwords, personal email addresses (`@proton.me`, `@gmail.com`, `@icloud.com`, etc.), or personal home paths (`/Users/<user>`).
 3. **Commit**:
    - Stage appropriate files (`git add ...`).
    - Commit cleanly using Conventional Commits with author attribution (`0xCosmosly <254995568+0xCosmosly@users.noreply.github.com>`).

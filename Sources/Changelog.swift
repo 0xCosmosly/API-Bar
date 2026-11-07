@@ -162,6 +162,43 @@ public final class ChangelogManager: ObservableObject {
     public static func builtInEntries() -> [ChangelogEntry] {
         return [
             ChangelogEntry(
+                version: "0.5.2",
+                releaseDate: "November 6, 2026",
+                title: "API Bar 0.5.2 — Heimdallm, Scrollable Onboarding & Browser Connect-All",
+                summary: "Adds native Heimdallm platform support, real-time search and scrolling in onboarding, and fixes Keychain safe-storage authorization for browser connect-all.",
+                highlights: [
+                    "Heimdallm (heimdallm.com) AI platform credits read directly from browser session",
+                    "Native Norse H-gate vector mark and Retina brand icon template mask",
+                    "Search bar and scrollable lists in onboarding so bottom providers are never cut off",
+                    "Interactive Safe Storage authorization for Connect All from Brave during first-run setup",
+                    "Refuseless balance display refinement prioritizing pure dollar balance"
+                ],
+                notes: """
+## API Bar 0.5.2
+
+This release adds Heimdallm platform credit tracking, introduces searchable and scrollable provider selection in onboarding, and ensures browser session importing connects reliably.
+
+---
+
+### ✨ What's New in 0.5.2
+
+#### 1. 🆕 Heimdallm (heimdallm.com)
+• Tracks AI platform credits from your signed-in browser session across heimdallm.com and staging.
+• Includes native Norse H-gate vector mark and crisp Retina template mask.
+• Endpoint host and path restrictions ensure read-only credit fetching.
+
+#### 2. 🔍 Searchable & Scrollable Onboarding
+• Onboarding provider selection and browser connection views now scroll smoothly, ensuring all providers are accessible regardless of screen size.
+• Real-time search filter with instant clearing (×) to quickly locate any provider.
+
+#### 3. 🔐 Reliable Browser Session Connect-All
+• Connect All from Brave now pre-authenticates Keychain Safe Storage interactively once up front, preventing authorization errors during onboarding.
+
+#### 4. 💵 Refuseless USD Prioritization
+• Refuseless balances display dollar amounts cleanly and ensure matched gauge scaling.
+"""
+            ),
+            ChangelogEntry(
                 version: "0.5.1",
                 releaseDate: "November 5, 2026",
                 title: "API Bar 0.5.1 — Unaligned, Yeta, Pause Providers & Menu Bar Stability",

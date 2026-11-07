@@ -90,6 +90,7 @@
 | **Venice AI** | Dual consumption balances (USD fiat & DIEM token) | Browser session or Bearer key | Inferred baseline |
 | **Crowbot** | Chat & API usage credits (microdollar precision) | Browser session (`crowbot_session`) | Account quota |
 | **Yeta** | Prepaid gateway credit (ships paused) | Browser session (console) | Remaining + spent quota |
+| **Heimdallm** | AI platform inference credits | Browser session (`__Host-heimdallm_session`) | Total cycle credits |
 | **OpenCode Sync (Optional)** | Model & provider configuration synchronization | Apple iCloud Drive container | Automatic `.bak` safety |
 | **Custom / Any AI API** | OpenRouter, Groq, Together, DeepSeek, Local Ollama | cURL / JSON via on-device extractor | Custom reference |
 
