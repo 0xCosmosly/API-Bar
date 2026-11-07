@@ -1,0 +1,163 @@
+import Foundation
+
+/// Heimdallm (heimdallm.com) is an AI inference orchestration platform.
+/// Balances are read from the signed-in session using the browser session cookies
+/// from Brave; no API key is stored.
+///
+/// The platform reports spendable, available, deposited, and spent amounts via
+/// `/api/frontend/v1/credits` and user/account identity via `/api/frontend/v1/account`.
+struct HeimdallmProvider: BalanceProvider {
+    let providerID = "heimdallm"
+    let http: SessionHTTP
+    let account: String
+
+    static let defaultHost = "heimdallm.com"
+    static let stagingHost = "staging.heimdallm.com"
+    static let dashboardURL = "https://heimdallm.com/account?tab=credits"
+    static let allowedHosts: Set<String> = [
+        "heimdallm.com",
+        "staging.heimdallm.com",
+        "api.heimdallm.com"
+    ]
+
+    static func targetHost(cookies: [StoredCookie]) -> String {
+        if cookies.contains(where: { $0.domain.contains("staging.heimdallm.com") }) {
+            return stagingHost
+        }
+        return defaultHost
+    }
+
+    static func hasValidSession(cookies: [StoredCookie]) -> Bool {
+        cookies.contains { cookie in
+            guard cookie.domain.contains("heimdallm.com") else { return false }
+            let name = cookie.name.lowercased()
+            return name.contains("heimdall") || name.contains("session") || name.contains("token") || name.contains("auth")
+        }
+    }
+
+    // MARK: - Parsing
+
+    static func parseCredits(_ data: Data) throws -> (remaining: Double, baseline: Double, accountID: String) {
+        guard let root = try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed]) as? [String: Any] else {
+            throw ConnectorError.message("Heimdallm returned a response that was not JSON. The previous balance was retained.")
+        }
+        if let error = root["error"] as? [String: Any], let msg = error["message"] as? String {
+            throw ConnectorError.message("Heimdallm refused the request: \(msg).")
+        }
+
+        let balanceDict = (root["balance"] as? [String: Any]) ?? [:]
+        let totalsDict = (root["totals"] as? [String: Any]) ?? [:]
+
+        guard let remaining = number(balanceDict["spendable"]) ?? number(balanceDict["available"]) ?? number(totalsDict["balance"]) else {
+            throw ConnectorError.message("Heimdallm did not return a credit balance. The previous balance was retained.")
+        }
+
+        guard remaining.isFinite, remaining >= 0, remaining < 1_000_000_000 else {
+            throw ConnectorError.message("Heimdallm returned an invalid balance. The previous balance was retained.")
+        }
+
+        let deposited = number(totalsDict["deposited"]) ?? 0.0
+        let spent = number(totalsDict["spent"]) ?? 0.0
+        let baseline: Double
+        if deposited > 0 {
+            baseline = max(deposited, remaining)
+        } else if spent > 0 {
+            baseline = max(remaining + spent, remaining)
+        } else if remaining > 0 {
+            baseline = PaymentReference.inferTier(for: remaining)
+        } else {
+            baseline = 0.0
+        }
+
+        let accountID = (root["account_id"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return (remaining: remaining, baseline: baseline, accountID: accountID)
+    }
+
+    static func parseAccount(_ data: Data) -> String? {
+        guard let root = try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed]) as? [String: Any] else {
+            return nil
+        }
+        let user = root["user"] as? [String: Any]
+        let email = (user?["email"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if email.contains("@") { return email }
+        let displayName = (user?["display_name"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !displayName.isEmpty { return displayName }
+        let account = root["account"] as? [String: Any]
+        let accountName = (account?["name"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !accountName.isEmpty { return accountName }
+        return nil
+    }
+
+    static func parse(creditsData: Data, accountData: Data? = nil, url: String, account expectedAccount: String = "") throws -> Reading {
+        let (remaining, baseline, accountID) = try parseCredits(creditsData)
+        var resolvedAccount = ""
+        if let accountData {
+            resolvedAccount = parseAccount(accountData) ?? ""
+        }
+        if resolvedAccount.isEmpty {
+            resolvedAccount = !accountID.isEmpty ? accountID : "Heimdallm Account"
+        }
+
+        if !expectedAccount.isEmpty, !expectedAccount.hasSuffix(" Account"), !resolvedAccount.isEmpty,
+           resolvedAccount != expectedAccount {
+            throw ConnectorError.message("This Heimdallm sign-in belongs to a different account. The previous balance was retained.")
+        }
+
+        return Reading(
+            provider: "heimdallm",
+            remaining: remaining,
+            currency: "USD",
+            account: resolvedAccount,
+            url: url,
+            expires: nil,
+            reference: baseline
+        )
+    }
+
+    private static func number(_ value: Any?) -> Double? {
+        if let number = value as? NSNumber { return number.doubleValue }
+        if let string = value as? String {
+            let cleaned = string.replacingOccurrences(of: "$", with: "").replacingOccurrences(of: ",", with: "").trimmingCharacters(in: .whitespacesAndNewlines)
+            return Double(cleaned)
+        }
+        return nil
+    }
+
+    // MARK: - Fetch
+
+    func fetchBalance() async throws -> Reading {
+        var cookies = await http.cookies
+        if !Self.hasValidSession(cookies: cookies), (try? await http.reloadCookiesFromBrave(interactive: false)) != nil {
+            cookies = await http.cookies
+        }
+        guard Self.hasValidSession(cookies: cookies) else {
+            throw ConnectorError.message("No Heimdallm sign-in was found. Sign in at heimdallm.com in Brave, then reconnect.")
+        }
+
+        let host = Self.targetHost(cookies: cookies)
+        guard let creditsURL = URL(string: "https://\(host)/api/frontend/v1/credits") else {
+            throw ConnectorError.message("Heimdallm endpoint is unavailable.")
+        }
+
+        let (creditsData, creditsResponse) = try await http.request(url: creditsURL)
+        switch creditsResponse.statusCode {
+        case 200:
+            break
+        case 401, 403:
+            throw ConnectorError.message("Heimdallm rejected the saved session. Sign in at heimdallm.com in Brave, then reconnect.")
+        default:
+            throw ConnectorError.message("Heimdallm returned HTTP \(creditsResponse.statusCode). The previous balance was retained.")
+        }
+
+        var accountData: Data? = nil
+        if let accountURL = URL(string: "https://\(host)/api/frontend/v1/account"),
+           let (accData, accResp) = try? await http.request(url: accountURL),
+           accResp.statusCode == 200 {
+            accountData = accData
+        }
+
+        let reading = try Self.parse(creditsData: creditsData, accountData: accountData, url: creditsURL.absoluteString, account: account)
+        try await http.persist()
+        return reading
+    }
+}

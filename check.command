@@ -21,7 +21,7 @@ export APIBAR_ICLOUD_DIR="$TEST_STATE/icloud"
 export APIBAR_OPENCODE_FILE="$TEST_STATE/opencode.json"
 export APIBAR_PI_DIR="$TEST_STATE/pi_agent"
 mkdir -p "$APIBAR_VAULT_DIR" "$APIBAR_DATA_DIR" "$APIBAR_ICLOUD_DIR" "$APIBAR_PI_DIR"
-swiftc -sdk "$SDK" -parse-as-library -module-cache-path "$PWD/.cache/modules" Sources/BrandMark.swift Sources/Balance.swift Sources/Provider.swift Sources/Credentials.swift Sources/GoogleWebClientKeys.swift Sources/SessionHTTP.swift Sources/UnalignedProvider.swift Sources/YetaProvider.swift Sources/GoogleProvider.swift Sources/CrowbotProvider.swift Sources/AppUpdater.swift Sources/Changelog.swift Tests/Checks.swift -o .cache/checks/APIBarChecks
+swiftc -sdk "$SDK" -parse-as-library -module-cache-path "$PWD/.cache/modules" Sources/BrandMark.swift Sources/Balance.swift Sources/Provider.swift Sources/Credentials.swift Sources/GoogleWebClientKeys.swift Sources/SessionHTTP.swift Sources/UnalignedProvider.swift Sources/YetaProvider.swift Sources/HeimdallmProvider.swift Sources/GoogleProvider.swift Sources/CrowbotProvider.swift Sources/AppUpdater.swift Sources/Changelog.swift Tests/Checks.swift -o .cache/checks/APIBarChecks
 .cache/checks/APIBarChecks
 plutil -lint Resources/Info.plist
 UI_SOURCES=()

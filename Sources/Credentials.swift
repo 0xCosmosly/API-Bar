@@ -540,6 +540,9 @@ enum BraveSessionImporter {
         case "yeta":
             names = []
             domains = "('.yeta.ai','yeta.ai','platform.yeta.ai','.platform.yeta.ai')"
+        case "heimdallm":
+            names = []
+            domains = "('.heimdallm.com','heimdallm.com','staging.heimdallm.com','.staging.heimdallm.com','api.heimdallm.com','.api.heimdallm.com')"
         default:
             if let domain = cookieDomain, !domain.isEmpty {
                 let clean = domain.trimmingCharacters(in: CharacterSet(charactersIn: "."))
@@ -637,6 +640,8 @@ enum BraveSessionImporter {
                     sql = "SELECT host_key,name,encrypted_value,value,expires_utc FROM cookies WHERE host_key LIKE '%unaligned.pw'"
                 } else if provider == "yeta" {
                     sql = "SELECT host_key,name,encrypted_value,value,expires_utc FROM cookies WHERE host_key LIKE '%yeta.ai'"
+                } else if provider == "heimdallm" {
+                    sql = "SELECT host_key,name,encrypted_value,value,expires_utc FROM cookies WHERE host_key LIKE '%heimdallm.com'"
                 } else {
                     sql = "SELECT host_key,name,encrypted_value,value,expires_utc FROM cookies WHERE host_key IN \(domains)"
                 }
@@ -664,7 +669,7 @@ enum BraveSessionImporter {
         }
         guard readableDatabases > 0 || blockedDatabases == 0 else { throw ConnectorError.message(accessError) }
         guard !encryptedRows.isEmpty else {
-            let name = provider == "crowbot" ? "Crowbot" : provider == "fireworks" ? "Fireworks" : provider == "aistudio" ? "Google AI Studio" : provider == "cerebras" ? "Cerebras" : provider == "refuseless" ? "Refuseless" : provider == "lutheos" ? "Lutheos" : provider == "unaligned" ? "Unaligned" : provider == "yeta" ? "Yeta" : "Google Cloud"
+            let name = provider == "crowbot" ? "Crowbot" : provider == "fireworks" ? "Fireworks" : provider == "aistudio" ? "Google AI Studio" : provider == "cerebras" ? "Cerebras" : provider == "refuseless" ? "Refuseless" : provider == "lutheos" ? "Lutheos" : provider == "unaligned" ? "Unaligned" : provider == "yeta" ? "Yeta" : provider == "heimdallm" ? "Heimdallm" : "Google Cloud"
             throw ConnectorError.message("No signed-in \(name) session was found in Brave. Sign in there, then connect again.")
         }
         // Keychain is queried only after confirming this provider has stored cookies.
@@ -849,6 +854,11 @@ enum BraveSessionImporter {
             }
         }
         return nil
+    }
+
+    @discardableResult
+    static func prepareSafeStorage(interactive: Bool = true) throws -> Data {
+        try safeStoragePassword(interactive: interactive)
     }
 
     private static func safeStoragePassword(interactive: Bool, forceFresh: Bool = false) throws -> Data {

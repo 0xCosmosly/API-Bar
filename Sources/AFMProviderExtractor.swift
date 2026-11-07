@@ -129,6 +129,16 @@ public enum AFMProviderExtractor {
             jsonPath: "balance",
             defaultBaseline: 0.0,
             aliases: ["crowbot", "chat.crowbot.sh"]
+        ),
+        KnownProviderMeta(
+            id: "heimdallm",
+            name: "Heimdallm",
+            domain: "heimdallm.com",
+            dashboardURL: "https://heimdallm.com/account?tab=credits",
+            endpoint: "https://heimdallm.com/api/frontend/v1/credits",
+            jsonPath: "balance.spendable",
+            defaultBaseline: 0.0,
+            aliases: ["heimdallm", "heimdallm.com", "heimdallm ai", "heimdall"]
         )
     ]
 

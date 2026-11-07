@@ -26,6 +26,8 @@ func providerAccentNSColor(_ id: String) -> NSColor {
         return NSColor(srgbRed: 229/255.0, green: 50/255.0, blue: 45/255.0, alpha: 1.0) // Unaligned Signal Red #E5322D
     case "yeta":
         return NSColor(srgbRed: 202/255.0, green: 138/255.0, blue: 4/255.0, alpha: 1.0) // Yeta Amber #CA8A04
+    case "heimdallm":
+        return NSColor(srgbRed: 183/255.0, green: 23/255.0, blue: 31/255.0, alpha: 1.0) // Heimdall Crimson #B7171F
     default:
         return NSColor.systemBlue
     }

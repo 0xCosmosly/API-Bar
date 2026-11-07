@@ -34,6 +34,15 @@ enum ProviderMarkGeometry {
                 [CGPoint(x: 32, y: 131), CGPoint(x: 99, y: 174), CGPoint(x: 99, y: 216), CGPoint(x: 32, y: 174)],
                 [CGPoint(x: 332, y: 131), CGPoint(x: 265, y: 174), CGPoint(x: 265, y: 216), CGPoint(x: 332, y: 174)]
             ])
+        case "heimdallm":
+            // staging.heimdallm.com icon.svg: Norse "H" gate glyph (32-unit viewBox)
+            // Top bar, two uprights, and diagonal crossbar.
+            return Mark(canvas: 32, polygons: [
+                [CGPoint(x: 4, y: 4), CGPoint(x: 28, y: 4), CGPoint(x: 28, y: 8), CGPoint(x: 4, y: 8)],
+                [CGPoint(x: 6, y: 10), CGPoint(x: 11, y: 10), CGPoint(x: 11, y: 28), CGPoint(x: 6, y: 28)],
+                [CGPoint(x: 21, y: 10), CGPoint(x: 26, y: 10), CGPoint(x: 26, y: 28), CGPoint(x: 21, y: 28)],
+                [CGPoint(x: 6.1, y: 19.55), CGPoint(x: 24.69, y: 14.22), CGPoint(x: 25.9, y: 18.45), CGPoint(x: 7.31, y: 23.78)]
+            ])
         default:
             return nil
         }

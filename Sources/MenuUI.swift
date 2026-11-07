@@ -23,6 +23,8 @@ func providerAccentColor(_ id: String) -> Color {
         return Color(red: 229/255.0, green: 50/255.0, blue: 45/255.0) // Unaligned Signal Red #E5322D
     case "yeta":
         return Color(red: 202/255.0, green: 138/255.0, blue: 4/255.0) // Yeta Amber #CA8A04
+    case "heimdallm":
+        return Color(red: 183/255.0, green: 23/255.0, blue: 31/255.0) // Heimdall Crimson #B7171F
     default:
         return Color.accentColor
     }
@@ -490,9 +492,26 @@ struct ProviderDropDelegate: DropDelegate {
 struct ManageProvidersSheet: View {
     @ObservedObject var app: APIBarApp
     @Environment(\.dismiss) private var dismiss
+    @State private var searchText = ""
+
+    var filteredProviders: [Balance] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if query.isEmpty { return Balance.initial }
+        return Balance.initial.filter { p in
+            p.name.lowercased().contains(query) ||
+            p.id.lowercased().contains(query) ||
+            providerSubtitle(for: p.id).lowercased().contains(query)
+        }
+    }
 
     var allSelected: Bool {
         !app.balances.isEmpty && Balance.initial.allSatisfy { initB in app.balances.contains(where: { $0.id == initB.id }) }
+    }
+
+    var allFilteredSelected: Bool {
+        let targets = filteredProviders
+        guard !targets.isEmpty else { return false }
+        return targets.allSatisfy { p in app.balances.contains(where: { $0.id == p.id }) }
     }
 
     var body: some View {
@@ -507,66 +526,108 @@ struct ManageProvidersSheet: View {
                         .foregroundStyle(Color.secondary)
                 }
                 Spacer()
-                Button(allSelected ? "Deselect All" : "Select All") {
+                Button(allFilteredSelected ? "Deselect All" : "Select All") {
                     toggleSelectAll()
                 }
                 .buttonStyle(PaperWhiteButtonStyle())
             }
 
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(Color.secondary)
+                    .font(.system(size: 13))
+                TextField("Search providers…", text: $searchText)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 13))
+                if !searchText.isEmpty {
+                    Button {
+                        searchText = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(Color.secondary)
+                            .font(.system(size: 13))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color(NSColor.controlBackgroundColor))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(Color.primary.opacity(0.12), lineWidth: 1)
+            )
+
             Divider().opacity(0.6)
 
             ScrollView(.vertical, showsIndicators: false) {
-                VStack(spacing: 8) {
-                    ForEach(Balance.initial, id: \.id) { provider in
-                        let isSelected = app.balances.contains(where: { $0.id == provider.id })
-                        Button {
-                            if isSelected {
-                                app.removeProvider(id: provider.id)
-                            } else {
-                                app.addProvider(provider)
-                            }
-                        } label: {
-                            HStack(spacing: 12) {
-                                Image(systemName: isSelected ? "checkmark.square.fill" : "square")
-                                    .font(.system(size: 16))
-                                    .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
-
-                                PaperProviderBadge(id: provider.id, name: provider.name, size: 24)
-
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(provider.name)
-                                        .font(.subheadline)
-                                        .fontWeight(.semibold)
-                                        .foregroundStyle(Color.primary)
-                                    Text(providerSubtitle(for: provider.id))
-                                        .font(.caption2)
-                                        .foregroundStyle(Color.secondary)
-                                }
-                                Spacer()
-
+                if filteredProviders.isEmpty {
+                    VStack(spacing: 8) {
+                        Image(systemName: "magnifyingglass")
+                            .font(.system(size: 22))
+                            .foregroundStyle(Color.secondary)
+                        Text("No providers match \"\(searchText)\"")
+                            .font(.subheadline)
+                            .foregroundStyle(Color.secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 32)
+                } else {
+                    VStack(spacing: 8) {
+                        ForEach(filteredProviders, id: \.id) { provider in
+                            let isSelected = app.balances.contains(where: { $0.id == provider.id })
+                            Button {
                                 if isSelected {
-                                    Text("Selected")
-                                        .font(.caption2)
-                                        .fontWeight(.semibold)
-                                        .foregroundStyle(Color.accentColor)
-                                        .padding(.horizontal, 7)
-                                        .padding(.vertical, 2)
-                                        .background(Capsule().fill(Color.accentColor.opacity(0.12)))
+                                    app.removeProvider(id: provider.id)
+                                } else {
+                                    app.addProvider(provider)
                                 }
+                            } label: {
+                                HStack(spacing: 12) {
+                                    Image(systemName: isSelected ? "checkmark.square.fill" : "square")
+                                        .font(.system(size: 16))
+                                        .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+
+                                    PaperProviderBadge(id: provider.id, name: provider.name, size: 24)
+
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(provider.name)
+                                            .font(.subheadline)
+                                            .fontWeight(.semibold)
+                                            .foregroundStyle(Color.primary)
+                                        Text(providerSubtitle(for: provider.id))
+                                            .font(.caption2)
+                                            .foregroundStyle(Color.secondary)
+                                    }
+                                    Spacer()
+
+                                    if isSelected {
+                                        Text("Selected")
+                                            .font(.caption2)
+                                            .fontWeight(.semibold)
+                                            .foregroundStyle(Color.accentColor)
+                                            .padding(.horizontal, 7)
+                                            .padding(.vertical, 2)
+                                            .background(Capsule().fill(Color.accentColor.opacity(0.12)))
+                                    }
+                                }
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 8)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .fill(isSelected ? Color.accentColor.opacity(0.06) : Color.primary.opacity(0.025))
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .stroke(isSelected ? Color.accentColor.opacity(0.25) : Color.primary.opacity(0.06), lineWidth: 1)
+                                )
+                                .contentShape(Rectangle())
                             }
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 8)
-                            .background(
-                                RoundedRectangle(cornerRadius: 8)
-                                    .fill(isSelected ? Color.accentColor.opacity(0.06) : Color.primary.opacity(0.025))
-                            )
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 8)
-                                    .stroke(isSelected ? Color.accentColor.opacity(0.25) : Color.primary.opacity(0.06), lineWidth: 1)
-                            )
-                            .contentShape(Rectangle())
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
                     }
                 }
             }
@@ -585,16 +646,17 @@ struct ManageProvidersSheet: View {
             }
         }
         .padding(20)
-        .frame(width: 480, height: 440)
+        .frame(width: 480, height: 480)
     }
 
     private func toggleSelectAll() {
-        if allSelected {
-            for provider in Balance.initial {
+        let targets = filteredProviders
+        if allFilteredSelected {
+            for provider in targets {
                 app.removeProvider(id: provider.id)
             }
         } else {
-            for provider in Balance.initial {
+            for provider in targets {
                 if !app.balances.contains(where: { $0.id == provider.id }) {
                     app.addProvider(provider)
                 }
@@ -613,6 +675,7 @@ struct ManageProvidersSheet: View {
         case "lutheos": return "Lutheos Private Inference Balance"
         case "unaligned": return "Unaligned Prepaid API Balance (API key)"
         case "yeta": return "Yeta Prepaid Gateway Credit"
+        case "heimdallm": return "Heimdallm AI Platform Credits"
         default: return "API Balance & Credit Monitor"
         }
     }
@@ -910,9 +973,26 @@ struct OnboardingView: View {
     let onFinish: () -> Void
     @State private var step = 0
     @State private var login = SMAppService.mainApp.status == .enabled
+    @State private var searchText = ""
+
+    var filteredProviders: [Balance] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if query.isEmpty { return Balance.initial }
+        return Balance.initial.filter { p in
+            p.name.lowercased().contains(query) ||
+            p.id.lowercased().contains(query) ||
+            providerSubtitle(for: p.id).lowercased().contains(query)
+        }
+    }
 
     var allSelected: Bool {
         !app.balances.isEmpty && Balance.initial.allSatisfy { initB in app.balances.contains(where: { $0.id == initB.id }) }
+    }
+
+    var allFilteredSelected: Bool {
+        let targets = filteredProviders
+        guard !targets.isEmpty else { return false }
+        return targets.allSatisfy { p in app.balances.contains(where: { $0.id == p.id }) }
     }
 
     var body: some View {
@@ -982,7 +1062,7 @@ struct OnboardingView: View {
             .padding(.bottom, 22)
             .background(Color(NSColor.windowBackgroundColor))
         }
-        .frame(width: 540, height: 560)
+        .frame(width: 540, height: 580)
     }
 
     private var welcomeStep: some View {
@@ -992,7 +1072,7 @@ struct OnboardingView: View {
                 .fontWeight(.bold)
 
             VStack(alignment: .leading, spacing: 14) {
-                featureRow(icon: "chart.bar.xaxis", title: "Live Credit Gauges", description: "Monitor remaining balance and automatic 100% baseline usage across Vertex AI, Fireworks, Cerebras, Google AI Studio, Refuseless, Lutheos, Unaligned, and Crowbot.")
+                featureRow(icon: "chart.bar.xaxis", title: "Live Credit Gauges", description: "Monitor remaining balance and automatic 100% baseline usage across Vertex AI, Fireworks, Cerebras, Google AI Studio, Refuseless, Lutheos, Unaligned, Crowbot, and Heimdallm.")
                 featureRow(icon: "shield.checkered", title: "Zero API Key Hassle", description: "API Bar securely reads authenticated sessions from \(app.browserName) Browser directly on your device. No credentials ever leave your Mac.")
                 featureRow(icon: "menubar.rectangle", title: "Flexible Menu Bar Display", description: "View all providers in a single compact merged gauge or separate icons for each provider.")
                 featureRow(icon: "lock.shield", title: "100% Private & Local", description: "Zero telemetry or external servers. All credentials stay strictly in your local macOS Keychain.")
@@ -1020,63 +1100,109 @@ struct OnboardingView: View {
                         .foregroundStyle(Color.secondary)
                 }
                 Spacer()
-                Button(allSelected ? "Deselect All" : "Select All") {
+                Button(allFilteredSelected ? "Deselect All" : "Select All") {
                     toggleSelectAll()
                 }
                 .buttonStyle(PaperWhiteButtonStyle())
             }
 
-            VStack(spacing: 8) {
-                ForEach(Balance.initial, id: \.id) { provider in
-                    let isSelected = app.balances.contains(where: { $0.id == provider.id })
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(Color.secondary)
+                    .font(.system(size: 13))
+                TextField("Search providers…", text: $searchText)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 13))
+                if !searchText.isEmpty {
                     Button {
-                        if isSelected {
-                            app.removeProvider(id: provider.id)
-                        } else {
-                            app.addProvider(provider)
-                        }
+                        searchText = ""
                     } label: {
-                        HStack(spacing: 12) {
-                            Image(systemName: isSelected ? "checkmark.square.fill" : "square")
-                                .font(.system(size: 16))
-                                .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
-
-                            PaperProviderBadge(id: provider.id, name: provider.name, size: 28)
-
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(provider.name)
-                                    .font(.system(size: 14.5, weight: .semibold))
-                                    .foregroundStyle(Color.primary)
-                                Text(providerSubtitle(for: provider.id))
-                                    .font(.system(size: 12))
-                                    .foregroundStyle(Color.secondary)
-                            }
-                            Spacer()
-
-                            if isSelected {
-                                Text("Selected")
-                                    .font(.system(size: 11.5, weight: .bold))
-                                    .foregroundStyle(Color.accentColor)
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 3)
-                                    .background(Capsule().fill(Color.accentColor.opacity(0.12)))
-                            }
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(
-                            RoundedRectangle(cornerRadius: 8)
-                                .fill(isSelected ? Color.accentColor.opacity(0.06) : Color.primary.opacity(0.025))
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 8)
-                                .stroke(isSelected ? Color.accentColor.opacity(0.25) : Color.primary.opacity(0.06), lineWidth: 1)
-                        )
-                        .contentShape(Rectangle())
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(Color.secondary)
+                            .font(.system(size: 13))
                     }
                     .buttonStyle(.plain)
                 }
             }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color(NSColor.controlBackgroundColor))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(Color.primary.opacity(0.12), lineWidth: 1)
+            )
+
+            ScrollView(.vertical, showsIndicators: true) {
+                if filteredProviders.isEmpty {
+                    VStack(spacing: 8) {
+                        Image(systemName: "magnifyingglass")
+                            .font(.system(size: 24))
+                            .foregroundStyle(Color.secondary)
+                        Text("No providers match \"\(searchText)\"")
+                            .font(.subheadline)
+                            .foregroundStyle(Color.secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 32)
+                } else {
+                    VStack(spacing: 8) {
+                        ForEach(filteredProviders, id: \.id) { provider in
+                            let isSelected = app.balances.contains(where: { $0.id == provider.id })
+                            Button {
+                                if isSelected {
+                                    app.removeProvider(id: provider.id)
+                                } else {
+                                    app.addProvider(provider)
+                                }
+                            } label: {
+                                HStack(spacing: 12) {
+                                    Image(systemName: isSelected ? "checkmark.square.fill" : "square")
+                                        .font(.system(size: 16))
+                                        .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+
+                                    PaperProviderBadge(id: provider.id, name: provider.name, size: 28)
+
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(provider.name)
+                                            .font(.system(size: 14.5, weight: .semibold))
+                                            .foregroundStyle(Color.primary)
+                                        Text(providerSubtitle(for: provider.id))
+                                            .font(.system(size: 12))
+                                            .foregroundStyle(Color.secondary)
+                                    }
+                                    Spacer()
+
+                                    if isSelected {
+                                        Text("Selected")
+                                            .font(.system(size: 11.5, weight: .bold))
+                                            .foregroundStyle(Color.accentColor)
+                                            .padding(.horizontal, 8)
+                                            .padding(.vertical, 3)
+                                            .background(Capsule().fill(Color.accentColor.opacity(0.12)))
+                                    }
+                                }
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 8)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .fill(isSelected ? Color.accentColor.opacity(0.06) : Color.primary.opacity(0.025))
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .stroke(isSelected ? Color.accentColor.opacity(0.25) : Color.primary.opacity(0.06), lineWidth: 1)
+                                )
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.trailing, 4)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             HStack {
                 Text("\(app.balances.filter { b in Balance.initial.contains(where: { $0.id == b.id }) }.count) of \(Balance.initial.count) native providers selected")
@@ -1088,6 +1214,7 @@ struct OnboardingView: View {
                     .foregroundStyle(Color.secondary)
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     @ViewBuilder
@@ -1197,32 +1324,54 @@ struct OnboardingView: View {
             .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.primary.opacity(0.08), lineWidth: 1))
             .shadow(color: Color.black.opacity(0.03), radius: 2, x: 0, y: 1)
 
-            VStack(spacing: 6) {
-                ForEach(app.balances, id: \.id) { balance in
-                    HStack(spacing: 10) {
-                        PaperProviderBadge(id: balance.id, name: balance.name, size: 22)
-                        Text(balance.name)
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                        Spacer()
-                        if app.isConnected(balance.id) {
-                            Image(systemName: "checkmark.circle.fill")
-                                .foregroundStyle(Color.green)
-                            Text(balance.baseline > 0 ? "100%: \(balance.baseline.formatted(.currency(code: "USD")))" : "Connected")
-                                .font(.caption)
-                                .foregroundStyle(Color.secondary)
-                        } else {
-                            Text("Not connected")
-                                .font(.caption)
-                                .foregroundStyle(Color.secondary)
+            ScrollView(.vertical, showsIndicators: true) {
+                VStack(spacing: 6) {
+                    ForEach(app.balances, id: \.id) { balance in
+                        HStack(spacing: 10) {
+                            PaperProviderBadge(id: balance.id, name: balance.name, size: 22)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(balance.name)
+                                    .font(.subheadline)
+                                    .fontWeight(.medium)
+                                if !app.isConnected(balance.id),
+                                   let status = app.providerStatus[balance.id],
+                                   !status.isEmpty,
+                                   status != "Connect in Settings" && status != "Not connected" && status != "Connecting…" {
+                                    Text(status.contains("No signed-in") ? "Not signed in in \(app.browserName)" : status)
+                                        .font(.caption2)
+                                        .foregroundStyle(Color.orange)
+                                        .lineLimit(1)
+                                }
+                            }
+                            Spacer()
+                            if app.inFlight.contains(balance.id) {
+                                ProgressView().controlSize(.small)
+                                Text("Connecting…")
+                                    .font(.caption)
+                                    .foregroundStyle(Color.secondary)
+                            } else if app.isConnected(balance.id) {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundStyle(Color.green)
+                                Text(balance.baseline > 0 ? "100%: \(balance.baseline.formatted(.currency(code: "USD")))" : "Connected")
+                                    .font(.caption)
+                                    .foregroundStyle(Color.secondary)
+                            } else {
+                                Button("Connect") {
+                                    app.connect(balance.id)
+                                }
+                                .buttonStyle(PaperWhiteButtonStyle())
+                                .controlSize(.small)
+                            }
                         }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.025)))
+                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.primary.opacity(0.06), lineWidth: 1))
                     }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.025)))
-                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.primary.opacity(0.06), lineWidth: 1))
                 }
+                .padding(.trailing, 4)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
@@ -1300,12 +1449,13 @@ struct OnboardingView: View {
     }
 
     private func toggleSelectAll() {
-        if allSelected {
-            for provider in Balance.initial {
+        let targets = filteredProviders
+        if allFilteredSelected {
+            for provider in targets {
                 app.removeProvider(id: provider.id)
             }
         } else {
-            for provider in Balance.initial {
+            for provider in targets {
                 if !app.balances.contains(where: { $0.id == provider.id }) {
                     app.addProvider(provider)
                 }
@@ -1324,6 +1474,7 @@ struct OnboardingView: View {
         case "lutheos": return "Lutheos Private Inference Balance"
         case "unaligned": return "Unaligned Prepaid API Balance (API key)"
         case "yeta": return "Yeta Prepaid Gateway Credit"
+        case "heimdallm": return "Heimdallm AI Platform Credits"
         default: return "API Balance & Credit Monitor"
         }
     }

@@ -69,6 +69,7 @@ import AppKit
         print("Passed: Crowbot microdollar parsing, zero/invalid balances, account pinning, credential redaction, restricted endpoint, and redirect refusal.")
         try await unalignedChecks()
         try await yetaChecks()
+        try await heimdallmChecks()
         try secretAuditChecks()
         try await updaterChecks()
         try await redirectChecks()
@@ -662,6 +663,128 @@ func yetaChecks() async throws {
     print("Passed: Yeta quota conversion from the server, remaining/total split, rejected sessions, account pinning, cookie-only requests, endpoint restriction, and disabled-by-default registration.")
 }
 
+final class MockHeimdallmProtocol: URLProtocol, @unchecked Sendable {
+    static let lock = NSLock()
+    static var routes: [String: (Int, Data)] = [:]
+    static var seen: [URLRequest] = []
+    static func reset() {
+        lock.lock(); defer { lock.unlock() }
+        routes.removeAll(); seen.removeAll()
+    }
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        Self.lock.lock()
+        Self.seen.append(request)
+        let path = request.url?.path ?? ""
+        let match = Self.routes[path] ?? (404, Data("{}".utf8))
+        Self.lock.unlock()
+        let response = HTTPURLResponse(url: request.url!, statusCode: match.0, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "application/json"])!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: match.1)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
+}
+
+func heimdallmChecks() async throws {
+    let creditsBody = #"{"account_id":"acc_heimdall_123","balance":{"credited":"25.00","debited":"12.50","available":"12.50","held":"0","spendable":"12.50"},"totals":{"deposited":"25.00","refunded":"0","referral_rewards":"0","adjusted":"0","spent":"12.50","balance":"12.50"}}"#
+    let accountBody = #"{"user":{"id":"usr_heimdall_1","email":"user@heimdallm.com","display_name":"HeimdallUser"},"account":{"id":"acc_heimdall_123","name":"Personal","credits":{"available":"12.50","spendable":"12.50"}}}"#
+
+    // Primary parsing: spendable balance, deposited reference, user identity
+    let (remaining, baseline, accountID) = try HeimdallmProvider.parseCredits(Data(creditsBody.utf8))
+    precondition(abs(remaining - 12.50) < 0.000001, "Heimdallm remaining must be 12.50, got \(remaining)")
+    precondition(abs(baseline - 25.00) < 0.000001, "Heimdallm baseline must be 25.00, got \(baseline)")
+    precondition(accountID == "acc_heimdall_123")
+
+    let resolvedAccount = HeimdallmProvider.parseAccount(Data(accountBody.utf8))
+    precondition(resolvedAccount == "user@heimdallm.com")
+
+    let reading = try HeimdallmProvider.parse(creditsData: Data(creditsBody.utf8), accountData: Data(accountBody.utf8), url: "https://staging.heimdallm.com/api/frontend/v1/credits")
+    precondition(abs(reading.remaining - 12.50) < 0.000001)
+    precondition(abs((reading.reference ?? 0) - 25.00) < 0.000001)
+    precondition(reading.account == "user@heimdallm.com" && reading.currency == "USD" && reading.provider == "heimdallm")
+    precondition(ReadingValidation.valid(reading, balances: Balance.initial))
+
+    // Fallback when accountData is missing: uses accountID
+    let fallbackReading = try HeimdallmProvider.parse(creditsData: Data(creditsBody.utf8), accountData: nil, url: "https://heimdallm.com/api/frontend/v1/credits")
+    precondition(fallbackReading.account == "acc_heimdall_123")
+    precondition(ReadingValidation.valid(fallbackReading, balances: Balance.initial))
+
+    // Baseline calculation when deposited is 0 but spent > 0: baseline = remaining + spent
+    let spentOnlyCredits = #"{"account_id":"acc_2","balance":{"spendable":"10.00","available":"10.00"},"totals":{"deposited":"0","spent":"15.00"}}"#
+    let spentReading = try HeimdallmProvider.parse(creditsData: Data(spentOnlyCredits.utf8), url: "https://heimdallm.com/api/frontend/v1/credits")
+    precondition(abs(spentReading.remaining - 10.00) < 0.000001)
+    precondition(abs((spentReading.reference ?? 0) - 25.00) < 0.000001)
+
+    // Baseline calculation when deposited and spent are 0: tier inference
+    let zeroTotalCredits = #"{"account_id":"acc_3","balance":{"spendable":"10.00","available":"10.00"},"totals":{"deposited":"0","spent":"0"}}"#
+    let tierReading = try HeimdallmProvider.parse(creditsData: Data(zeroTotalCredits.utf8), url: "https://heimdallm.com/api/frontend/v1/credits")
+    precondition(abs(tierReading.remaining - 10.00) < 0.000001)
+    precondition((tierReading.reference ?? 0) >= 10.00)
+
+    // Zero balance is valid
+    let zeroCredits = #"{"account_id":"acc_4","balance":{"spendable":"0","available":"0"},"totals":{"deposited":"0","spent":"0"}}"#
+    let zeroReading = try HeimdallmProvider.parse(creditsData: Data(zeroCredits.utf8), url: "https://heimdallm.com/api/frontend/v1/credits")
+    precondition(zeroReading.remaining == 0 && (zeroReading.reference ?? 0) == 0)
+
+    // Hostile URL is rejected by ReadingValidation
+    let hostile = Reading(provider: "heimdallm", remaining: 10, currency: "USD", account: "", url: "https://evil.example/api/frontend/v1/credits", expires: nil)
+    precondition(!ReadingValidation.valid(hostile, balances: Balance.initial))
+
+    // Rejected / error payloads fail loudly
+    for fixture in [
+        #"{"error":{"message":"Unauthorized session"}}"#,
+        #"{"balance":{}}"#,
+        #"not json"#
+    ] {
+        do {
+            _ = try HeimdallmProvider.parse(creditsData: Data(fixture.utf8), url: "https://heimdallm.com/api/frontend/v1/credits")
+            preconditionFailure("Invalid Heimdallm payload accepted: \(fixture)")
+        } catch { }
+    }
+
+    // Account mismatch rejects foreign account
+    do {
+        _ = try HeimdallmProvider.parse(creditsData: Data(creditsBody.utf8), accountData: Data(accountBody.utf8), url: "https://heimdallm.com/api/frontend/v1/credits", account: "other@example.com")
+        preconditionFailure("Heimdallm accepted a different account")
+    } catch { }
+
+    // Fetch path: credits then account, cookie only, no API key
+    let config = URLSessionConfiguration.ephemeral
+    config.protocolClasses = [MockHeimdallmProtocol.self]
+    MockHeimdallmProtocol.reset()
+    MockHeimdallmProtocol.routes["/api/frontend/v1/credits"] = (200, Data(creditsBody.utf8))
+    MockHeimdallmProtocol.routes["/api/frontend/v1/account"] = (200, Data(accountBody.utf8))
+    let cookie = StoredCookie(name: "__Host-heimdallm_session", value: "heimdallm-test-session", domain: "staging.heimdallm.com", expires: Date().addingTimeInterval(3600))
+    let http = SessionHTTP(provider: "heimdallm", cookies: [cookie], configuration: config)
+    let fetched = try await HeimdallmProvider(http: http, account: "").fetchBalance()
+    precondition(abs(fetched.remaining - 12.50) < 0.000001)
+    precondition(fetched.account == "user@heimdallm.com")
+    precondition(MockHeimdallmProtocol.seen.count == 2)
+    for sent in MockHeimdallmProtocol.seen {
+        precondition(sent.url?.host == "staging.heimdallm.com")
+        precondition(sent.value(forHTTPHeaderField: "Cookie")?.contains("__Host-heimdallm_session") == true)
+        precondition(sent.value(forHTTPHeaderField: "Authorization") == nil)
+    }
+
+    // Unapproved paths on the host are blocked
+    do {
+        _ = try await http.request(url: URL(string: "https://staging.heimdallm.com/api/frontend/v1/delete_account")!)
+        preconditionFailure("Heimdallm session was sent to an unapproved endpoint")
+    } catch { }
+
+    // Session validation checks
+    precondition(HeimdallmProvider.hasValidSession(cookies: [cookie]))
+    precondition(!HeimdallmProvider.hasValidSession(cookies: [StoredCookie(name: "theme", value: "dark", domain: ".heimdallm.com")]))
+
+    // Registration checks
+    guard let heimdallm = Balance.initial.first(where: { $0.id == "heimdallm" }) else { preconditionFailure("Balance.initial must include heimdallm") }
+    precondition(heimdallm.name == "Heimdallm")
+
+    print("Passed: Heimdallm credit parsing, baseline calculation, account resolution, rejected sessions, account pinning, cookie-only requests, endpoint restriction, and initial registration.")
+}
+
 /// Release gate: nothing in the working tree may contain a credential, a personal
 /// home path, or a real personal email address. Google's public web-client keys and
 /// the synthetic test fixtures are the only allowed exceptions, and they must stay
@@ -678,6 +801,7 @@ func secretAuditChecks() throws {
         "sk-unaligned-fixture-000000000000",       // synthetic fixture
         "unaligned-test-session",
         "yeta-test-session",
+        "heimdallm-test-session",
         "lutheos-test-token",
         "1234567890123456"                          // synthetic Crowbot account number
     ]

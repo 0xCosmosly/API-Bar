@@ -37,7 +37,7 @@ actor SessionHTTP {
                 return client
             }
         }
-        let provName = provider == "crowbot" ? "Crowbot" : provider == "fireworks" ? "Fireworks" : provider == "aistudio" ? "Google AI Studio" : provider == "cerebras" ? "Cerebras" : provider == "refuseless" ? "Refuseless" : provider == "lutheos" ? "Lutheos" : provider == "unaligned" ? "Unaligned" : provider == "yeta" ? "Yeta" : "Google Cloud"
+        let provName = provider == "crowbot" ? "Crowbot" : provider == "fireworks" ? "Fireworks" : provider == "aistudio" ? "Google AI Studio" : provider == "cerebras" ? "Cerebras" : provider == "refuseless" ? "Refuseless" : provider == "lutheos" ? "Lutheos" : provider == "unaligned" ? "Unaligned" : provider == "yeta" ? "Yeta" : provider == "heimdallm" ? "Heimdallm" : "Google Cloud"
         throw ConnectorError.message("Connect \(provName) in Settings first.")
     }
     static func connect(provider: String, cookieDomain: String? = nil, dynamicHost: String? = nil, interactive: Bool = false) throws -> SessionHTTP {
@@ -164,6 +164,8 @@ actor SessionHTTP {
             // Only the balance reads. The console also exposes login, top-up, and
             // key-minting endpoints on this host, which must never see the session.
             allowed = host == YetaProvider.host && ["/api/user/self", "/api/status"].contains(url.path) && url.query == nil
+        case "heimdallm":
+            allowed = HeimdallmProvider.allowedHosts.contains(host) && ["/api/frontend/v1/credits", "/api/frontend/v1/account"].contains(url.path) && body == nil && url.query == nil
         default: allowed = (dynamicHost != nil && host == dynamicHost)
         }
         guard url.scheme == "https", allowed else { throw ConnectorError.message("Refused to send the saved session to an unexpected host.") }

@@ -76,6 +76,22 @@ API Bar is a native, lightweight macOS menu-bar companion written in **Swift 6**
 
 ## 🛠️ Build, Test & Release Protocols
 
+### 🚀 The Four-Step Process for GitHub
+Before pushing or committing changes to GitHub, always execute these four steps in order:
+1. **Prepare for GitHub**:
+   - Run `./check.command` (all test suites must pass with exit code 0).
+   - Run `./build.command` (Universal binary build and packaging must succeed).
+   - Run `git status` to verify staged/unstaged/untracked files.
+2. **Check for secrets and remove**:
+   - Run exhaustive two-pass secret checks across all changes (`git diff` and untracked files).
+   - Verify zero API keys, bearer tokens, passwords, personal email addresses (`@proton.me`, `@gmail.com`, `@icloud.com`, etc.), or personal home paths (`/Users/...`).
+3. **Commit**:
+   - Stage appropriate files (`git add ...`).
+   - Commit cleanly using Conventional Commits with author attribution (`0xCosmosly <254995568+0xCosmosly@users.noreply.github.com>`).
+4. **Review**:
+   - Verify auto-updater logic (`AppUpdater.swift` and `updaterChecks()`).
+   - Confirm iCloud sync (`ICloudSync.swift`) integrity and verify no private iCloud data or user caches were altered or committed.
+
 ### Test Suite (`./check.command`)
 Run the sandboxed test suite:
 ```sh

@@ -118,7 +118,7 @@ import SwiftUI
         // A provider whose mask PNG is missing must still render its real mark from
         // vector geometry. This is what an older build shows when a newer provider
         // list arrives over iCloud, and it must never degrade to a letter monogram.
-        for provider in ["unaligned", "yeta"] {
+        for provider in ["unaligned", "yeta", "heimdallm"] {
             precondition(ProviderMarkGeometry.mark(for: provider) != nil, "\(provider) must have vector geometry")
             let vector = ProviderMarkGeometry.image(for: provider, pixels: 54)
             precondition(vector != nil, "\(provider) vector mask failed to render")
@@ -403,6 +403,12 @@ import SwiftUI
         let (autoOpenRouterDraft, autoOpenRouterURL, _) = await AFMProviderExtractor.autoAddProvider(named: "openrouter", openBrowser: false)
         precondition(autoOpenRouterDraft.name == "OpenRouter")
         precondition(autoOpenRouterURL == "https://openrouter.ai/credits")
+
+        let (autoHeimdallmDraft, autoHeimdallmURL, _) = await AFMProviderExtractor.autoAddProvider(named: "Heimdallm", openBrowser: false)
+        precondition(autoHeimdallmDraft.name == "Heimdallm")
+        precondition(autoHeimdallmDraft.endpoint == "https://heimdallm.com/api/frontend/v1/credits")
+        precondition(autoHeimdallmDraft.jsonPath == "balance.spendable")
+        precondition(autoHeimdallmURL == "https://heimdallm.com/account?tab=credits")
 
         // Test iCloud Sync: availability, push, pull & merge, session vault sync, status badges
         var cleanedRemoved = UserDefaults.standard.stringArray(forKey: "RemovedProviders") ?? []

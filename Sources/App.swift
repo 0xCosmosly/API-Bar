@@ -192,7 +192,9 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
 
     func addProvider(_ provider: Balance) {
         guard !balances.contains(where: { $0.id == provider.id }) else { return }
-        balances.append(provider)
+        var p = provider
+        p.disabled = false
+        balances.append(p)
         var removed = UserDefaults.standard.stringArray(forKey: "RemovedProviders") ?? []
         removed.removeAll(where: { $0 == provider.id })
         UserDefaults.standard.set(removed, forKey: "RemovedProviders")
@@ -469,6 +471,13 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
             providerStatus["unaligned"] = "Connect in Settings"
             save()
         }
+        if UserDefaults.standard.bool(forKey: "HasCompletedOnboarding"),
+           UserDefaults.standard.string(forKey: "RemovedProviders")?.contains("heimdallm") != true,
+           !balances.contains(where: { $0.id == "heimdallm" }) {
+            balances.append(Balance(id: "heimdallm", name: "Heimdallm", baseline: 0, remaining: 0, updated: .distantPast, account: ""))
+            providerStatus["heimdallm"] = "Connect in Settings"
+            save()
+        }
         if CommandLine.arguments.contains("--preview") {
             preview(); NSApp.terminate(nil); return
         }
@@ -609,6 +618,7 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         if provider == "lutheos" { return try await LutheosProvider(http: client, account: balance.account).fetchBalance() }
         if provider == "unaligned" { return try await UnalignedProvider(http: client, account: balance.account).fetchBalance() }
         if provider == "yeta" { return try await YetaProvider(http: client, account: balance.account).fetchBalance() }
+        if provider == "heimdallm" { return try await HeimdallmProvider(http: client, account: balance.account).fetchBalance() }
         if provider == "vertex" { return try await GoogleProvider(http:client,account:balance.account).fetchBalance() }
         if balance.dynamicEndpoint != nil {
             return try await DynamicProvider(http: client, balance: balance).fetchBalance()
@@ -659,8 +669,8 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
                 case "lutheos": provName = "Lutheos"
                 case "crowbot": provName = "Crowbot"
                 case "unaligned": provName = "Unaligned"
-            case "yeta": provName = "Yeta"
                 case "yeta": provName = "Yeta"
+                case "heimdallm": provName = "Heimdallm"
                 default: provName = balance.name
                 }
                 let wasConnected = isConnected(balance.id) || balance.live || hasStoredCredential(balance.id) || (balance.dynamicAuthHeader != nil && !balance.dynamicAuthHeader!.isEmpty)
@@ -883,6 +893,13 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
             }
             updateTitles()
 
+            // Pre-authenticate safe storage once interactively so the user is prompted
+            // at most once for Keychain authorization, rather than failing with -25293
+            // or prompting concurrently for multiple providers.
+            _ = try? await Task.detached {
+                try BraveSessionImporter.prepareSafeStorage(interactive: true)
+            }.value
+
             var errors: [String] = []
             await withTaskGroup(of: (String, Result<Reading, Error>).self) { group in
                 for balance in targets {
@@ -894,15 +911,15 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
                                 client = SessionHTTP(provider: balance.id, cookies: [], dynamicHost: host)
                             } else {
                                 let cookieDomain = balance.dynamicCookieDomain
-                                client = try SessionHTTP.connect(provider: balance.id, cookieDomain: cookieDomain, dynamicHost: host, interactive: false)
+                                client = try SessionHTTP.connect(provider: balance.id, cookieDomain: cookieDomain, dynamicHost: host, interactive: true)
                             }
                             let reading = try await withThrowingTaskGroup(of: Reading.self) { fetchGroup in
                                 fetchGroup.addTask {
                                     try await self.fetch(balance.id, client: client)
                                 }
                                 fetchGroup.addTask {
-                                    try await Task.sleep(nanoseconds: 12_000_000_000)
-                                    throw ConnectorError.message("Connection timed out after 12 seconds.")
+                                    try await Task.sleep(nanoseconds: 15_000_000_000)
+                                    throw ConnectorError.message("Connection timed out after 15 seconds.")
                                 }
                                 let res = try await fetchGroup.next()!
                                 fetchGroup.cancelAll()
@@ -1203,6 +1220,7 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
             case "crowbot": provName = "Crowbot"
             case "unaligned": provName = "Unaligned"
             case "yeta": provName = "Yeta"
+            case "heimdallm": provName = "Heimdallm"
             default: provName = balance.name
             }
             let wasConnected = isConnected(balance.id) || balance.live || hasStoredCredential(balance.id) || (balance.dynamicAuthHeader != nil && !balance.dynamicAuthHeader!.isEmpty)
@@ -1324,7 +1342,7 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
             NSApp.activate(ignoringOtherApps: true)
             return
         }
-        let window = ClosableWindow(contentRect: NSRect(x: 0, y: 0, width: 540, height: 560), styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
+        let window = ClosableWindow(contentRect: NSRect(x: 0, y: 0, width: 540, height: 580), styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
         window.title = "Welcome to API Bar"
         window.isReleasedWhenClosed = false
         window.delegate = self
@@ -1420,6 +1438,7 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         case "lutheos": return URL(string: "https://lutheos.com/billing")!
         case "unaligned": return URL(string: "https://unaligned.pw/dashboard")!
         case "yeta": return URL(string: YetaProvider.dashboardURL)!
+        case "heimdallm": return URL(string: HeimdallmProvider.dashboardURL)!
         default: return URL(string: "https://console.cloud.google.com/billing/\(b.account)/credits/all")!
         }
     }
@@ -1628,6 +1647,7 @@ enum ProviderIcon {
         case "lutheos": (targetW, targetH) = (16.0, 12.4)
         case "unaligned": (targetW, targetH) = (15.2, 15.2)
         case "yeta": (targetW, targetH) = (14.6, 14.6)
+        case "heimdallm": (targetW, targetH) = (15.0, 15.0)
         default: (targetW, targetH) = (15.0, 13.8) // crowbot
         }
         let targetRect = CGRect(x: (18.0 - targetW) / 2.0, y: (18.0 - targetH) / 2.0, width: targetW, height: targetH)
