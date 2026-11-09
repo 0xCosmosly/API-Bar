@@ -487,16 +487,6 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
             if changed { save() }
         }
         applySorting()
-        // Unaligned shipped after this install configured its provider list. Add
-        // it enabled (respecting opt-out removals) unless onboarding is still
-        // pending, which handles the choice itself.
-        if UserDefaults.standard.bool(forKey: "HasCompletedOnboarding"),
-           UserDefaults.standard.string(forKey: "RemovedProviders")?.contains("unaligned") != true,
-           !balances.contains(where: { $0.id == "unaligned" }) {
-            balances.append(Balance(id: "unaligned", name: "Unaligned", baseline: 0, remaining: 0, updated: .distantPast, account: ""))
-            providerStatus["unaligned"] = "Connect in Settings"
-            save()
-        }
         if CommandLine.arguments.contains("--preview") {
             preview(); NSApp.terminate(nil); return
         }
