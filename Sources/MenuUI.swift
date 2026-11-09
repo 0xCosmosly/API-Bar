@@ -695,14 +695,49 @@ struct ProviderSettingsRow: View {
 
     private var statusDot: Color {
         if !balance.isEnabled { return Color.secondary.opacity(0.4) }
-        if app.isConnected(balance.id) { return Color.green }
         if app.inFlight.contains(balance.id) { return Color.orange }
+        if let state = app.providerConnectionStates[balance.id] {
+            switch state {
+            case .connecting:
+                return Color.orange
+            case .connected:
+                return Color.green
+            case .degraded:
+                return Color.yellow
+            case .disconnected(.sessionExpired, _):
+                return Color.red
+            case .disconnected, .paused:
+                return Color.secondary.opacity(0.4)
+            case .rejected:
+                return Color.red
+            }
+        }
+        if app.isConnected(balance.id) { return Color.green }
         return Color.secondary.opacity(0.4)
     }
 
     private var statusText: Color {
-        if app.isConnected(balance.id) { return Color.secondary }
+        if !balance.isEnabled { return Color.secondary.opacity(0.6) }
         if app.inFlight.contains(balance.id) { return Color.orange }
+        if let state = app.providerConnectionStates[balance.id] {
+            switch state {
+            case .connecting:
+                return Color.orange
+            case .connected:
+                return Color.secondary
+            case .degraded:
+                return Color.orange
+            case .disconnected(.sessionExpired, _):
+                return Color.red
+            case .disconnected:
+                return Color.secondary.opacity(0.8)
+            case .paused:
+                return Color.secondary.opacity(0.6)
+            case .rejected:
+                return Color.red
+            }
+        }
+        if app.isConnected(balance.id) { return Color.secondary }
         return Color.secondary.opacity(0.8)
     }
 
@@ -1509,6 +1544,19 @@ struct OnboardingView: View {
     }
 }
 
+public enum AFMWorkflowState: Equatable {
+    case idle
+    case analyzing(source: String)
+    case draftReady(AFMDetectedDraft)
+    case succeeded(message: String)
+    case failed(error: String)
+
+    public var isAnalyzing: Bool {
+        if case .analyzing = self { return true }
+        return false
+    }
+}
+
 struct SettingsPane: View {
     @ObservedObject var app: APIBarApp
     @ObservedObject private var updater = AppUpdater.shared
@@ -2227,15 +2275,42 @@ struct SettingsPane: View {
         .shadow(color: Color.black.opacity(0.03), radius: 2, x: 0, y: 1)
     }
 
+    private func setAFMState(_ newState: AFMWorkflowState) {
+        switch newState {
+        case .idle:
+            self.isAnalyzingAFM = false
+            self.afmError = nil
+            self.afmSuccessMessage = nil
+            self.afmDraft = nil
+        case .analyzing:
+            self.isAnalyzingAFM = true
+            self.afmError = nil
+            self.afmSuccessMessage = nil
+        case .draftReady(let draft):
+            self.isAnalyzingAFM = false
+            self.afmDraft = draft
+            self.afmError = nil
+            self.afmSuccessMessage = nil
+        case .succeeded(let msg):
+            self.isAnalyzingAFM = false
+            self.afmSuccessMessage = msg
+            self.afmError = nil
+            self.afmDraft = nil
+        case .failed(let err):
+            self.isAnalyzingAFM = false
+            self.afmError = err
+            self.afmSuccessMessage = nil
+            self.afmDraft = nil
+        }
+    }
+
     private func runAddKnownProvider(_ meta: KnownProviderMeta) {
         if let initial = Balance.initial.first(where: { $0.id == meta.id }) {
             app.addProvider(initial)
-            self.afmSuccessMessage = "Added \(meta.name) to API Bar."
+            setAFMState(.succeeded(message: "Added \(meta.name) to API Bar."))
             return
         }
-        isAnalyzingAFM = true
-        afmError = nil
-        afmSuccessMessage = nil
+        setAFMState(.analyzing(source: meta.name))
 
         Task {
             let clipboard = NSPasteboard.general.string(forType: .string)
@@ -2246,8 +2321,7 @@ struct SettingsPane: View {
             )
             await MainActor.run {
                 app.addCustomProvider(draft)
-                self.afmSuccessMessage = "Added \(draft.name)! Opened dashboard (\(dashboardURL)) in browser."
-                self.isAnalyzingAFM = false
+                setAFMState(.succeeded(message: "Added \(draft.name)! Opened dashboard (\(dashboardURL)) in browser."))
             }
         }
     }
@@ -2255,9 +2329,7 @@ struct SettingsPane: View {
     private func runAutoAdd() {
         let name = providerNameInput.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { return }
-        isAnalyzingAFM = true
-        afmError = nil
-        afmSuccessMessage = nil
+        setAFMState(.analyzing(source: name))
 
         Task {
             let clipboard = NSPasteboard.general.string(forType: .string)
@@ -2268,8 +2340,7 @@ struct SettingsPane: View {
             )
             await MainActor.run {
                 app.addCustomProvider(draft)
-                self.afmSuccessMessage = "Added \(draft.name)! Opened dashboard (\(dashboardURL)) in browser."
-                self.isAnalyzingAFM = false
+                setAFMState(.succeeded(message: "Added \(draft.name)! Opened dashboard (\(dashboardURL)) in browser."))
                 self.providerNameInput = ""
             }
         }
@@ -2278,20 +2349,16 @@ struct SettingsPane: View {
     private func runRawInputAdd() {
         let input = afmInput.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !input.isEmpty else { return }
-        isAnalyzingAFM = true
-        afmError = nil
-        afmSuccessMessage = nil
+        setAFMState(.analyzing(source: "rawInput"))
         Task {
             do {
                 let draft = try AFMProviderExtractor.extract(from: input)
                 await MainActor.run {
-                    self.afmDraft = draft
-                    self.isAnalyzingAFM = false
+                    setAFMState(.draftReady(draft))
                 }
             } catch {
                 await MainActor.run {
-                    self.afmError = error.localizedDescription
-                    self.isAnalyzingAFM = false
+                    setAFMState(.failed(error: error.localizedDescription))
                 }
             }
         }

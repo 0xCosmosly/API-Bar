@@ -1,5 +1,92 @@
 import Foundation
 
+public enum ProviderDisconnectReason: String, Equatable, Codable, Sendable {
+    case unconfigured = "unconfigured"
+    case sessionExpired = "sessionExpired"
+    case missingCredentials = "missingCredentials"
+    case manual = "manual"
+}
+
+public enum ProviderConnectionState: Equatable, Sendable {
+    case disconnected(reason: ProviderDisconnectReason, message: String)
+    case connecting(isInitial: Bool)
+    case connected(detail: String, lastChecked: Date?)
+    case degraded(error: String, canRetry: Bool)
+    case paused
+    case rejected(reason: String)
+
+    public var isOnline: Bool {
+        switch self {
+        case .connected, .degraded:
+            return true
+        default:
+            return false
+        }
+    }
+
+    public var isRefreshing: Bool {
+        if case .connecting = self { return true }
+        return false
+    }
+
+    public var canRefresh: Bool {
+        switch self {
+        case .connected, .degraded:
+            return true
+        default:
+            return false
+        }
+    }
+
+    public var displayStatus: String {
+        switch self {
+        case .connected(let detail, _):
+            return detail.isEmpty ? "Connected · refreshes every 5 min" : detail
+        case .connecting:
+            return "Connecting…"
+        case .disconnected(_, let message):
+            return message
+        case .degraded(let error, _):
+            return "Connected · \(error)"
+        case .paused:
+            return "Paused"
+        case .rejected(let reason):
+            return reason
+        }
+    }
+
+    public var telemetryRepresentation: [String: Any] {
+        var dict: [String: Any] = [
+            "displayStatus": displayStatus,
+            "isOnline": isOnline,
+            "canRefresh": canRefresh
+        ]
+        switch self {
+        case .connected(let detail, let lastChecked):
+            dict["state"] = "connected"
+            dict["detail"] = detail
+            if let lastChecked { dict["lastChecked"] = lastChecked.timeIntervalSince1970 }
+        case .connecting(let isInitial):
+            dict["state"] = "connecting"
+            dict["isInitial"] = isInitial
+        case .disconnected(let reason, let message):
+            dict["state"] = "disconnected"
+            dict["reason"] = reason.rawValue
+            dict["message"] = message
+        case .degraded(let error, let canRetry):
+            dict["state"] = "degraded"
+            dict["error"] = error
+            dict["canRetry"] = canRetry
+        case .paused:
+            dict["state"] = "paused"
+        case .rejected(let reason):
+            dict["state"] = "rejected"
+            dict["reason"] = reason
+        }
+        return dict
+    }
+}
+
 /// Future adapters must return the actual account-wide available money plus
 /// active credits, including automatic top-ups. Usage-only estimates do not meet
 /// this contract. Credentials belong in macOS Keychain, never in this project.

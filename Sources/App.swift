@@ -31,8 +31,127 @@ final class ClosableWindow: NSWindow {
     }
 }
 
+public enum MenuBarPresentationMode: Equatable, Sendable, CustomStringConvertible {
+    case individual(activeProviderIDs: [String])
+    case mergedOverview(activeCount: Int, aggregatePercent: Double?)
+    case mergedProvider(providerID: String)
+    case empty
+
+    public var description: String {
+        switch self {
+        case .individual(let ids): return "individual(\(ids.joined(separator: ",")))"
+        case .mergedOverview(let count, let pct): return "mergedOverview(count: \(count), percent: \(pct.map { String(format: "%.1f%%", $0) } ?? "nil"))"
+        case .mergedProvider(let id): return "mergedProvider(\(id))"
+        case .empty: return "empty"
+        }
+    }
+
+    public var telemetryRepresentation: [String: Any] {
+        switch self {
+        case .individual(let ids):
+            return ["mode": "individual", "providerIDs": ids]
+        case .mergedOverview(let count, let pct):
+            var dict: [String: Any] = ["mode": "mergedOverview", "activeCount": count]
+            if let pct { dict["aggregatePercent"] = pct }
+            return dict
+        case .mergedProvider(let id):
+            return ["mode": "mergedProvider", "providerID": id]
+        case .empty:
+            return ["mode": "empty"]
+        }
+    }
+}
+
+public enum BrowserAccessState: Equatable, Sendable {
+    case notInstalled(browser: String)
+    case blocked(browser: String, hint: String)
+    case authorized(accessKind: String, profile: String, profilesCount: Int)
+
+    public var telemetryRepresentation: [String: Any] {
+        switch self {
+        case .notInstalled(let browser):
+            return ["state": "notInstalled", "browser": browser]
+        case .blocked(let browser, let hint):
+            return ["state": "blocked", "browser": browser, "hint": hint]
+        case .authorized(let kind, let profile, let count):
+            return [
+                "state": "authorized",
+                "kind": kind,
+                "profile": profile,
+                "profilesCount": count
+            ]
+        }
+    }
+}
+
 @MainActor
 final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowDelegate, ObservableObject {
+    @Published public private(set) var providerConnectionStates: [String: ProviderConnectionState] = [:]
+
+    public var menuBarPresentationMode: MenuBarPresentationMode {
+        if activeBalances.isEmpty {
+            return .empty
+        }
+        if mergeIcons {
+            if mergedProvider == "overview" {
+                let usdRemaining = activeBalances.reduce(0.0) { $0 + $1.remaining }
+                let usdBaseline = activeBalances.reduce(0.0) { $0 + $1.baseline }
+                let pct = usdBaseline > 0 ? max(0, usdRemaining / usdBaseline * 100) : nil
+                return .mergedOverview(activeCount: activeBalances.count, aggregatePercent: pct)
+            } else if let b = selectedMergedBalance {
+                return .mergedProvider(providerID: b.id)
+            } else {
+                return .mergedOverview(activeCount: activeBalances.count, aggregatePercent: nil)
+            }
+        } else {
+            return .individual(activeProviderIDs: activeBalances.map(\.id))
+        }
+    }
+
+    public var browserAccessState: BrowserAccessState {
+        if !isBraveInstalled {
+            return .notInstalled(browser: browserName)
+        }
+        if isBraveAccessBlocked {
+            return .blocked(browser: browserName, hint: "Grant Full Disk Access or choose your \(browserName) profile folder.")
+        }
+        let profile = selectedBraveProfileID
+        return .authorized(accessKind: braveAccessKind.rawValue, profile: profile, profilesCount: availableBraveProfiles.count)
+    }
+
+    public func setConnectionState(for id: String, to state: ProviderConnectionState) {
+        providerConnectionStates[id] = state
+        providerStatus[id] = state.displayStatus
+    }
+
+    public func handleFetchError(id: String, error: Error, fallbackName: String) {
+        let provName: String
+        switch id {
+        case "fireworks": provName = "app.fireworks.ai"
+        case "vertex": provName = "Google Cloud"
+        case "aistudio": provName = "Google AI Studio"
+        case "cerebras": provName = "Cerebras Cloud"
+        case "refuseless": provName = "Refuseless"
+        case "lutheos": provName = "Lutheos"
+        case "crowbot": provName = "Crowbot"
+        case "unaligned": provName = "Unaligned"
+        case "yeta": provName = "Yeta"
+        case "heimdallm": provName = "Heimdallm"
+        default: provName = fallbackName
+        }
+        let wasConnected = isConnected(id) || balances.first(where: { $0.id == id })?.live == true || hasStoredCredential(id) || (balances.first(where: { $0.id == id })?.dynamicAuthHeader?.isEmpty == false)
+        if error.localizedDescription.contains("expired") || error.localizedDescription.contains("sign in") {
+            if wasConnected {
+                setConnectionState(for: id, to: .disconnected(reason: .sessionExpired, message: "Session expired · sign in to \(provName) in Brave"))
+            } else {
+                setConnectionState(for: id, to: .disconnected(reason: .unconfigured, message: "Connect in Settings to refresh"))
+            }
+        } else if wasConnected {
+            setConnectionState(for: id, to: .degraded(error: error.localizedDescription, canRetry: true))
+        } else {
+            setConnectionState(for: id, to: .disconnected(reason: .unconfigured, message: "Connect in Settings to refresh"))
+        }
+    }
     // Providers are opt-in. A first launch starts with an empty list and the
     // onboarding provider step records only the choices the user makes.
     @Published var balances: [Balance] = []
@@ -187,6 +306,7 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         balances.remove(at: index)
         clients.removeValue(forKey: id)
         KeychainVault.clear(id)
+        providerConnectionStates.removeValue(forKey: id)
         providerStatus.removeValue(forKey: id)
         inFlight.remove(id)
         var removed = UserDefaults.standard.stringArray(forKey: "RemovedProviders") ?? []
@@ -212,7 +332,8 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         removed.removeAll(where: { $0 == provider.id })
         UserDefaults.standard.set(removed, forKey: "RemovedProviders")
 
-        providerStatus[provider.id] = isConnected(provider.id) ? "Connected · refreshes every 5 min" : "Connect in Settings"
+        let connected = isConnected(provider.id)
+        setConnectionState(for: provider.id, to: connected ? .connected(detail: "Connected · refreshes every 5 min", lastChecked: nil) : .disconnected(reason: .unconfigured, message: "Connect in Settings"))
         save()
         reapplyOrder()
     }
@@ -247,7 +368,7 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
             dynamicAuthHeader: draft.authHeader
         )
         balances.append(newBalance)
-        providerStatus[finalID] = hasAuth ? "Connected · refreshes every 5 min" : "Connect in Settings"
+        setConnectionState(for: finalID, to: hasAuth ? .connected(detail: "Connected · refreshes every 5 min", lastChecked: nil) : .disconnected(reason: .unconfigured, message: "Connect in Settings"))
         save()
         reapplyOrder()
         if hasAuth {
@@ -259,7 +380,7 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         let header = token.hasPrefix("Bearer ") ? token : "Bearer \(token)"
         balances[idx].dynamicAuthHeader = header
         balances[idx].live = true
-        providerStatus[providerID] = "Connecting…"
+        setConnectionState(for: providerID, to: .connecting(isInitial: false))
         save()
         ICloudSync.shared.schedulePush()
         Task { await refreshProvider(providerID) }
@@ -272,13 +393,14 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         balances[index].isEnabled = enabled
         UserDefaults.standard.set(Date(), forKey: "APIBarSettingsModified")
         if enabled {
-            providerStatus[id] = isConnected(id) ? "Connected · refreshes every 5 min" : "Connect in Settings"
+            let connected = isConnected(id)
+            setConnectionState(for: id, to: connected ? .connected(detail: "Connected · refreshes every 5 min", lastChecked: nil) : .disconnected(reason: .unconfigured, message: "Connect in Settings"))
         } else {
             // Drop any in-flight work so a paused provider cannot write a balance
             // after the user stopped tracking it.
             inFlight.remove(id)
             clients.removeValue(forKey: id)
-            providerStatus[id] = "Paused"
+            setConnectionState(for: id, to: .paused)
             if mergedProvider == id {
                 mergedProvider = "overview"
                 UserDefaults.standard.set("overview", forKey: "MergedProvider")
@@ -503,11 +625,11 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         setupMainMenuIfNeeded()
         for b in balances {
             if !b.isEnabled {
-                providerStatus[b.id] = "Paused"
+                setConnectionState(for: b.id, to: .paused)
             } else if b.live || hasStoredCredential(b.id) || (b.dynamicAuthHeader != nil && !b.dynamicAuthHeader!.isEmpty) {
-                providerStatus[b.id] = "Connected · refreshes every 5 min"
+                setConnectionState(for: b.id, to: .connected(detail: "Connected · refreshes every 5 min", lastChecked: b.updated))
             } else {
-                providerStatus[b.id] = "Connect in Settings"
+                setConnectionState(for: b.id, to: .disconnected(reason: .unconfigured, message: "Connect in Settings"))
             }
         }
         configureStatusItems()
@@ -609,6 +731,13 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
                 "visible": items.map(\.isVisible),
                 "loginStatus": String(describing: SMAppService.mainApp.status),
                 "providerStatus": providerStatus,
+                "stateMachines": [
+                    "presentation": menuBarPresentationMode.telemetryRepresentation,
+                    "updater": AppUpdater.shared.telemetryRepresentation,
+                    "cloudSync": ICloudSync.shared.telemetryRepresentation,
+                    "browserAccess": browserAccessState.telemetryRepresentation,
+                    "providers": providerConnectionStates.mapValues { $0.telemetryRepresentation }
+                ],
                 "backgroundRefreshFinished": lastRefresh != nil,
                 "credentialPrompts": "explicit-connect-only",
                 "menuTitles": items.compactMap { $0.menu?.items.map(\.title) }
@@ -667,32 +796,7 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
                 }
                 apply(reading)
             } catch {
-                let provName: String
-                switch balance.id {
-                case "fireworks": provName = "app.fireworks.ai"
-                case "vertex": provName = "Google Cloud"
-                case "aistudio": provName = "Google AI Studio"
-                case "cerebras": provName = "Cerebras Cloud"
-                case "refuseless": provName = "Refuseless"
-                case "lutheos": provName = "Lutheos"
-                case "crowbot": provName = "Crowbot"
-                case "unaligned": provName = "Unaligned"
-                case "yeta": provName = "Yeta"
-                case "heimdallm": provName = "Heimdallm"
-                default: provName = balance.name
-                }
-                let wasConnected = isConnected(balance.id) || balance.live || hasStoredCredential(balance.id) || (balance.dynamicAuthHeader != nil && !balance.dynamicAuthHeader!.isEmpty)
-                if error.localizedDescription.contains("expired") || error.localizedDescription.contains("sign in") {
-                    if wasConnected {
-                        providerStatus[balance.id] = "Session expired · sign in to \(provName) in Brave"
-                    } else {
-                        providerStatus[balance.id] = "Connect in Settings to refresh"
-                    }
-                } else if wasConnected {
-                    providerStatus[balance.id] = "Connected · \(error.localizedDescription)"
-                } else {
-                    providerStatus[balance.id] = "Connect in Settings to refresh"
-                }
+                handleFetchError(id: balance.id, error: error, fallbackName: balance.name)
             }
             inFlight.remove(balance.id)
         }
@@ -824,7 +928,8 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
 
     func connect(_ provider: String) {
         guard !inFlight.contains(provider) else { return }
-        inFlight.insert(provider); providerStatus[provider] = "Connecting…"
+        inFlight.insert(provider)
+        setConnectionState(for: provider, to: .connecting(isInitial: false))
         Task {
             defer {
                 inFlight.remove(provider)
@@ -855,9 +960,9 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
                 }
                 clients[provider] = client
                 apply(reading)
-                providerStatus[provider] = "Connected · refreshes every 5 min"
+                setConnectionState(for: provider, to: .connected(detail: "Connected · refreshes every 5 min", lastChecked: Date()))
             } catch {
-                providerStatus[provider] = error.localizedDescription
+                setConnectionState(for: provider, to: .degraded(error: error.localizedDescription, canRetry: true))
                 refreshBraveProfiles()
                 if let b = balances.first(where: { $0.id == provider }) {
                     openDashboard(b)
@@ -897,7 +1002,7 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
 
             for balance in targets {
                 inFlight.insert(balance.id)
-                providerStatus[balance.id] = "Connecting…"
+                setConnectionState(for: balance.id, to: .connecting(isInitial: false))
             }
             updateTitles()
 
@@ -948,9 +1053,9 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
                     switch result {
                     case .success(let reading):
                         apply(reading)
-                        providerStatus[id] = "Connected · refreshes every 5 min"
+                        setConnectionState(for: id, to: .connected(detail: "Connected · refreshes every 5 min", lastChecked: Date()))
                     case .failure(let error):
-                        providerStatus[id] = error.localizedDescription
+                        setConnectionState(for: id, to: .degraded(error: error.localizedDescription, canRetry: true))
                         if let name = balances.first(where: { $0.id == id })?.name {
                             errors.append("\(name): \(error.localizedDescription)")
                         }
@@ -968,6 +1073,9 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
     }
     func isConnected(_ provider: String) -> Bool {
         guard let b = balances.first(where: { $0.id == provider }) else { return false }
+        if let state = providerConnectionStates[provider] {
+            return state.isOnline
+        }
         if let status = providerStatus[provider] {
             if status.contains("Connect in Settings") || status.contains("Disconnected") || status.contains("expired") || status.hasPrefix("Not connected") || status == "Paused" {
                 return false
@@ -981,13 +1089,16 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
     }
     func disconnect(_ provider: String) {
         guard !inFlight.contains(provider) else { return }
-        clients.removeValue(forKey:provider); KeychainVault.clear(provider)
-        providerStatus[provider] = "Disconnected"
-        if let i = balances.firstIndex(where:{$0.id == provider}) { balances[i].live = false }
+        clients.removeValue(forKey: provider); KeychainVault.clear(provider)
+        setConnectionState(for: provider, to: .disconnected(reason: .manual, message: "Disconnected"))
+        if let i = balances.firstIndex(where: { $0.id == provider }) { balances[i].live = false }
         save(); updateTitles()
     }
     func apply(_ r: Reading) {
-        guard ReadingValidation.valid(r,balances:balances), let i = balances.firstIndex(where:{$0.id == r.provider}) else { providerStatus[r.provider] = "A balance from a different account or source was rejected."; return }
+        guard ReadingValidation.valid(r, balances: balances), let i = balances.firstIndex(where: { $0.id == r.provider }) else {
+            setConnectionState(for: r.provider, to: .rejected(reason: "A balance from a different account or source was rejected."))
+            return
+        }
         if balances[i].account.isEmpty || balances[i].account.hasSuffix(" Account") { balances[i].account = r.account }
         let oldRemaining = balances[i].remaining
         balances[i].remaining = r.remaining; balances[i].updated = Date(); balances[i].live = true; balances[i].expires = r.expires
@@ -1005,7 +1116,7 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
             } else {
                 balances[i].baseline = max(balances[i].baseline, r.remaining)
             }
-            providerStatus[r.provider] = "Connected · refreshes every 5 min"
+            setConnectionState(for: r.provider, to: .connected(detail: "Connected · refreshes every 5 min", lastChecked: Date()))
             if sortMode != .manual {
                 applySorting()
             } else {
@@ -1029,7 +1140,7 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
             } else {
                 balances[i].baseline = max(balances[i].baseline, r.remaining)
             }
-            providerStatus[r.provider] = "Connected · refreshes every 5 min"
+            setConnectionState(for: r.provider, to: .connected(detail: "Connected · refreshes every 5 min", lastChecked: Date()))
             if sortMode != .manual {
                 applySorting()
             } else {
@@ -1045,7 +1156,7 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
             } else {
                 balances[i].baseline = max(balances[i].baseline, r.remaining)
             }
-            providerStatus[r.provider] = "Connected · refreshes every 5 min"
+            setConnectionState(for: r.provider, to: .connected(detail: "Connected · refreshes every 5 min", lastChecked: Date()))
             if sortMode != .manual {
                 applySorting()
             } else {
@@ -1061,7 +1172,7 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
             } else {
                 balances[i].baseline = max(balances[i].baseline, r.remaining)
             }
-            providerStatus[r.provider] = "Connected · refreshes every 5 min"
+            setConnectionState(for: r.provider, to: .connected(detail: "Connected · refreshes every 5 min", lastChecked: Date()))
             if sortMode != .manual {
                 applySorting()
             } else {
@@ -1082,7 +1193,7 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         } else {
             balances[i].baseline = max(balances[i].baseline, r.remaining)
         }
-        providerStatus[r.provider] = "Connected · refreshes every 5 min"
+        setConnectionState(for: r.provider, to: .connected(detail: "Connected · refreshes every 5 min", lastChecked: Date()))
         if sortMode != .manual {
             applySorting()
         } else {
@@ -1273,32 +1384,7 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
             }
             apply(reading)
         } catch {
-            let provName: String
-            switch balance.id {
-            case "fireworks": provName = "app.fireworks.ai"
-            case "vertex": provName = "Google Cloud"
-            case "aistudio": provName = "Google AI Studio"
-            case "cerebras": provName = "Cerebras Cloud"
-            case "refuseless": provName = "Refuseless"
-            case "lutheos": provName = "Lutheos"
-            case "crowbot": provName = "Crowbot"
-            case "unaligned": provName = "Unaligned"
-            case "yeta": provName = "Yeta"
-            case "heimdallm": provName = "Heimdallm"
-            default: provName = balance.name
-            }
-            let wasConnected = isConnected(balance.id) || balance.live || hasStoredCredential(balance.id) || (balance.dynamicAuthHeader != nil && !balance.dynamicAuthHeader!.isEmpty)
-            if error.localizedDescription.contains("expired") || error.localizedDescription.contains("sign in") {
-                if wasConnected {
-                    providerStatus[balance.id] = "Session expired · sign in to \(provName) in Brave"
-                } else {
-                    providerStatus[balance.id] = "Connect in Settings to refresh"
-                }
-            } else if wasConnected {
-                providerStatus[balance.id] = "Connected · \(error.localizedDescription)"
-            } else {
-                providerStatus[balance.id] = "Connect in Settings to refresh"
-            }
+            handleFetchError(id: balance.id, error: error, fallbackName: balance.name)
         }
     }
     @objc func refreshMergedProvider() {

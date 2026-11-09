@@ -2,6 +2,44 @@ import Foundation
 import AppKit
 import SwiftUI
 
+public enum InstallStage: String, Equatable, Codable, Sendable {
+    case downloading = "downloading"
+    case extracting = "extracting"
+    case replacingBundle = "replacingBundle"
+    case relaunching = "relaunching"
+    case failed = "failed"
+
+    public var displayLabel: String {
+        switch self {
+        case .downloading: return "Downloading update from GitHub…"
+        case .extracting: return "Extracting update archive…"
+        case .replacingBundle: return "Replacing application bundle…"
+        case .relaunching: return "Relaunching API Bar…"
+        case .failed: return "Installation failed."
+        }
+    }
+}
+
+public enum UpdaterState: Equatable, Sendable {
+    case idle(lastChecked: Date?)
+    case checking(manual: Bool)
+    case available(version: String, title: String, notes: String, releaseURL: URL?, downloadURL: URL?, assetUpdatedAt: Date?, isRebuild: Bool)
+    case upToDate(version: String, checkedAt: Date)
+    case installing(stage: InstallStage)
+    case failed(message: String)
+
+    public var telemetryName: String {
+        switch self {
+        case .idle: return "idle"
+        case .checking: return "checking"
+        case .available: return "available"
+        case .upToDate: return "upToDate"
+        case .installing: return "installing"
+        case .failed: return "failed"
+        }
+    }
+}
+
 @MainActor
 public final class AppUpdater: ObservableObject {
     public static let shared = AppUpdater()
@@ -12,6 +50,7 @@ public final class AppUpdater: ObservableObject {
     public static let fallbackFeedEndpoint = "https://github.com/\(repoOwner)/\(repoName)/releases.atom"
     public static let latestHtmlEndpoint = "https://github.com/\(repoOwner)/\(repoName)/releases/latest"
 
+    @Published public private(set) var state: UpdaterState = .idle(lastChecked: nil)
     @Published public var isChecking: Bool = false
     @Published public var updateAvailable: Bool = false
     @Published public var latestVersion: String? = nil
@@ -21,6 +60,66 @@ public final class AppUpdater: ObservableObject {
     @Published public var downloadURL: URL? = nil
     @Published public var assetUpdatedAt: Date? = nil
     @Published public var checkError: String? = nil
+
+    public func transition(to newState: UpdaterState) {
+        self.state = newState
+        switch newState {
+        case .idle(let date):
+            self.isChecking = false
+            self.isInstalling = false
+            if let date { self.lastCheckedDate = date }
+        case .checking(let manual):
+            self.isChecking = true
+            self.checkError = nil
+            if manual { self.statusMessage = "Checking for updates…" }
+        case .available(let ver, let title, let notes, let relURL, let dlURL, let assetDate, let isRebuild):
+            self.isChecking = false
+            self.isInstalling = false
+            self.updateAvailable = true
+            self.latestVersion = ver
+            self.releaseTitle = title
+            self.releaseNotes = notes
+            self.releaseURL = relURL
+            self.downloadURL = dlURL
+            self.assetUpdatedAt = assetDate
+            self.checkError = nil
+            self.statusMessage = isRebuild ? "Updated build available: v\(ver)" : "Update available: v\(ver)"
+        case .upToDate(let ver, let date):
+            self.isChecking = false
+            self.isInstalling = false
+            self.updateAvailable = false
+            self.latestVersion = ver
+            self.checkError = nil
+            self.lastCheckedDate = date
+            self.statusMessage = "Up to date (v\(ver))."
+        case .installing(let stage):
+            self.isChecking = false
+            self.isInstalling = true
+            self.installStatusText = stage.displayLabel
+        case .failed(let message):
+            self.isChecking = false
+            self.isInstalling = false
+            self.checkError = message
+            self.statusMessage = message
+        }
+    }
+
+    public var telemetryRepresentation: [String: Any] {
+        var dict: [String: Any] = [
+            "state": state.telemetryName,
+            "currentVersion": currentVersion,
+            "isChecking": isChecking,
+            "updateAvailable": updateAvailable,
+            "isInstalling": isInstalling
+        ]
+        if let latestVersion { dict["latestVersion"] = latestVersion }
+        if let checkError { dict["checkError"] = checkError }
+        if !installStatusText.isEmpty { dict["installStatusText"] = installStatusText }
+        if !statusMessage.isEmpty { dict["statusMessage"] = statusMessage }
+        if let lastCheckedDate { dict["lastChecked"] = lastCheckedDate.timeIntervalSince1970 }
+        return dict
+    }
+
     /// Test seam: point the release lookup at a fixture server so the update
     /// decision can be verified without publishing a release. Unset in normal runs.
     public static var releaseEndpointOverride: URL? {
@@ -226,9 +325,7 @@ public final class AppUpdater: ObservableObject {
 
     public func checkForUpdates(manual: Bool = false, forceSilentInstall: Bool = false) async {
         guard !isChecking else { return }
-        isChecking = true
-        checkError = nil
-        if manual { statusMessage = "Checking for updates…" }
+        transition(to: .checking(manual: manual))
 
         defer {
             isChecking = false
@@ -254,13 +351,21 @@ public final class AppUpdater: ObservableObject {
             } else {
                 isSameVersionUpdated = false
             }
-            self.latestVersion = release.version
-            self.releaseTitle = release.title
-            self.releaseNotes = release.notes
-            self.releaseURL = release.releaseURL
-            self.downloadURL = release.downloadURL
-            self.assetUpdatedAt = release.assetUpdatedAt
-            self.updateAvailable = isSemverNewer || isSameVersionUpdated
+
+            let hasUpdate = isSemverNewer || isSameVersionUpdated
+            if hasUpdate {
+                transition(to: .available(
+                    version: release.version,
+                    title: release.title,
+                    notes: release.notes,
+                    releaseURL: release.releaseURL,
+                    downloadURL: release.downloadURL,
+                    assetUpdatedAt: release.assetUpdatedAt,
+                    isRebuild: isSameVersionUpdated
+                ))
+            } else {
+                transition(to: .upToDate(version: currentVersion, checkedAt: Date()))
+            }
 
             // Cooldown check: prevent rapid reinstallations
             let lastInstallTime = (UserDefaults.standard.object(forKey: "APIBarLastUpdateInstallTime") as? Date) ?? .distantPast
@@ -270,31 +375,21 @@ public final class AppUpdater: ObservableObject {
                 // User explicitly clicked "Check for Updates…":
                 // If a new version exists on GitHub, show the Software Update window with notes.
                 // Otherwise, show the native "You're Up to Date" confirmation dialog.
-                if isSemverNewer || isSameVersionUpdated {
-                    self.statusMessage = isSemverNewer ? "Update available: v\(release.version)" : "Updated build available: v\(release.version)"
+                if hasUpdate {
                     showUpdateWindow()
                 } else {
-                    self.statusMessage = "Up to date (v\(currentVersion))."
                     showUpToDateAlert()
                 }
             } else if forceSilentInstall {
                 // Background silent install triggered by iCloud push:
                 // Only execute if not recently updated (>120s cooldown) and there is a newer build or asset
-                if elapsed > 120 && (isSemverNewer || isSameVersionUpdated) {
+                if elapsed > 120 && hasUpdate {
                     self.statusMessage = "Applying silent update to v\(release.version)…"
                     await self.installUpdate()
                 }
-            } else {
-                // Standard automatic background check on startup or periodic timer:
-                // NEVER automatically restart or reinstall the app! Just notify via UI state.
-                if isSemverNewer || isSameVersionUpdated {
-                    self.statusMessage = isSemverNewer ? "Update available: v\(release.version)" : "Updated build available: v\(release.version)"
-                } else {
-                    self.statusMessage = "Up to date (v\(currentVersion))."
-                }
             }
         } catch {
-            self.checkError = error.localizedDescription
+            transition(to: .failed(message: error.localizedDescription))
             if manual {
                 showAlert("Update Check Failed", error.localizedDescription)
             }
@@ -357,19 +452,18 @@ public final class AppUpdater: ObservableObject {
             return
         }
 
-        isInstalling = true
-        installStatusText = "Downloading update from GitHub…"
+        transition(to: .installing(stage: .downloading))
         defer { isInstalling = false }
 
         do {
             let (tempZipURL, response) = try await URLSession.shared.download(from: downloadURL)
             guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
-                installStatusText = "Download failed."
+                transition(to: .failed(message: "Download failed."))
                 if let releaseURL { NSWorkspace.shared.open(releaseURL) }
                 return
             }
 
-            installStatusText = "Extracting update archive…"
+            transition(to: .installing(stage: .extracting))
             let tempExtractDir = FileManager.default.temporaryDirectory.appendingPathComponent("APIBarUpdate-" + UUID().uuidString)
             try FileManager.default.createDirectory(at: tempExtractDir, withIntermediateDirectories: true)
             defer { try? FileManager.default.removeItem(at: tempExtractDir) }
@@ -382,7 +476,7 @@ public final class AppUpdater: ObservableObject {
 
             let items = try FileManager.default.contentsOfDirectory(at: tempExtractDir, includingPropertiesForKeys: nil)
             guard let newAppBundle = items.first(where: { $0.pathExtension == "app" }) else {
-                installStatusText = "Archive did not contain an application bundle."
+                transition(to: .failed(message: "Archive did not contain an application bundle."))
                 if let releaseURL { NSWorkspace.shared.open(releaseURL) }
                 return
             }
@@ -392,7 +486,7 @@ public final class AppUpdater: ObservableObject {
                 destURL = URL(fileURLWithPath: "/Applications/API Bar.app")
             }
 
-            installStatusText = "Replacing application bundle…"
+            transition(to: .installing(stage: .replacingBundle))
             let backupURL = destURL.deletingLastPathComponent().appendingPathComponent("APIBar-backup-\(UUID().uuidString).app")
             var didBackup = false
             if FileManager.default.fileExists(atPath: destURL.path) {
@@ -420,7 +514,7 @@ public final class AppUpdater: ObservableObject {
             try? xattr.run()
             xattr.waitUntilExit()
 
-            installStatusText = "Relaunching API Bar…"
+            transition(to: .installing(stage: .relaunching))
             let pid = ProcessInfo.processInfo.processIdentifier
             let escapedPath = destURL.path.replacingOccurrences(of: "'", with: "'\\''")
             let escapedBackup = backupURL.path.replacingOccurrences(of: "'", with: "'\\''")
@@ -453,7 +547,7 @@ public final class AppUpdater: ObservableObject {
                 exit(0)
             }
         } catch {
-            installStatusText = "Installation failed: \(error.localizedDescription)"
+            transition(to: .failed(message: "Installation failed: \(error.localizedDescription)"))
             if let releaseURL { NSWorkspace.shared.open(releaseURL) }
         }
     }

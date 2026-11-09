@@ -50,6 +50,39 @@ struct ICloudManifest: Codable, Equatable {
     }
 }
 
+public enum CloudSyncPhase: String, Equatable, Codable, Sendable {
+    case pulling = "pulling"
+    case pushing = "pushing"
+    case full = "syncing"
+}
+
+public enum CloudSyncState: Equatable, Sendable {
+    case unavailable(reason: String)
+    case disabled
+    case idle(lastSync: Date?)
+    case syncing(phase: CloudSyncPhase)
+    case failed(error: String, lastSync: Date?)
+
+    public var telemetryName: String {
+        switch self {
+        case .unavailable: return "unavailable"
+        case .disabled: return "disabled"
+        case .idle: return "idle"
+        case .syncing: return "syncing"
+        case .failed: return "failed"
+        }
+    }
+
+    public var statusBadge: String {
+        switch self {
+        case .unavailable: return "Unavailable"
+        case .disabled: return "Off"
+        case .syncing: return "Syncing…"
+        case .idle, .failed: return "Active"
+        }
+    }
+}
+
 @MainActor
 final class ICloudSync: ObservableObject {
     static let shared = ICloudSync()
@@ -64,6 +97,7 @@ final class ICloudSync: ObservableObject {
     static let lastSyncKey = "ICloudSyncLastDate"
     static let deviceIdKey = "APIBarDeviceUUID"
 
+    @Published public private(set) var state: CloudSyncState = .disabled
     @Published private(set) var isSyncing: Bool = false
     @Published private(set) var isAvailable: Bool = false
     @Published var isEnabled: Bool = false
@@ -76,6 +110,50 @@ final class ICloudSync: ObservableObject {
     @Published private(set) var lastSyncDate: Date? = nil
     @Published private(set) var statusMessage: String = "Disabled"
     @Published private(set) var lastError: String? = nil
+
+    public func transition(to newState: CloudSyncState) {
+        self.state = newState
+        switch newState {
+        case .unavailable(let reason):
+            self.isAvailable = false
+            self.isSyncing = false
+            self.statusMessage = reason
+        case .disabled:
+            self.isSyncing = false
+            self.statusMessage = "iCloud Sync is turned off"
+        case .idle(let date):
+            self.isSyncing = false
+            self.lastSyncDate = date
+            self.lastError = nil
+            if let date {
+                self.statusMessage = "Last synced \(relativeTimeString(for: date))"
+            } else {
+                self.statusMessage = "Ready to sync"
+            }
+        case .syncing:
+            self.isSyncing = true
+            self.statusMessage = "Syncing with iCloud…"
+        case .failed(let error, let lastDate):
+            self.isSyncing = false
+            self.lastError = error
+            self.lastSyncDate = lastDate
+            self.statusMessage = "Sync error: \(error)"
+        }
+    }
+
+    public var telemetryRepresentation: [String: Any] {
+        var dict: [String: Any] = [
+            "state": state.telemetryName,
+            "isEnabled": isEnabled,
+            "isAvailable": isAvailable,
+            "isSyncing": isSyncing,
+            "statusBadge": statusBadge,
+            "statusMessage": statusMessage
+        ]
+        if let lastSyncDate { dict["lastSync"] = lastSyncDate.timeIntervalSince1970 }
+        if let lastError { dict["lastError"] = lastError }
+        return dict
+    }
 
     private weak var app: APIBarApp?
     private var pushDebounceTask: Task<Void, Never>?
@@ -104,10 +182,7 @@ final class ICloudSync: ObservableObject {
     }
 
     var statusBadge: String {
-        if !isAvailable { return "Unavailable" }
-        if !isEnabled { return "Off" }
-        if isSyncing { return "Syncing…" }
-        return "Active"
+        state.statusBadge
     }
 
     var baseDirectoryURL: URL? {
@@ -553,15 +628,15 @@ final class ICloudSync: ObservableObject {
 
     func updateStatusMessage() {
         if !isAvailable {
-            statusMessage = "iCloud Drive is not available on this Mac"
+            transition(to: .unavailable(reason: "iCloud Drive is not available on this Mac"))
         } else if !isEnabled {
-            statusMessage = "iCloud Sync is turned off"
+            transition(to: .disabled)
         } else if isSyncing {
-            statusMessage = "Syncing with iCloud…"
+            transition(to: .syncing(phase: .full))
         } else if let date = lastSyncDate {
-            statusMessage = "Last synced \(relativeTimeString(for: date))"
+            transition(to: .idle(lastSync: date))
         } else {
-            statusMessage = "Ready to sync"
+            transition(to: .idle(lastSync: nil))
         }
     }
 
@@ -578,16 +653,14 @@ final class ICloudSync: ObservableObject {
     func syncNow() async {
         guard !isPerformingSync else { return }
         isPerformingSync = true
-        isSyncing = true
-        statusMessage = "Syncing with iCloud…"
+        transition(to: .syncing(phase: .full))
         defer {
-            isSyncing = false
             isPerformingSync = false
             updateStatusMessage()
         }
 
         guard checkAvailability() else {
-            statusMessage = "iCloud Drive is not available on this Mac"
+            transition(to: .unavailable(reason: "iCloud Drive is not available on this Mac"))
             return
         }
 
@@ -1195,8 +1268,7 @@ final class ICloudSync: ObservableObject {
             lastError = nil
             return didTransferAny
         } catch {
-            lastError = error.localizedDescription
-            statusMessage = "Sync error: \(error.localizedDescription)"
+            transition(to: .failed(error: error.localizedDescription, lastSync: lastSyncDate))
             return false
         }
     }

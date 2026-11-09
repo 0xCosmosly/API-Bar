@@ -684,6 +684,98 @@ import SwiftUI
         app.changelogWindow?.close()
         precondition(app.changelogWindow == nil, "app.changelogWindow must be nil after close()")
 
+        // Test Explicit State Machines & AX Telemetry
+        // 1. ProviderConnectionState
+        let testProviderID = "statetest"
+        let testBalance = Balance(id: testProviderID, name: "State Test", baseline: 100, remaining: 50, updated: Date(), account: "test", expires: nil, live: true)
+        app.addProvider(testBalance)
+        precondition(app.providerConnectionStates[testProviderID] != nil, "providerConnectionStates should record added provider")
+
+        app.setConnectionState(for: testProviderID, to: .connecting(isInitial: true))
+        precondition(app.providerConnectionStates[testProviderID]?.isRefreshing == true)
+        precondition(app.providerStatus[testProviderID] == "Connecting…")
+
+        app.setConnectionState(for: testProviderID, to: .connected(detail: "Connected · refreshes every 5 min", lastChecked: Date()))
+        precondition(app.providerConnectionStates[testProviderID]?.isOnline == true)
+        precondition(app.isConnected(testProviderID) == true)
+
+        app.setConnectionState(for: testProviderID, to: .degraded(error: "Rate limit 429", canRetry: true))
+        precondition(app.providerConnectionStates[testProviderID]?.isOnline == true)
+        precondition(app.providerStatus[testProviderID]?.contains("Rate limit") == true)
+
+        app.setConnectionState(for: testProviderID, to: .disconnected(reason: .sessionExpired, message: "Session expired"))
+        precondition(app.providerConnectionStates[testProviderID]?.isOnline == false)
+        precondition(app.isConnected(testProviderID) == false)
+
+        app.setProviderEnabled(false, id: testProviderID)
+        precondition(app.providerConnectionStates[testProviderID] == .paused)
+        precondition(app.providerStatus[testProviderID] == "Paused")
+        app.removeProvider(id: testProviderID)
+        precondition(app.providerConnectionStates[testProviderID] == nil)
+
+        // 2. AppUpdater State Transitions
+        let updater = AppUpdater.shared
+        updater.transition(to: .idle(lastChecked: nil))
+        precondition(updater.state == .idle(lastChecked: nil))
+        precondition(!updater.isChecking && !updater.isInstalling)
+
+        updater.transition(to: .checking(manual: true))
+        precondition(updater.isChecking == true)
+        precondition(updater.statusMessage == "Checking for updates…")
+
+        updater.transition(to: .available(version: "1.0.0", title: "API Bar 1.0.0", notes: "Big update", releaseURL: nil, downloadURL: nil, assetUpdatedAt: nil, isRebuild: false))
+        precondition(updater.updateAvailable == true)
+        precondition(updater.latestVersion == "1.0.0")
+
+        updater.transition(to: .installing(stage: .downloading))
+        precondition(updater.isInstalling == true)
+        precondition(updater.installStatusText == "Downloading update from GitHub…")
+
+        updater.transition(to: .upToDate(version: updater.currentVersion, checkedAt: Date()))
+        precondition(!updater.updateAvailable && !updater.isInstalling && !updater.isChecking)
+
+        // 3. ICloudSync State Transitions
+        let sync = ICloudSync.shared
+        sync.transition(to: .disabled)
+        precondition(sync.state == .disabled)
+        precondition(sync.statusBadge == "Off")
+
+        sync.transition(to: .syncing(phase: .full))
+        precondition(sync.isSyncing == true)
+        precondition(sync.statusBadge == "Syncing…")
+
+        let syncDate = Date()
+        sync.transition(to: .idle(lastSync: syncDate))
+        precondition(sync.statusBadge == "Active")
+        precondition(sync.lastSyncDate == syncDate)
+
+        sync.transition(to: .unavailable(reason: "No iCloud Drive"))
+        precondition(sync.statusBadge == "Unavailable")
+        precondition(sync.statusMessage == "No iCloud Drive")
+
+        // 4. MenuBarPresentationMode
+        precondition(app.menuBarPresentationMode != .empty || app.activeBalances.isEmpty)
+        let originalMerge = app.mergeIcons
+        app.setMergeIcons(true)
+        precondition(app.menuBarPresentationMode.description.contains("merged") || app.activeBalances.isEmpty)
+        app.setMergeIcons(originalMerge)
+
+        // 5. runtime.json AX Telemetry
+        app.writeDiagnostics()
+        let defaultDiagURL = app.dataURL.deletingLastPathComponent().appendingPathComponent("runtime.json")
+        if let data = try? Data(contentsOf: defaultDiagURL),
+           let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] {
+            guard let sm = json["stateMachines"] as? [String: Any] else {
+                preconditionFailure("runtime.json missing stateMachines object")
+            }
+            precondition(sm["updater"] is [String: Any], "stateMachines missing updater")
+            precondition(sm["cloudSync"] is [String: Any], "stateMachines missing cloudSync")
+            precondition(sm["presentation"] is [String: Any], "stateMachines missing presentation")
+            precondition(sm["browserAccess"] is [String: Any], "stateMachines missing browserAccess")
+            precondition(sm["providers"] is [String: Any], "stateMachines missing providers")
+        }
+
+        print("Passed: explicit state machines for ProviderConnectionState, AppUpdater, ICloudSync, MenuBarPresentationMode, BrowserAccessState, and runtime.json AX telemetry.")
         print("Passed: Changelog window instantiation, version list presentation, and dismissal.")
         print("Passed: 900 tab clicks across icons/text/padding, canceled drags, accessibility actions, persistent selector, and Retina brand representations.")
         print("Passed: removeProvider, addProvider, menu order Dashboard -> Refresh -> Refresh All -> Start at Login -> Settings, relative checked time, and harnesses line removed.")
