@@ -932,9 +932,27 @@ func inferhubChecks() async throws {
     let keyCookie = StoredCookie(name: "inferhub_api_key", value: "sk-synthetic456", domain: "inferhub.dev")
     precondition(InferHubProvider.resolveKey(authHeader: nil, cookies: [keyCookie]) == "sk-synthetic456")
     precondition(InferHubProvider.hasValidSession(cookies: [keyCookie]))
+    let sessionCookie = StoredCookie(name: "__Secure-authjs.session-token", value: "synth_session_tok", domain: "inferhub.dev")
+    precondition(InferHubProvider.hasValidSession(cookies: [sessionCookie]))
     precondition(!InferHubProvider.hasValidSession(cookies: [StoredCookie(name: "theme", value: "dark", domain: "inferhub.dev")]))
 
-    // 7. Initial balance catalog registration
+    // 7. Dashboard RSC/HTML balance and pacing parsing with /api/auth/session
+    let syntheticDashboardRSC = """
+    14:[["$","title","0",{"children":"InferHub — One API key. Every frontier model."}]]
+    e:["$","div",null,{"className":"space-y-8","children":[["$","$L23",null,{"stats":{"24h":{"requests":120,"spend":"0.50"},"all":{"requests":1200,"spend":"2.50"}}}],["$","div",null,{"className":"text-xs uppercase tracking-wide text-zinc-500 font-medium","children":"Balance"}],["$","div",null,{"className":"mt-2 text-2xl font-semibold tabular-nums text-zinc-900 dark:text-zinc-100","children":["$$","4.50"]}],["$","div",null,{"className":"mt-1 text-xs text-zinc-500","children":"Consumer USDC balance"}]]}]
+    """
+    let syntheticSessionJSON = """
+    {"user":{"email":"developer@synthetic-inferhub.dev","id":"usr_synth_456"},"expires":"2026-12-01T00:00:00.000Z"}
+    """
+    let dashReading = try InferHubProvider.parseDashboard(syntheticDashboardRSC, sessionData: Data(syntheticSessionJSON.utf8))
+    precondition(abs(dashReading.remaining - 4.50) < 0.0001, "Dashboard remaining must be 4.50, got \(dashReading.remaining)")
+    precondition(abs((dashReading.reference ?? 0) - 7.00) < 0.0001, "Dashboard baseline must be 4.50 + 2.50 = 7.00, got \(String(describing: dashReading.reference))")
+    precondition(dashReading.runwayDays == 9, "Runway must be 4.50 / 0.50 = 9 days, got \(String(describing: dashReading.runwayDays))")
+    precondition(dashReading.tokensPerDay == 120, "Requests per day must be 120, got \(String(describing: dashReading.tokensPerDay))")
+    precondition(dashReading.account == "developer@synthetic-inferhub.dev")
+    precondition(dashReading.url == "https://inferhub.dev/dashboard")
+
+    // 8. Initial balance catalog registration
     guard let inferhub = Balance.initial.first(where: { $0.id == "inferhub" }) else {
         preconditionFailure("Balance.initial must include inferhub")
     }

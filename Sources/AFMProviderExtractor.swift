@@ -144,7 +144,7 @@ public enum AFMProviderExtractor {
             id: "inferhub",
             name: "InferHub",
             domain: "inferhub.dev",
-            dashboardURL: "https://inferhub.dev/keys",
+            dashboardURL: "https://inferhub.dev/dashboard",
             endpoint: "https://api.inferhub.dev/v1/me/usage",
             jsonPath: "balance.amount_usdc",
             defaultBaseline: 0.0,

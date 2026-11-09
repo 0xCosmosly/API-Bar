@@ -29,7 +29,8 @@ actor SessionHTTP {
         if let data = try? KeychainVault.load(provider), let cookies = try? JSONDecoder().decode([StoredCookie].self,from:data), !cookies.isEmpty {
             return SessionHTTP(provider:provider,cookies:cookies,dynamicHost:dynamicHost)
         }
-        if UserDefaults.standard.data(forKey: BraveSessionImporter.profileBookmarkKey) != nil ||
+        if BraveSessionImporter.hasFullDiskAccess() ||
+           UserDefaults.standard.data(forKey: BraveSessionImporter.profileBookmarkKey) != nil ||
            UserDefaults.standard.data(forKey: BraveSessionImporter.rootBookmarkKey) != nil ||
            UserDefaults.standard.string(forKey: "BraveProfilePath") != nil ||
            UserDefaults.standard.string(forKey: "BraveBrowserRootPath") != nil {
@@ -37,7 +38,7 @@ actor SessionHTTP {
                 return client
             }
         }
-        let provName = provider == "crowbot" ? "Crowbot" : provider == "fireworks" ? "Fireworks" : provider == "aistudio" ? "Google AI Studio" : provider == "cerebras" ? "Cerebras" : provider == "refuseless" ? "Refuseless" : provider == "lutheos" ? "Lutheos" : provider == "unaligned" ? "Unaligned" : provider == "yeta" ? "Yeta" : provider == "heimdallm" ? "Heimdallm" : "Google Cloud"
+        let provName = provider == "crowbot" ? "Crowbot" : provider == "fireworks" ? "Fireworks" : provider == "aistudio" ? "Google AI Studio" : provider == "cerebras" ? "Cerebras" : provider == "refuseless" ? "Refuseless" : provider == "lutheos" ? "Lutheos" : provider == "unaligned" ? "Unaligned" : provider == "yeta" ? "Yeta" : provider == "heimdallm" ? "Heimdallm" : provider == "inferhub" ? "InferHub" : "Google Cloud"
         throw ConnectorError.message("Connect \(provName) in Settings first.")
     }
     static func connect(provider: String, cookieDomain: String? = nil, dynamicHost: String? = nil, interactive: Bool = false) throws -> SessionHTTP {
@@ -166,6 +167,10 @@ actor SessionHTTP {
             allowed = host == YetaProvider.host && ["/api/user/self", "/api/status"].contains(url.path) && url.query == nil
         case "heimdallm":
             allowed = HeimdallmProvider.allowedHosts.contains(host) && ["/api/frontend/v1/credits", "/api/frontend/v1/account", "/api/frontend/v1/generations/analytics"].contains(url.path) && body == nil && url.query == nil
+        case "inferhub":
+            let allowedHosts = InferHubProvider.allowedHosts
+            let validPaths = ["/dashboard", "/dashboard/keys", "/api/auth/session", "/api/me", "/v1/me/usage", "/v1/models"]
+            allowed = allowedHosts.contains(host) && validPaths.contains(url.path) && body == nil
         default: allowed = (dynamicHost != nil && host == dynamicHost)
         }
         guard url.scheme == "https", allowed else { throw ConnectorError.message("Refused to send the saved session to an unexpected host.") }

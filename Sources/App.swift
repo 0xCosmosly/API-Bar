@@ -140,7 +140,7 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         case "inferhub": provName = "InferHub"
         default: provName = fallbackName
         }
-        let wasConnected = isConnected(id) || balances.first(where: { $0.id == id })?.live == true || hasStoredCredential(id) || (balances.first(where: { $0.id == id })?.dynamicAuthHeader?.isEmpty == false)
+        let wasConnected = balances.first(where: { $0.id == id })?.live == true || hasStoredCredential(id) || (balances.first(where: { $0.id == id })?.dynamicAuthHeader?.isEmpty == false)
         if error.localizedDescription.contains("expired") || error.localizedDescription.contains("sign in") {
             if wasConnected {
                 setConnectionState(for: id, to: .disconnected(reason: .sessionExpired, message: "Session expired · sign in to \(provName) in Brave"))

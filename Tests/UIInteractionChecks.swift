@@ -424,7 +424,7 @@ import SwiftUI
         precondition(autoInferHubDraft.name == "InferHub")
         precondition(autoInferHubDraft.endpoint == "https://api.inferhub.dev/v1/me/usage")
         precondition(autoInferHubDraft.jsonPath == "balance.amount_usdc")
-        precondition(autoInferHubURL == "https://inferhub.dev/keys")
+        precondition(autoInferHubURL == "https://inferhub.dev/dashboard")
 
         // Test Heimdallm top-up baseline calculation and anti-reversion:
         // Adding $5 to an existing balance of $0.788 sets baseline to $5.788 (5 + previous balance)

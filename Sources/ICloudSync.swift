@@ -485,51 +485,21 @@ final class ICloudSync: ObservableObject {
         if let testURL = localOmpCredentialsURL {
             return try? Data(contentsOf: testURL)
         }
-        guard let bin = findOmpBinary() else { return nil }
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: bin)
-        p.arguments = ["auth", "export"]
-        let pipe = Pipe()
-        p.standardOutput = pipe
-        p.standardError = Pipe()
-        do {
-            try p.run()
-            p.waitUntilExit()
-            if p.terminationStatus == 0 {
-                let data = pipe.fileHandleForReading.readDataToEndOfFile()
-                if !data.isEmpty && (try? JSONSerialization.jsonObject(with: data)) != nil {
-                    return data
-                }
-            }
-        } catch {}
+        let authURL = localOmpDirectoryURL.appendingPathComponent("auth.json")
+        if FileManager.default.fileExists(atPath: authURL.path) {
+            return try? Data(contentsOf: authURL)
+        }
         return nil
     }
 
     @discardableResult
     func importOmpCredentials(data: Data) -> Bool {
-        if let testURL = localOmpCredentialsURL {
-            do {
-                try data.write(to: testURL, options: .atomic)
-                return true
-            } catch {
-                return false
-            }
-        }
-        guard let bin = findOmpBinary() else { return false }
-        let tempURL = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("apibar_omp_auth_\(UUID().uuidString).json")
+        let destURL = localOmpCredentialsURL ?? localOmpDirectoryURL.appendingPathComponent("auth.json")
         do {
-            try data.write(to: tempURL, options: .atomic)
-            try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: tempURL.path)
-            defer { try? FileManager.default.removeItem(at: tempURL) }
-
-            let p = Process()
-            p.executableURL = URL(fileURLWithPath: bin)
-            p.arguments = ["auth", "import", tempURL.path]
-            p.standardOutput = Pipe()
-            p.standardError = Pipe()
-            try p.run()
-            p.waitUntilExit()
-            return p.terminationStatus == 0
+            try FileManager.default.createDirectory(at: destURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try data.write(to: destURL, options: .atomic)
+            try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: destURL.path)
+            return true
         } catch {
             return false
         }
@@ -631,7 +601,7 @@ final class ICloudSync: ObservableObject {
             transition(to: .unavailable(reason: "iCloud Drive is not available on this Mac"))
         } else if !isEnabled {
             transition(to: .disabled)
-        } else if isSyncing {
+        } else if isPerformingSync {
             transition(to: .syncing(phase: .full))
         } else if let date = lastSyncDate {
             transition(to: .idle(lastSync: date))
@@ -646,7 +616,14 @@ final class ICloudSync: ObservableObject {
         pushDebounceTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 800_000_000)
             guard !Task.isCancelled else { return }
-            await self?.pushLocalState()
+            guard let self = self, self.isEnabled, !self.isPerformingSync else { return }
+            self.isPerformingSync = true
+            self.transition(to: .syncing(phase: .pushing))
+            defer {
+                self.isPerformingSync = false
+                self.updateStatusMessage()
+            }
+            await self.pushLocalState()
         }
     }
 
@@ -904,9 +881,7 @@ final class ICloudSync: ObservableObject {
                           let localAttrs = try? FileManager.default.attributesOfItem(atPath: localFile.path),
                           let remoteDate = remoteAttrs[.modificationDate] as? Date,
                           let localDate = localAttrs[.modificationDate] as? Date {
-                    let remoteSize = (remoteAttrs[.size] as? NSNumber)?.int64Value ?? 0
-                    let localSize = (localAttrs[.size] as? NSNumber)?.int64Value ?? 0
-                    shouldCopy = remoteDate > localDate || remoteSize > (localSize + 100)
+                    shouldCopy = remoteDate > localDate
                 } else {
                     shouldCopy = false
                 }
@@ -981,9 +956,7 @@ final class ICloudSync: ObservableObject {
                           let localAttrs = try? FileManager.default.attributesOfItem(atPath: localFile.path),
                           let remoteDate = remoteAttrs[.modificationDate] as? Date,
                           let localDate = localAttrs[.modificationDate] as? Date {
-                    let remoteSize = (remoteAttrs[.size] as? NSNumber)?.int64Value ?? 0
-                    let localSize = (localAttrs[.size] as? NSNumber)?.int64Value ?? 0
-                    shouldCopy = remoteDate > localDate || remoteSize > (localSize + 100)
+                    shouldCopy = remoteDate > localDate
                 } else {
                     shouldCopy = false
                 }
@@ -1393,7 +1366,6 @@ final class ICloudSync: ObservableObject {
             Task { @MainActor [weak self] in
                 guard let self = self, self.isEnabled, self.isPiSyncEnabled, !self.isPerformingSync else { return }
                 self.schedulePush()
-                self.startPiMonitoring()
             }
         }
 
@@ -1436,7 +1408,6 @@ final class ICloudSync: ObservableObject {
             Task { @MainActor [weak self] in
                 guard let self = self, self.isEnabled, self.isOmpSyncEnabled, !self.isPerformingSync else { return }
                 self.schedulePush()
-                self.startOmpMonitoring()
             }
         }
 

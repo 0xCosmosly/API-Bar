@@ -25,6 +25,8 @@ func providerAccentColor(_ id: String) -> Color {
         return Color(red: 202/255.0, green: 138/255.0, blue: 4/255.0) // Yeta Amber #CA8A04
     case "heimdallm":
         return Color(red: 183/255.0, green: 23/255.0, blue: 31/255.0) // Heimdall Crimson #B7171F
+    case "inferhub":
+        return Color(red: 124/255.0, green: 58/255.0, blue: 237/255.0) // InferHub Violet #7C3AED
     default:
         return Color.accentColor
     }
@@ -676,6 +678,7 @@ struct ManageProvidersSheet: View {
         case "unaligned": return "Unaligned Prepaid API Balance (API key)"
         case "yeta": return "Yeta Prepaid Gateway Credit"
         case "heimdallm": return "Heimdallm AI Platform Credits"
+        case "inferhub": return "InferHub AI Platform Balance & Pacing"
         default: return "API Balance & Credit Monitor"
         }
     }
@@ -1521,6 +1524,7 @@ struct OnboardingView: View {
         case "unaligned": return "Unaligned Prepaid API Balance (API key)"
         case "yeta": return "Yeta Prepaid Gateway Credit"
         case "heimdallm": return "Heimdallm AI Platform Credits"
+        case "inferhub": return "InferHub AI Platform Balance & Pacing"
         default: return "API Balance & Credit Monitor"
         }
     }
