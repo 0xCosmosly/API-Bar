@@ -1174,7 +1174,8 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
             menu.addItem(card)
             menu.addItem(.separator())
             if AppUpdater.shared.updateAvailable, let ver = AppUpdater.shared.latestVersion {
-                action(menu, "Update to v\(ver) Available…", #selector(openSoftwareUpdate), 0, "arrow.down.circle.fill")
+                let updateTitle = AppUpdater.shared.isSemverNewerAvailable ? "Update to v\(ver) Available…" : "Refreshed Build of v\(ver) Available…"
+                action(menu, updateTitle, #selector(openSoftwareUpdate), 0, "arrow.down.circle.fill")
                 menu.addItem(.separator())
             }
             action(menu, "Dashboard…", #selector(openMergedBilling), 0, "arrow.up.right.square")
@@ -1202,7 +1203,8 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         let card = NSMenuItem(); card.view = BalanceCard(b,status:providerStatus[b.id]); menu.addItem(card)
         menu.addItem(.separator())
         if AppUpdater.shared.updateAvailable, let ver = AppUpdater.shared.latestVersion {
-            action(menu, "Update to v\(ver) Available…", #selector(openSoftwareUpdate), index, "arrow.down.circle.fill")
+            let updateTitle = AppUpdater.shared.isSemverNewerAvailable ? "Update to v\(ver) Available…" : "Refreshed Build of v\(ver) Available…"
+            action(menu, updateTitle, #selector(openSoftwareUpdate), index, "arrow.down.circle.fill")
             menu.addItem(.separator())
         }
         if let error = appError { disabled(menu, "Save error: \(error)") }

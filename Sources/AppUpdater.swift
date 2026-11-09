@@ -19,6 +19,7 @@ public final class AppUpdater: ObservableObject {
     @Published public var releaseNotes: String? = nil
     @Published public var releaseURL: URL? = nil
     @Published public var downloadURL: URL? = nil
+    @Published public var assetUpdatedAt: Date? = nil
     @Published public var checkError: String? = nil
     /// Test seam: point the release lookup at a fixture server so the update
     /// decision can be verified without publishing a release. Unset in normal runs.
@@ -42,6 +43,11 @@ public final class AppUpdater: ObservableObject {
 
     public var currentVersion: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.5.3"
+    }
+
+    public var isSemverNewerAvailable: Bool {
+        guard let latest = latestVersion else { return false }
+        return Self.isVersion(latest, newerThan: currentVersion)
     }
 
     public static var localBuildDate: Date {
@@ -236,8 +242,15 @@ public final class AppUpdater: ObservableObject {
             let cleanCur = currentVersion.trimmingCharacters(in: CharacterSet(charactersIn: "vV"))
             let isSameVersion = cleanRel == cleanCur
             let isSameVersionUpdated: Bool
-            if isSameVersion, let remoteAssetDate = release.assetUpdatedAt {
-                isSameVersionUpdated = remoteAssetDate.timeIntervalSince(Self.localBuildDate) > 30
+            let installedTimestamp = UserDefaults.standard.double(forKey: "APIBarInstalledAssetTimestamp")
+            let remoteTimestamp = release.assetUpdatedAt?.timeIntervalSince1970 ?? 0
+            let alreadyInstalledThisAsset = remoteTimestamp > 0 && abs(remoteTimestamp - installedTimestamp) < 2
+
+            if isSameVersion, !alreadyInstalledThisAsset, Self.localBuildDate != .distantPast, let remoteAssetDate = release.assetUpdatedAt {
+                // A legitimate release upload takes 1-3 minutes after local compilation.
+                // An asset is only an updated rebuild if uploaded significantly later (> 1 hour / 3600s).
+                // Any delta <= 3600s is the original release upload and must not trigger an update.
+                isSameVersionUpdated = remoteAssetDate.timeIntervalSince(Self.localBuildDate) > 3600
             } else {
                 isSameVersionUpdated = false
             }
@@ -246,6 +259,7 @@ public final class AppUpdater: ObservableObject {
             self.releaseNotes = release.notes
             self.releaseURL = release.releaseURL
             self.downloadURL = release.downloadURL
+            self.assetUpdatedAt = release.assetUpdatedAt
             self.updateAvailable = isSemverNewer || isSameVersionUpdated
 
             // Cooldown check: prevent rapid reinstallations
@@ -395,6 +409,10 @@ public final class AppUpdater: ObservableObject {
                 throw error
             }
 
+            if let date = self.assetUpdatedAt {
+                UserDefaults.standard.set(date.timeIntervalSince1970, forKey: "APIBarInstalledAssetTimestamp")
+            }
+
             // Strip any quarantine attribute to ensure Gatekeeper permits in-place relaunch
             let xattr = Process()
             xattr.executableURL = URL(fileURLWithPath: "/usr/bin/xattr")
@@ -459,6 +477,7 @@ public final class AppUpdater: ObservableObject {
         if response == .alertSecondButtonReturn {
             Task {
                 UserDefaults.standard.removeObject(forKey: "APIBarLastUpdateInstallTime")
+                UserDefaults.standard.removeObject(forKey: "APIBarInstalledAssetTimestamp")
                 await self.installUpdate()
             }
         }

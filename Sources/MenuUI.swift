@@ -1589,7 +1589,8 @@ struct SettingsPane: View {
                         .font(.title3)
                         .foregroundStyle(Color.accentColor)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("API Bar v\(ver) is available!")
+                        let bannerTitle = updater.isSemverNewerAvailable ? "API Bar v\(ver) is available!" : "Refreshed build of API Bar v\(ver) is available!"
+                        Text(bannerTitle)
                             .font(.headline)
                             .fontWeight(.bold)
                         Text(updater.statusMessage)

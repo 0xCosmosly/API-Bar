@@ -930,6 +930,7 @@ func secretAuditChecks() throws {
 /// Verifies the self-updater end to end without publishing anything: a local
 /// fixture stands in for the GitHub release API, and a live check confirms the real
 /// endpoint still parses.
+@MainActor
 func updaterChecks() async throws {
     let fixtures = FileManager.default.temporaryDirectory.appendingPathComponent("APIBarUpdater-" + UUID().uuidString)
     try FileManager.default.createDirectory(at: fixtures, withIntermediateDirectories: true)
@@ -948,8 +949,8 @@ func updaterChecks() async throws {
         """
     }
 
-    let updater = await AppUpdater.shared
-    let localVersion = await updater.currentVersion
+    let updater = AppUpdater.shared
+    let localVersion = updater.currentVersion
     // The test binary is not a bundle, so the shipped version is read from the
     // Info.plist that build.command packages.
     if let plistData = try? Data(contentsOf: URL(fileURLWithPath: "Resources/Info.plist")),
@@ -969,12 +970,19 @@ func updaterChecks() async throws {
     precondition(AppUpdater.isVersion(newer.version, newerThan: localVersion), "0.5.4 must be newer than \(localVersion)")
     precondition(newer.downloadURL?.lastPathComponent == "APIBar-app.zip", "Updater must select the zip asset, got \(newer.downloadURL?.absoluteString ?? "nil")")
     precondition(newer.notes.contains("notes for v0.5.4"))
+    await updater.checkForUpdates(manual: false)
+    precondition(updater.updateAvailable, "Newer version 0.5.4 must set updateAvailable")
+    precondition(updater.isSemverNewerAvailable, "0.5.4 must report isSemverNewerAvailable")
 
     // The same version must not offer an update, even though an asset exists.
     setenv("APIBAR_UPDATER_ENDPOINT", try serve(releaseJSON(tag: "v0.5.3", name: "API Bar 0.5.3", zipSize: 2_100_000), at: "same"), 1)
     let same = try await updater.fetchReleaseInfo()
     precondition(same.version == "0.5.3")
     precondition(!AppUpdater.isVersion(same.version, newerThan: localVersion), "Same version must not be treated as an update")
+    await updater.checkForUpdates(manual: false)
+    precondition(!updater.updateAvailable, "Same version must not set updateAvailable")
+    precondition(!updater.isSemverNewerAvailable, "Same version must not report isSemverNewerAvailable")
+    precondition(updater.statusMessage.contains("Up to date"), "Expected Up to date status, got \(updater.statusMessage)")
 
     // An older release must never trigger a downgrade.
     setenv("APIBAR_UPDATER_ENDPOINT", try serve(releaseJSON(tag: "v0.5.2", name: "API Bar 0.5.2", zipSize: 2_073_811), at: "older"), 1)
