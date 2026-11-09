@@ -626,26 +626,16 @@ final class ICloudSync: ObservableObject {
            let data = try? Data(contentsOf: settingsURL),
            let remoteSettings = try? JSONDecoder().decode(ICloudSettings.self, from: data) {
 
-            if let remoteRemoved = remoteSettings.removedProviders {
-                let localRemoved = UserDefaults.standard.stringArray(forKey: "RemovedProviders") ?? []
-                let combined = Array(Set(localRemoved).union(remoteRemoved))
-                if combined.sorted() != localRemoved.sorted() {
-                    UserDefaults.standard.set(combined, forKey: "RemovedProviders")
-                    for removedID in remoteRemoved {
-                        if let idx = app.balances.firstIndex(where: { $0.id == removedID }) {
-                            app.balances.remove(at: idx)
-                            app.clients.removeValue(forKey: removedID)
-                            KeychainVault.clear(removedID)
-                            app.providerStatus.removeValue(forKey: removedID)
-                            app.inFlight.remove(removedID)
-                            didChangeLocally = true
-                        }
-                    }
-                }
-            }
-
             let localSettingsTS = (UserDefaults.standard.object(forKey: "APIBarSettingsModified") as? Date) ?? .distantPast
             if remoteSettings.lastModified > localSettingsTS {
+                if let remoteRemoved = remoteSettings.removedProviders {
+                    let localRemoved = UserDefaults.standard.stringArray(forKey: "RemovedProviders") ?? []
+                    let activeIDs = Set(app.balances.map(\.id))
+                    let combined = Array(Set(localRemoved).union(remoteRemoved)).filter { !activeIDs.contains($0) }
+                    if combined.sorted() != localRemoved.sorted() {
+                        UserDefaults.standard.set(combined, forKey: "RemovedProviders")
+                    }
+                }
                 if let modeStr = remoteSettings.sortMode, let mode = ProviderSortMode(rawValue: modeStr), mode != app.sortMode {
                     app.sortMode = mode
                     UserDefaults.standard.set(mode.rawValue, forKey: "ProviderSortMode")

@@ -363,11 +363,12 @@ struct ProviderTabItem: Equatable {
         tabs.updateItems(ProviderTabsView.defaultItems(balances: app.activeBalances))
         detail?.removeFromSuperview()
         let card: NSView
-        if app.mergedProvider == "overview" {
+        if app.mergedProvider == "overview" || app.activeBalances.isEmpty {
             card = OverviewCard(app: app)
-        } else {
-            let b = app.activeBalances.first(where: { $0.id == app.mergedProvider }) ?? app.selectedMergedBalance
+        } else if let b = app.activeBalances.first(where: { $0.id == app.mergedProvider }) ?? app.selectedMergedBalance {
             card = BalanceCard(b, status: app.providerStatus[b.id])
+        } else {
+            card = OverviewCard(app: app)
         }
         let detailHeight = card.frame.height
         frame.size.height = tabs.frame.height + detailHeight

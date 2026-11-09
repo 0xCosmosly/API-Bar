@@ -175,12 +175,11 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
     /// configuration and credentials but are skipped everywhere a balance is
     /// shown, summed, or refreshed.
     var activeBalances: [Balance] { balances.filter(\.isEnabled) }
-    var selectedMergedBalance: Balance {
+    var selectedMergedBalance: Balance? {
         activeBalances.first(where: { $0.id == mergedProvider })
             ?? activeBalances.first
             ?? balances.first(where: { $0.id == mergedProvider })
             ?? balances.first
-            ?? Balance.initial[0]
     }
 
     func removeProvider(id: String) {
@@ -1094,6 +1093,12 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         guard let r = try? JSONDecoder().decode(Reading.self,from:data) else { return }; apply(r)
     }
     func save() {
+        let removed = UserDefaults.standard.stringArray(forKey: "RemovedProviders") ?? []
+        let activeIDs = Set(balances.map(\.id))
+        let filtered = removed.filter { !activeIDs.contains($0) }
+        if filtered != removed {
+            UserDefaults.standard.set(filtered, forKey: "RemovedProviders")
+        }
         do {
             try FileManager.default.createDirectory(at: dataURL.deletingLastPathComponent(), withIntermediateDirectories: true)
             let bytes = try JSONEncoder().encode(balances)
@@ -1132,14 +1137,20 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
                         items[i].button?.toolTip = nil
                         items[i].button?.setAccessibilityValue("\(percentText) remaining across all providers")
                     }
-                } else {
-                    let b = selectedMergedBalance
+                } else if let b = selectedMergedBalance {
                     if items[i].button?.title != b.percentageLabel {
                         items[i].button?.title = b.percentageLabel
                     }
                     items[i].button?.image = ProviderIcon.menuBarImage(b.id)
                     items[i].button?.toolTip = nil
                     items[i].button?.setAccessibilityValue("\(b.percentageLabel) remaining\(b.stale ? ", stale" : "")")
+                } else {
+                    if items[i].button?.title != "—" {
+                        items[i].button?.title = "—"
+                    }
+                    items[i].button?.image = ProviderIcon.menuBarImage("overview")
+                    items[i].button?.toolTip = nil
+                    items[i].button?.setAccessibilityValue("API Bar — No active providers")
                 }
             } else {
                 guard let b = activeBalances.first(where: { $0.id == identity }) else { continue }
@@ -1293,8 +1304,10 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
     @objc func refreshMergedProvider() {
         if mergedProvider == "overview" {
             Task { await refreshAll() }
+        } else if let b = selectedMergedBalance {
+            Task { await refreshProvider(b.id) }
         } else {
-            Task { await refreshProvider(selectedMergedBalance.id) }
+            Task { await refreshAll() }
         }
     }
     @objc func refreshSingleProvider(_ sender: NSMenuItem) {
@@ -1459,9 +1472,13 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         if mergedProvider == "overview" {
             if let first = activeBalances.first {
                 openDashboard(first)
+            } else {
+                settings()
             }
+        } else if let b = selectedMergedBalance {
+            openDashboard(b)
         } else {
-            openDashboard(selectedMergedBalance)
+            settings()
         }
     }
     @objc func openBilling(_ sender: NSMenuItem) { openDashboard(balances[sender.tag]) }
