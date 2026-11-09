@@ -165,7 +165,7 @@ actor SessionHTTP {
             // key-minting endpoints on this host, which must never see the session.
             allowed = host == YetaProvider.host && ["/api/user/self", "/api/status"].contains(url.path) && url.query == nil
         case "heimdallm":
-            allowed = HeimdallmProvider.allowedHosts.contains(host) && ["/api/frontend/v1/credits", "/api/frontend/v1/account"].contains(url.path) && body == nil && url.query == nil
+            allowed = HeimdallmProvider.allowedHosts.contains(host) && ["/api/frontend/v1/credits", "/api/frontend/v1/account", "/api/frontend/v1/generations/analytics"].contains(url.path) && body == nil && url.query == nil
         default: allowed = (dynamicHost != nil && host == dynamicHost)
         }
         guard url.scheme == "https", allowed else { throw ConnectorError.message("Refused to send the saved session to an unexpected host.") }
@@ -780,7 +780,6 @@ struct RefuselessProvider: BalanceProvider {
         }
 
         var activeDays = 0
-        var latestSpend: Double = 0
         var totalSpend: Double = 0
 
         let seriesPattern = #"["\\]+spend["\\]+\s*:\s*([0-9]+)"#
@@ -794,16 +793,17 @@ struct RefuselessProvider: BalanceProvider {
                     let spendUSD = val / 1_000_000.0
                     activeDays += 1
                     totalSpend += spendUSD
-                    latestSpend = spendUSD
                 }
             }
         }
 
-        var dailySpend = latestSpend > 0 ? latestSpend : (activeDays > 0 ? (totalSpend / Double(activeDays)) : 0)
-        if dailySpend == 0, activeDays == 0, let periodSpend = Self.integerValue(html, key: "periodSpend"), periodSpend > 0 {
+        var dailySpend = activeDays > 0 ? (totalSpend / Double(activeDays)) : 0
+        if dailySpend == 0, let periodSpend = Self.integerValue(html, key: "periodSpend"), periodSpend > 0 {
             let days = Self.integerValue(html, key: "days") ?? 30.0
             dailySpend = (periodSpend / 1_000_000.0) / max(1.0, days)
-            activeDays = Int(days)
+            if activeDays == 0 {
+                activeDays = Int(days)
+            }
         }
 
         let tokensPerDay = activeDays > 0 ? (outputTokens / Double(activeDays)) : outputTokens

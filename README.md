@@ -1,7 +1,7 @@
 # ⚡️ API Bar
 
 <p align="center">
-  <img src="Resources/AppIcon.icns" width="108" height="108" alt="API Bar Icon" />
+  <img src="docs/images/app_icon.png" width="108" height="108" alt="API Bar Icon" />
 </p>
 
 <h3 align="center">The AI credit and balance tracker for your macOS menu bar.</h3>
@@ -48,7 +48,7 @@
 - 🔑 **Zero API Key Hassle**: Automatically connects to your signed-in browser sessions (Brave, Google Chrome, Arc, Microsoft Edge, Vivaldi, Chromium). No hunting down administrative secret keys.
 - 🎛️ **Single or Individual Icons**: Merge all your AI platforms into one smart, compact menu bar gauge or pin individual provider badges side-by-side.
 - ⏸️ **Pause Instead of Delete**: Switch a provider off to stop tracking it while keeping its settings, saved session and position in the list.
-- ☁️ **iCloud Sync Across Macs**: Monitored platforms, baseline targets, and optional OpenCode configs (`opencode.json`) automatically sync between your desktop and laptop via your private iCloud Drive.
+- ☁️ **iCloud Sync Across Macs**: Monitored platforms, baseline targets, and optional coding agent configs (OpenCode, Pi, and OMP) automatically sync between your desktop and laptop via your private iCloud Drive.
 - 🪄 **Add Any AI API in Seconds**: Paste a cURL command or JSON payload from any provider (OpenRouter, Groq, Together, DeepSeek, local Ollama/vLLM), and on-device intelligence configures it automatically.
 - 🎯 **Automatic 100% Baseline Targets**: Automatically detects top-ups, deposits, and trial grants to calculate remaining percentage capacity accurately.
 - 🔄 **Built-in Updater & Changelog**: Check for updates and read release notes directly inside the app with zero interruption to your workflow.
@@ -91,7 +91,7 @@
 | **Crowbot** | Chat & API usage credits (microdollar precision) | Browser session (`crowbot_session`) | Account quota |
 | **Yeta** | Prepaid gateway credit (ships paused) | Browser session (console) | Remaining + spent quota |
 | **Heimdallm** | AI platform inference credits | Browser session (`__Host-heimdallm_session`) | Total cycle credits |
-| **OpenCode Sync (Optional)** | Model & provider configuration synchronization | Apple iCloud Drive container | Automatic `.bak` safety |
+| **Coding Agent Sync (Optional)** | OpenCode, Pi, and OMP configuration & credential vault sync | Apple iCloud Drive container | Automatic `.bak` safety |
 | **Custom / Any AI API** | OpenRouter, Groq, Together, DeepSeek, Local Ollama | cURL / JSON via on-device extractor | Custom reference |
 
 ---
@@ -102,12 +102,12 @@
 flowchart LR
     A["🌐 1. Your AI Accounts<br/><i>(Signed in via Brave, Chrome, Arc...)</i>"] --> B["⚡️ 2. API Bar Menu Bar<br/><i>(Live balance rings & burn rate)</i>"]
     B --> C["📊 3. Detailed Dashboard<br/><i>(Runway pacing, credits & cards)</i>"]
-    B <--> D["☁️ iCloud Sync<br/><i>(All Macs & OpenCode config)</i>"]
+    B <--> D["☁️ iCloud Sync<br/><i>(All Macs, OpenCode, Pi & OMP)</i>"]
 ```
 
 1. **Automatic Session Discovery**: API Bar detects your active browser on-device. It reads your authenticated session cookies locally and securely via macOS Keychain encryption—no need to generate or rotate administrative API keys.
 2. **Real-Time Burn Rate & Runway**: Beyond raw balances, API Bar calculates your real-world consumption pace and displays how many days or hours remain before your credits exhaust.
-3. **Optional OpenCode Syncing**: If you use OpenCode, you can optionally sync your models and provider definitions across your machines with automatic rollback backups.
+3. **Optional Coding Agent Syncing**: If you use OpenCode, Pi, or OMP, you can optionally sync your models, settings, and credential vault across your machines with automatic rollback backups.
 4. **Completely Local & Private**: All balance checks happen directly between your Mac and official AI provider endpoints. No middleman servers, no proxy servers, and zero telemetry.
 
 ---

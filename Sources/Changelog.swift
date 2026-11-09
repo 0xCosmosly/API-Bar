@@ -162,6 +162,49 @@ public final class ChangelogManager: ObservableObject {
     public static func builtInEntries() -> [ChangelogEntry] {
         return [
             ChangelogEntry(
+                version: "0.5.3",
+                releaseDate: "November 8, 2026",
+                title: "API Bar 0.5.3 — OMP Sync, Heimdallm Refinements & Pacing Fixes",
+                summary: "Adds bi-directional OMP iCloud sync, pauses Heimdallm by default, prevents credit hold baseline inflation, fixes Refuseless runway pacing calculations, and improves legibility.",
+                highlights: [
+                    "OMP (Oh-My-Prompt) iCloud Drive configuration and credential vault synchronization",
+                    "Heimdallm paused by default on initial launch with Norse brand marks preserved",
+                    "Authoritative Heimdallm credit totals preventing temporary hold baseline inflation",
+                    "Refuseless active-day pacing calculation eliminating false multi-week runway estimates",
+                    "High-contrast emerald green percentage badge legibility across macOS light mode",
+                    "Smooth merged provider menu bar icon switching on rotation",
+                    "App updater same-version rebuild detection allowing updates to refreshed release builds"
+                ],
+                notes: """
+## API Bar 0.5.3
+
+This release introduces bi-directional OMP (Oh-My-Prompt) iCloud sync, refines Heimdallm onboarding and balance accounting, fixes Refuseless pacing calculations, enhances percentage badge readability, and allows the in-app updater to install refreshed builds seamlessly.
+
+---
+
+### ✨ What's New in 0.5.3
+
+#### 1. ☁️ OMP (Oh-My-Prompt) iCloud Sync
+• Synchronizes model configurations and prompt settings configured in OMP (`~/.omp/agent`) across all your Macs via iCloud Drive.
+• Securely synchronizes OMP credentials via your private iCloud vault with automatic rollback backup protection.
+
+#### 2. 🛡️ Heimdallm Onboarding & Accounting Refinements
+• Heimdallm is now paused by default on initial install so new users can choose when to enable it.
+• Authoritative credit totals from the server take precedence over transaction ledger lines, preventing temporary credit hold releases from inflating baseline totals.
+• Startup baseline repair and multi-device iCloud sync filtering prevent legacy or remote devices from corrupting your credit baseline.
+
+#### 3. ⏱️ Refuseless Runway & Pacing Accuracy
+• Fixed daily burn rate calculation to use the true active-day average rather than partial single-day spend, eliminating inaccurate multi-week runway estimates on depleted balances.
+
+#### 4. 🎨 Legibility & Icon Rotation
+• Refined green percentage badges in macOS light mode to use a high-contrast emerald green (`#108038`) exceeding WCAG AA standards.
+• Fixed merged provider menu bar icon rotation to ensure brand icons toggle smoothly during manual or timed cycling.
+
+#### 5. 🔄 App Updater Rebuild Detection
+• Added support for installing updated release builds within the same version tier, ensuring users can update cleanly without waiting for a version bump.
+"""
+            ),
+            ChangelogEntry(
                 version: "0.5.2",
                 releaseDate: "November 6, 2026",
                 title: "API Bar 0.5.2 — Heimdallm, Scrollable Onboarding & Browser Connect-All",

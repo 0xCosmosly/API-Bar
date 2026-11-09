@@ -13,6 +13,7 @@ import SwiftUI
             "APIBAR_ICLOUD_DIR",
             "APIBAR_OPENCODE_FILE",
             "APIBAR_PI_DIR",
+            "APIBAR_OMP_DIR",
         ]
         let tempRoots = ["/tmp", "/private/tmp", "/var/folders", "/private/var/folders"]
         for key in keys {
@@ -60,8 +61,14 @@ import SwiftUI
         precondition(app.mergedProvider == "overview")
         tabs.buttons[1].performClick(nil)
         precondition(app.mergedProvider == "vertex")
+        if let mergedBtn = app.items.first(where: { $0.autosaveName == "merged" })?.button {
+            precondition(mergedBtn.title == (app.activeBalances.first(where: { $0.id == "vertex" })?.percentageLabel ?? "—"))
+        }
         tabs.buttons[2].performClick(nil)
         precondition(app.mergedProvider == "fireworks")
+        if let mergedBtn = app.items.first(where: { $0.autosaveName == "merged" })?.button {
+            precondition(mergedBtn.title == (app.activeBalances.first(where: { $0.id == "fireworks" })?.percentageLabel ?? "—"))
+        }
         precondition(view.tabs === tabs, "Provider switch replaced the live click target")
         let reps = BrandMark.image().representations.compactMap { $0 as? NSBitmapImageRep }
         precondition(reps.map(\.pixelsWide) == [18, 36, 54] && BrandMark.image().isTemplate)
@@ -468,6 +475,19 @@ import SwiftUI
             remoteBalances[fwIdx].baseline = 150.0
             remoteBalances[fwIdx].updated = Date()
         }
+        // Set local Heimdallm to authoritative 5.0 baseline
+        if let hmLocalIdx = app.balances.firstIndex(where: { $0.id == "heimdallm" }) {
+            app.balances[hmLocalIdx].baseline = 5.0
+            app.balances[hmLocalIdx].remaining = 4.92
+            app.balances[hmLocalIdx].live = true
+            app.providerStatus["heimdallm"] = "Connected · refreshes every 5 min"
+        }
+        // Device B running older build attempts to push inflated 10.0 baseline
+        if let hmIdx = remoteBalances.firstIndex(where: { $0.id == "heimdallm" }) {
+            remoteBalances[hmIdx].baseline = 10.0
+            remoteBalances[hmIdx].remaining = 4.92
+            remoteBalances[hmIdx].updated = Date()
+        }
         let remoteCustom = Balance(
             id: "togetherai",
             name: "Together AI",
@@ -514,6 +534,9 @@ import SwiftUI
             preconditionFailure("Fireworks not found after merge")
         }
         precondition(mergedFw.baseline == 150.0, "Fireworks baseline did not update from iCloud: got \(mergedFw.baseline)")
+        if let mergedHm = app.balances.first(where: { $0.id == "heimdallm" }) {
+            precondition(mergedHm.baseline == 5.0, "Heimdallm baseline must not be inflated by remote 10.0: got \(mergedHm.baseline)")
+        }
         guard let mergedTogether = app.balances.first(where: { $0.id == "togetherai" }) else {
             preconditionFailure("Together AI was not merged from iCloud")
         }
@@ -584,6 +607,61 @@ import SwiftUI
         precondition(ICloudSync.shared.isPiSyncEnabled == false)
         UserDefaults.standard.removeObject(forKey: ICloudSync.piEnabledKey)
         try? FileManager.default.removeItem(at: localPiDir)
+
+        // Test OMP agent configuration and credentials push/pull/backup to iCloud
+        let localOmpDir = ICloudSync.shared.localOmpDirectoryURL
+        try FileManager.default.createDirectory(at: localOmpDir, withIntermediateDirectories: true)
+        let initialOmpModels = "providers:\n  refuseless:\n    api_key: omp_test_key\n"
+        let initialOmpConfig = "modelRoles:\n  default: refuseless/gpt-4o\n"
+        let mockOmpCredsFile = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("mock_omp_creds_\(UUID().uuidString).json")
+        let initialOmpCredsJSON = "{\"version\":1,\"credentials\":[{\"provider\":\"refuseless\",\"credential\":{\"type\":\"api-key\",\"key\":\"omp_test_key\"}}]}"
+        try initialOmpCredsJSON.write(to: mockOmpCredsFile, atomically: true, encoding: .utf8)
+        setenv("APIBAR_OMP_CREDENTIALS_FILE", mockOmpCredsFile.path, 1)
+
+        let localOmpModelsFile = localOmpDir.appendingPathComponent("models.yml")
+        let localOmpConfigFile = localOmpDir.appendingPathComponent("config.yml")
+        try initialOmpModels.write(to: localOmpModelsFile, atomically: true, encoding: .utf8)
+        try initialOmpConfig.write(to: localOmpConfigFile, atomically: true, encoding: .utf8)
+
+        precondition(ICloudSync.shared.isOmpSyncEnabled == false, "OMP sync must be disabled by default")
+        ICloudSync.shared.setOmpSyncEnabled(true)
+        precondition(ICloudSync.shared.isOmpSyncEnabled == true)
+        precondition(ICloudSync.shared.isOmpCredentialsSyncEnabled == true)
+
+        let pushedOmpSuccess = await ICloudSync.shared.pushLocalState()
+        precondition(pushedOmpSuccess == true, "pushLocalState failed for OMP")
+        guard let cloudOmpDir = ICloudSync.shared.cloudOmpDirectoryURL,
+              let cloudOmpCredsFile = ICloudSync.shared.cloudOmpCredentialsURL else {
+            preconditionFailure("OMP iCloud URLs not resolved")
+        }
+        let cloudOmpModelsFile = cloudOmpDir.appendingPathComponent("models.yml")
+        let cloudOmpConfigFile = cloudOmpDir.appendingPathComponent("config.yml")
+        precondition(FileManager.default.fileExists(atPath: cloudOmpModelsFile.path), "omp/models.yml missing in iCloud")
+        precondition(FileManager.default.fileExists(atPath: cloudOmpConfigFile.path), "omp/config.yml missing in iCloud")
+        precondition(FileManager.default.fileExists(atPath: cloudOmpCredsFile.path), "omp-credentials.json missing in iCloud vault")
+        precondition((try? String(contentsOf: cloudOmpModelsFile, encoding: .utf8)) == initialOmpModels)
+        precondition((try? String(contentsOf: cloudOmpConfigFile, encoding: .utf8)) == initialOmpConfig)
+        precondition((try? String(contentsOf: cloudOmpCredsFile, encoding: .utf8)) == initialOmpCredsJSON)
+
+        // Simulate Device B updating omp/models.yml in iCloud
+        let updatedOmpModels = "providers:\n  refuseless:\n    api_key: omp_test_key\n  together:\n    api_key: together_test_key\n"
+        try updatedOmpModels.write(to: cloudOmpModelsFile, atomically: true, encoding: .utf8)
+        let ompFutureDate = Date().addingTimeInterval(10)
+        try FileManager.default.setAttributes([.modificationDate: ompFutureDate], ofItemAtPath: cloudOmpModelsFile.path)
+
+        let didMergeOmp = await ICloudSync.shared.pullAndMerge()
+        precondition(didMergeOmp == true, "pullAndMerge did not report OMP merge changes")
+        precondition((try? String(contentsOf: localOmpModelsFile, encoding: .utf8)) == updatedOmpModels, "Local models.yml did not update with Device B changes")
+        let ompBackupFile = localOmpDir.appendingPathComponent("models.yml.bak")
+        precondition(FileManager.default.fileExists(atPath: ompBackupFile.path), "models.yml.bak backup missing")
+        precondition((try? String(contentsOf: ompBackupFile, encoding: .utf8)) == initialOmpModels, "models.yml.bak content mismatch")
+
+        ICloudSync.shared.setOmpSyncEnabled(false)
+        precondition(ICloudSync.shared.isOmpSyncEnabled == false)
+        UserDefaults.standard.removeObject(forKey: ICloudSync.ompEnabledKey)
+        try? FileManager.default.removeItem(at: localOmpDir)
+        try? FileManager.default.removeItem(at: mockOmpCredsFile)
+        unsetenv("APIBAR_OMP_CREDENTIALS_FILE")
 
         precondition(ICloudSync.shared.statusBadge == "Active" || ICloudSync.shared.statusBadge == "Synced")
         precondition(app.iCloudStatusMessage.contains("Synced") || app.iCloudStatusMessage.contains("ago") || app.iCloudStatusMessage.contains("just now"))

@@ -56,11 +56,29 @@ struct HeimdallmProvider: BalanceProvider {
             throw ConnectorError.message("Heimdallm returned an invalid balance. The previous balance was retained.")
         }
 
+        let credited = number(balanceDict["credited"]) ?? 0.0
         let deposited = number(totalsDict["deposited"]) ?? 0.0
+        let rewards = number(totalsDict["referral_rewards"]) ?? 0.0
+        let adjusted = number(totalsDict["adjusted"]) ?? 0.0
+        let totalCredited = max(credited, deposited + rewards + adjusted)
+
+        var ledgerDeposits = 0.0
+        if let entries = root["entries"] as? [[String: Any]] {
+            for entry in entries {
+                let kind = (entry["kind"] as? String)?.lowercased()
+                if let kind, ["deposit", "credit", "referral_reward", "adjustment", "bonus"].contains(kind) {
+                    if let amt = number(entry["amount"]), amt > 0 {
+                        ledgerDeposits += amt
+                    }
+                }
+            }
+        }
+
         let spent = number(totalsDict["spent"]) ?? 0.0
+        let totalFunds = totalCredited > 0 ? totalCredited : ledgerDeposits
         let baseline: Double
-        if deposited > 0 {
-            baseline = max(deposited, remaining)
+        if totalFunds > 0 {
+            baseline = max(totalFunds, remaining)
         } else if spent > 0 {
             baseline = max(remaining + spent, remaining)
         } else if remaining > 0 {
@@ -88,7 +106,7 @@ struct HeimdallmProvider: BalanceProvider {
         return nil
     }
 
-    static func parse(creditsData: Data, accountData: Data? = nil, url: String, account expectedAccount: String = "") throws -> Reading {
+    static func parse(creditsData: Data, accountData: Data? = nil, url: String, account expectedAccount: String = "", tokensPerDay: Double? = nil, runwayDays: Int? = nil) throws -> Reading {
         let (remaining, baseline, accountID) = try parseCredits(creditsData)
         var resolvedAccount = ""
         if let accountData {
@@ -110,7 +128,9 @@ struct HeimdallmProvider: BalanceProvider {
             account: resolvedAccount,
             url: url,
             expires: nil,
-            reference: baseline
+            reference: baseline,
+            tokensPerDay: tokensPerDay,
+            runwayDays: runwayDays
         )
     }
 
@@ -119,6 +139,61 @@ struct HeimdallmProvider: BalanceProvider {
         if let string = value as? String {
             let cleaned = string.replacingOccurrences(of: "$", with: "").replacingOccurrences(of: ",", with: "").trimmingCharacters(in: .whitespacesAndNewlines)
             return Double(cleaned)
+        }
+        return nil
+    }
+
+    // MARK: - Pacing
+
+    /// Extracts 30-day token pacing and runway metrics from Heimdallm analytics and credits payloads.
+    static func extractPacing(analyticsData: Data, creditsData: Data? = nil, remaining: Double) -> (tokensPerDay: Double, runwayDays: Int)? {
+        guard let analyticsJSON = try? JSONSerialization.jsonObject(with: analyticsData, options: [.fragmentsAllowed]) as? [String: Any] else {
+            return nil
+        }
+        return extractPacing(analyticsJSON: analyticsJSON, creditsData: creditsData, remaining: remaining)
+    }
+
+    static func extractPacing(analyticsJSON: [String: Any], creditsData: Data? = nil, remaining: Double) -> (tokensPerDay: Double, runwayDays: Int)? {
+        guard remaining >= 0 else { return nil }
+
+        let summary = analyticsJSON["summary"] as? [String: Any]
+        let promptTokens = number(summary?["prompt_tokens"]) ?? 0
+        let completionTokens = number(summary?["completion_tokens"]) ?? 0
+        var totalTokens = promptTokens + completionTokens
+
+        let buckets = analyticsJSON["buckets"] as? [[String: Any]] ?? []
+        var activeBuckets = 0
+        for bucket in buckets {
+            let reqs = number(bucket["requests"]) ?? 0
+            let tok = number(bucket["tokens"]) ?? 0
+            let spend = number(bucket["spend"]) ?? 0
+            if reqs > 0 || tok > 0 || spend > 0 {
+                activeBuckets += 1
+            }
+            if totalTokens == 0, tok > 0 {
+                totalTokens += tok
+            }
+        }
+
+        guard totalTokens > 0 else { return nil }
+
+        let activeDays = max(1, activeBuckets > 0 ? activeBuckets : 30)
+        let tokensPerDay = totalTokens / Double(activeDays)
+
+        var totalSpend = number(summary?["spend"]) ?? 0
+        if totalSpend <= 0, let creditsData {
+            if let creditsRoot = try? JSONSerialization.jsonObject(with: creditsData, options: [.fragmentsAllowed]) as? [String: Any],
+               let totals = creditsRoot["totals"] as? [String: Any],
+               let spent = number(totals["spent"]), spent > 0 {
+                totalSpend = spent
+            }
+        }
+
+        let dailySpend = totalSpend > 0 ? (totalSpend / Double(activeDays)) : 0
+        let runwayDays = dailySpend > 0 ? max(0, Int(floor(remaining / dailySpend))) : nil
+
+        if let runway = runwayDays {
+            return (tokensPerDay: tokensPerDay, runwayDays: runway)
         }
         return nil
     }
@@ -156,7 +231,22 @@ struct HeimdallmProvider: BalanceProvider {
             accountData = accData
         }
 
-        let reading = try Self.parse(creditsData: creditsData, accountData: accountData, url: creditsURL.absoluteString, account: account)
+        var pacing: (tokensPerDay: Double, runwayDays: Int)? = nil
+        if let (remaining, _, _) = try? Self.parseCredits(creditsData),
+           let analyticsURL = URL(string: "https://\(host)/api/frontend/v1/generations/analytics"),
+           let (analyticsData, analyticsResp) = try? await http.request(url: analyticsURL),
+           analyticsResp.statusCode == 200 {
+            pacing = Self.extractPacing(analyticsData: analyticsData, creditsData: creditsData, remaining: remaining)
+        }
+
+        let reading = try Self.parse(
+            creditsData: creditsData,
+            accountData: accountData,
+            url: creditsURL.absoluteString,
+            account: account,
+            tokensPerDay: pacing?.tokensPerDay,
+            runwayDays: pacing?.runwayDays
+        )
         try await http.persist()
         return reading
     }

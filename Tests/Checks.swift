@@ -237,14 +237,14 @@ import AppKit
         let refPacing = RefuselessProvider.extractPacing(html: sampleRefuselessPacing, remaining: 0.699055)
         precondition(refPacing != nil, "Refuseless pacing extraction should succeed")
         precondition(abs(refPacing!.tokensPerDay - 1909503.33) < 1.0, "Refuseless tokensPerDay mismatch")
-        precondition(refPacing!.runwayDays == 0, "Refuseless runway should be 0 days with $0.70 remaining and $10.46 daily spend")
+        precondition(refPacing!.runwayDays == 0, "Refuseless runway should be 0 days with $0.70 remaining and $8.20 average daily spend")
         let refBalWithPacing = Balance(id: "refuseless", name: "Refuseless", baseline: 25.0, remaining: 0.70, updated: Date(), account: "user@refuseless.com", tokensPerDay: refPacing!.tokensPerDay, runwayDays: refPacing!.runwayDays)
         precondition(refBalWithPacing.pacingMessage == "1.9M tokens per day - Runs out in 0 days")
 
         let refPacingWithRunway = RefuselessProvider.extractPacing(html: sampleRefuselessPacing, remaining: 50.00)
-        precondition(refPacingWithRunway?.runwayDays == 4, "Refuseless runway should be 4 days with $50 remaining and $10.46 daily spend")
+        precondition(refPacingWithRunway?.runwayDays == 6, "Refuseless runway should be 6 days with $50 remaining and $8.20 average daily spend")
         let refBalWithRunway = Balance(id: "refuseless", name: "Refuseless", baseline: 100.0, remaining: 50.00, updated: Date(), account: "user@refuseless.com", tokensPerDay: refPacingWithRunway!.tokensPerDay, runwayDays: refPacingWithRunway!.runwayDays)
-        precondition(refBalWithRunway.pacingMessage == "1.9M tokens per day - Runs out in 4 days")
+        precondition(refBalWithRunway.pacingMessage == "1.9M tokens per day - Runs out in 6 days")
 
         // Real console payload: the RSC `balance`/`spentTotal` integers are
         // micro-dollars and the billing ledger reports cents. Reading the
@@ -299,43 +299,49 @@ import AppKit
 
         // ChangelogManager checks: current version, previous versions, and selection
         let changelog = ChangelogManager.shared
-        precondition(changelog.entries.count >= 5, "Changelog must include at least 5 built-in versions")
-        guard let entry052 = changelog.entries.first(where: { $0.version == "0.5.2" }),
+        precondition(changelog.entries.count >= 6, "Changelog must include at least 6 built-in versions")
+        guard let entry053 = changelog.entries.first(where: { $0.version == "0.5.3" }),
+              let entry052 = changelog.entries.first(where: { $0.version == "0.5.2" }),
               let entry051 = changelog.entries.first(where: { $0.version == "0.5.1" }),
               let entry050 = changelog.entries.first(where: { $0.version == "0.5.0" }),
               let entry049 = changelog.entries.first(where: { $0.version == "0.4.9" }),
               let entry048 = changelog.entries.first(where: { $0.version == "0.4.8" }),
               let entry047 = changelog.entries.first(where: { $0.version == "0.4.7" }) else {
-            preconditionFailure("Built-in changelog missing 0.5.2, 0.5.1, 0.5.0, 0.4.9, 0.4.8, or 0.4.7")
+            preconditionFailure("Built-in changelog missing 0.5.3, 0.5.2, 0.5.1, 0.5.0, 0.4.9, 0.4.8, or 0.4.7")
         }
-        precondition(entry052.isCurrent(currentVersion: "0.5.2") == true)
-        precondition(entry052.isPrevious(currentVersion: "0.5.2") == false)
-        precondition(entry052.isNewer(currentVersion: "0.5.1") == true)
-        precondition(entry051.isCurrent(currentVersion: "0.5.2") == false)
-        precondition(entry051.isPrevious(currentVersion: "0.5.2") == true)
-        precondition(entry050.isCurrent(currentVersion: "0.5.2") == false)
-        precondition(entry050.isPrevious(currentVersion: "0.5.2") == true)
-        precondition(entry049.isPrevious(currentVersion: "0.5.2") == true)
-        precondition(entry048.isPrevious(currentVersion: "0.5.2") == true)
-        precondition(entry047.isPrevious(currentVersion: "0.5.2") == true)
+        precondition(entry053.isCurrent(currentVersion: "0.5.3") == true)
+        precondition(entry053.isPrevious(currentVersion: "0.5.3") == false)
+        precondition(entry053.isNewer(currentVersion: "0.5.2") == true)
+        precondition(entry052.isCurrent(currentVersion: "0.5.3") == false)
+        precondition(entry052.isPrevious(currentVersion: "0.5.3") == true)
+        precondition(entry051.isCurrent(currentVersion: "0.5.3") == false)
+        precondition(entry051.isPrevious(currentVersion: "0.5.3") == true)
+        precondition(entry050.isCurrent(currentVersion: "0.5.3") == false)
+        precondition(entry050.isPrevious(currentVersion: "0.5.3") == true)
+        precondition(entry049.isPrevious(currentVersion: "0.5.3") == true)
+        precondition(entry048.isPrevious(currentVersion: "0.5.3") == true)
+        precondition(entry047.isPrevious(currentVersion: "0.5.3") == true)
+        precondition(!entry053.highlights.isEmpty, "0.5.3 highlights must not be empty")
+        precondition(!entry053.notes.isEmpty, "0.5.3 notes must not be empty")
         precondition(!entry052.highlights.isEmpty, "0.5.2 highlights must not be empty")
         precondition(!entry052.notes.isEmpty, "0.5.2 notes must not be empty")
         precondition(!entry051.highlights.isEmpty, "0.5.1 highlights must not be empty")
         precondition(!entry051.notes.isEmpty, "0.5.1 notes must not be empty")
         precondition(!entry050.highlights.isEmpty, "0.5.0 highlights must not be empty")
         // Release notes must not leak local machine details.
+        precondition(!entry053.notes.contains("/Users/"), "Changelog must not contain personal paths")
         precondition(!entry052.notes.contains("/Users/"), "Changelog must not contain personal paths")
         precondition(!entry051.notes.contains("/Users/"), "Changelog must not contain personal paths")
         // The shipped bundle version and the changelog must agree.
         if let plistVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String {
-            precondition(plistVersion == "0.5.2", "Info.plist version is \(plistVersion), expected 0.5.2")
+            precondition(plistVersion == "0.5.3", "Info.plist version is \(plistVersion), expected 0.5.3")
         }
 
-        changelog.select(version: "0.5.1")
-        precondition(changelog.selectedVersion == "0.5.1")
-        precondition(changelog.selectedEntry?.version == "0.5.1")
         changelog.select(version: "0.5.2")
         precondition(changelog.selectedVersion == "0.5.2")
+        precondition(changelog.selectedEntry?.version == "0.5.2")
+        changelog.select(version: "0.5.3")
+        precondition(changelog.selectedVersion == "0.5.3")
 
         print("Passed: ChangelogManager version history, current/previous tagging, and selection.")
         print("Passed: AppUpdater semver parsing, newer version detection, and release tagging.")
@@ -485,6 +491,20 @@ func unalignedChecks() async throws {
     let html = "<div class=\"account\"><span class=\"balance-figure\">$18.40</span></div><p>user@unaligned.pw</p>"
     let (htmlBal, htmlBase, htmlAcct) = try UnalignedProvider.parse(html: html)
     precondition(htmlBal == 18.40 && htmlBase == 20.0 && htmlAcct == "user@unaligned.pw")
+
+    // Pacing extraction checks
+    let unalignedPacingData = Data(#"{"type":"data","nodes":[null,null,{"type":"data","data":[{"tokens30d":1,"spent30d":2,"usage":3},357000000,5650000,[4,8],{"day":5,"requests":6,"cost":7},"2026-11-05",100,2000000,{"day":9,"requests":10,"cost":11},"2026-11-06",200,3650000],"uses":{}}]}"#.utf8)
+    let unalignedPacing = UnalignedProvider.extractPacing(from: unalignedPacingData, remaining: 0.60)
+    precondition(unalignedPacing != nil, "Unaligned pacing extraction should succeed")
+    precondition(unalignedPacing?.tokensPerDay == 178500000.0, "Unaligned tokensPerDay mismatch")
+    precondition(unalignedPacing?.runwayDays == 0, "Unaligned runway should be 0 days with $0.60 remaining and $2.825 daily spend")
+    let unalignedBalWithPacing = Balance(id: "unaligned", name: "Unaligned", baseline: 5.95, remaining: 0.60, updated: Date(), account: "user@unaligned.pw", tokensPerDay: unalignedPacing!.tokensPerDay, runwayDays: unalignedPacing!.runwayDays)
+    precondition(unalignedBalWithPacing.pacingMessage == "178.5M tokens per day - Runs out in 0 days")
+
+    let unalignedPacingWithRunway = UnalignedProvider.extractPacing(from: unalignedPacingData, remaining: 15.0)
+    precondition(unalignedPacingWithRunway?.runwayDays == 5, "Unaligned runway should be 5 days with $15 remaining and $2.825 daily spend")
+    let unalignedBalWithRunway = Balance(id: "unaligned", name: "Unaligned", baseline: 25.0, remaining: 15.0, updated: Date(), account: "user@unaligned.pw", tokensPerDay: unalignedPacingWithRunway!.tokensPerDay, runwayDays: unalignedPacingWithRunway!.runwayDays)
+    precondition(unalignedBalWithRunway.pacingMessage == "178.5M tokens per day - Runs out in 5 days")
 
     // Reading validation: only the dashboard host is accepted, and a different
     // account cannot overwrite a pinned balance.
@@ -734,6 +754,21 @@ func heimdallmChecks() async throws {
     let zeroReading = try HeimdallmProvider.parse(creditsData: Data(zeroCredits.utf8), url: "https://heimdallm.com/api/frontend/v1/credits")
     precondition(zeroReading.remaining == 0 && (zeroReading.reference ?? 0) == 0)
 
+    // Baseline uses credited amount from balance or entries when deposited in totals is 0
+    let creditedOnly = #"{"account_id":"acc_5","balance":{"credited":"5.00","spendable":"4.96"},"totals":{"deposited":"0","spent":"0.04"}}"#
+    let creditedReading = try HeimdallmProvider.parse(creditsData: Data(creditedOnly.utf8), url: "https://heimdallm.com/api/frontend/v1/credits")
+    precondition(abs(creditedReading.remaining - 4.96) < 0.000001)
+    precondition(abs((creditedReading.reference ?? 0) - 5.00) < 0.000001)
+
+    let entriesDeposit = #"{"account_id":"acc_6","balance":{"spendable":"4.50"},"totals":{"deposited":"0","spent":"0.50"},"entries":[{"kind":"deposit","amount":"5.00"}]}"#
+    let entriesReading = try HeimdallmProvider.parse(creditsData: Data(entriesDeposit.utf8), url: "https://heimdallm.com/api/frontend/v1/credits")
+    precondition(abs((entriesReading.reference ?? 0) - 5.00) < 0.000001)
+
+    // Authoritative totals take precedence over extraneous ledger rows
+    let entriesWithAdjustments = #"{"account_id":"acc_7","balance":{"credited":"5.00","spendable":"4.92"},"totals":{"deposited":"5.00","spent":"0.08"},"entries":[{"kind":"deposit","amount":"5.00"},{"kind":"adjustment","amount":"5.00"}]}"#
+    let adjReading = try HeimdallmProvider.parse(creditsData: Data(entriesWithAdjustments.utf8), url: "https://heimdallm.com/api/frontend/v1/credits")
+    precondition(abs((adjReading.reference ?? 0) - 5.00) < 0.000001, "Extraneous ledger adjustment must not inflate authoritative baseline")
+
     // Hostile URL is rejected by ReadingValidation
     let hostile = Reading(provider: "heimdallm", remaining: 10, currency: "USD", account: "", url: "https://evil.example/api/frontend/v1/credits", expires: nil)
     precondition(!ReadingValidation.valid(hostile, balances: Balance.initial))
@@ -756,23 +791,34 @@ func heimdallmChecks() async throws {
         preconditionFailure("Heimdallm accepted a different account")
     } catch { }
 
-    // Fetch path: credits then account, cookie only, no API key
+    // Fetch path: credits, account, and generations/analytics; cookie only, no API key
+    let analyticsBody = #"{"summary":{"prompt_tokens":1200000,"completion_tokens":300000,"spend":0.75},"buckets":[{"requests":10,"tokens":50000,"spend":0.05}]}"#
     let config = URLSessionConfiguration.ephemeral
     config.protocolClasses = [MockHeimdallmProtocol.self]
     MockHeimdallmProtocol.reset()
     MockHeimdallmProtocol.routes["/api/frontend/v1/credits"] = (200, Data(creditsBody.utf8))
     MockHeimdallmProtocol.routes["/api/frontend/v1/account"] = (200, Data(accountBody.utf8))
+    MockHeimdallmProtocol.routes["/api/frontend/v1/generations/analytics"] = (200, Data(analyticsBody.utf8))
     let cookie = StoredCookie(name: "__Host-heimdallm_session", value: "heimdallm-test-session", domain: "staging.heimdallm.com", expires: Date().addingTimeInterval(3600))
     let http = SessionHTTP(provider: "heimdallm", cookies: [cookie], configuration: config)
     let fetched = try await HeimdallmProvider(http: http, account: "").fetchBalance()
     precondition(abs(fetched.remaining - 12.50) < 0.000001)
     precondition(fetched.account == "user@heimdallm.com")
-    precondition(MockHeimdallmProtocol.seen.count == 2)
+    precondition(fetched.tokensPerDay == 1500000.0)
+    precondition(fetched.runwayDays == 16)
+    let heimdallmBalWithPacing = Balance(id: "heimdallm", name: "Heimdallm", baseline: 25.0, remaining: 12.50, updated: Date(), account: "user@heimdallm.com", tokensPerDay: fetched.tokensPerDay, runwayDays: fetched.runwayDays)
+    precondition(heimdallmBalWithPacing.pacingMessage == "1.5M tokens per day - Runs out in 16 days")
+    precondition(MockHeimdallmProtocol.seen.count == 3)
     for sent in MockHeimdallmProtocol.seen {
         precondition(sent.url?.host == "staging.heimdallm.com")
         precondition(sent.value(forHTTPHeaderField: "Cookie")?.contains("__Host-heimdallm_session") == true)
         precondition(sent.value(forHTTPHeaderField: "Authorization") == nil)
     }
+
+    // Direct pacing extraction check
+    let heimdallmPacing = HeimdallmProvider.extractPacing(analyticsData: Data(analyticsBody.utf8), creditsData: Data(creditsBody.utf8), remaining: 12.50)
+    precondition(heimdallmPacing?.tokensPerDay == 1500000.0)
+    precondition(heimdallmPacing?.runwayDays == 16)
 
     // Unapproved paths on the host are blocked
     do {
@@ -786,6 +832,7 @@ func heimdallmChecks() async throws {
 
     // Registration checks
     guard let heimdallm = Balance.initial.first(where: { $0.id == "heimdallm" }) else { preconditionFailure("Balance.initial must include heimdallm") }
+    precondition(!heimdallm.isEnabled, "Heimdallm must ship disabled")
     precondition(heimdallm.name == "Heimdallm")
 
     print("Passed: Heimdallm credit parsing, baseline calculation, account resolution, rejected sessions, account pinning, cookie-only requests, endpoint restriction, and initial registration.")
@@ -908,29 +955,29 @@ func updaterChecks() async throws {
     if let plistData = try? Data(contentsOf: URL(fileURLWithPath: "Resources/Info.plist")),
        let plist = try? PropertyListSerialization.propertyList(from: plistData, format: nil) as? [String: Any],
        let shipped = plist["CFBundleShortVersionString"] as? String {
-        precondition(shipped == "0.5.2", "Info.plist must ship 0.5.2, got \(shipped)")
-        precondition(plist["CFBundleVersion"] as? String == "52", "CFBundleVersion must be 52")
+        precondition(shipped == "0.5.3", "Info.plist must ship 0.5.3, got \(shipped)")
+        precondition(plist["CFBundleVersion"] as? String == "53", "CFBundleVersion must be 53")
     } else {
         preconditionFailure("Could not read Resources/Info.plist")
     }
-    precondition(localVersion == "0.5.2", "Expected the updater to report 0.5.2, got \(localVersion)")
+    precondition(localVersion == "0.5.3", "Expected the updater to report 0.5.3, got \(localVersion)")
 
     // A newer release must be detected, with the zip asset selected.
-    setenv("APIBAR_UPDATER_ENDPOINT", try serve(releaseJSON(tag: "v0.5.3", name: "API Bar 0.5.3", zipSize: 2_200_000), at: "newer"), 1)
+    setenv("APIBAR_UPDATER_ENDPOINT", try serve(releaseJSON(tag: "v0.5.4", name: "API Bar 0.5.4", zipSize: 2_200_000), at: "newer"), 1)
     let newer = try await updater.fetchReleaseInfo()
-    precondition(newer.version == "0.5.3", "Tag v0.5.3 must parse to 0.5.3, got \(newer.version)")
-    precondition(AppUpdater.isVersion(newer.version, newerThan: localVersion), "0.5.3 must be newer than \(localVersion)")
+    precondition(newer.version == "0.5.4", "Tag v0.5.4 must parse to 0.5.4, got \(newer.version)")
+    precondition(AppUpdater.isVersion(newer.version, newerThan: localVersion), "0.5.4 must be newer than \(localVersion)")
     precondition(newer.downloadURL?.lastPathComponent == "APIBar-app.zip", "Updater must select the zip asset, got \(newer.downloadURL?.absoluteString ?? "nil")")
-    precondition(newer.notes.contains("notes for v0.5.3"))
+    precondition(newer.notes.contains("notes for v0.5.4"))
 
     // The same version must not offer an update, even though an asset exists.
-    setenv("APIBAR_UPDATER_ENDPOINT", try serve(releaseJSON(tag: "v0.5.2", name: "API Bar 0.5.2", zipSize: 2_100_000), at: "same"), 1)
+    setenv("APIBAR_UPDATER_ENDPOINT", try serve(releaseJSON(tag: "v0.5.3", name: "API Bar 0.5.3", zipSize: 2_100_000), at: "same"), 1)
     let same = try await updater.fetchReleaseInfo()
-    precondition(same.version == "0.5.2")
+    precondition(same.version == "0.5.3")
     precondition(!AppUpdater.isVersion(same.version, newerThan: localVersion), "Same version must not be treated as an update")
 
     // An older release must never trigger a downgrade.
-    setenv("APIBAR_UPDATER_ENDPOINT", try serve(releaseJSON(tag: "v0.5.1", name: "API Bar 0.5.1", zipSize: 2_073_811), at: "older"), 1)
+    setenv("APIBAR_UPDATER_ENDPOINT", try serve(releaseJSON(tag: "v0.5.2", name: "API Bar 0.5.2", zipSize: 2_073_811), at: "older"), 1)
     let older = try await updater.fetchReleaseInfo()
     precondition(!AppUpdater.isVersion(older.version, newerThan: localVersion), "Older release must not be an update")
 

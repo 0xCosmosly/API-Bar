@@ -71,6 +71,14 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         get { ICloudSync.shared.isPiCredentialsSyncEnabled }
         set { ICloudSync.shared.setPiCredentialsSyncEnabled(newValue) }
     }
+    var isOmpSyncEnabled: Bool {
+        get { ICloudSync.shared.isOmpSyncEnabled }
+        set { ICloudSync.shared.setOmpSyncEnabled(newValue) }
+    }
+    var isOmpCredentialsSyncEnabled: Bool {
+        get { ICloudSync.shared.isOmpCredentialsSyncEnabled }
+        set { ICloudSync.shared.setOmpCredentialsSyncEnabled(newValue) }
+    }
     var iCloudStatus: String {
         ICloudSync.shared.statusBadge
     }
@@ -91,6 +99,12 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
     }
     func setPiCredentialsSyncEnabled(_ enabled: Bool) {
         ICloudSync.shared.setPiCredentialsSyncEnabled(enabled)
+    }
+    func setOmpSyncEnabled(_ enabled: Bool) {
+        ICloudSync.shared.setOmpSyncEnabled(enabled)
+    }
+    func setOmpCredentialsSyncEnabled(_ enabled: Bool) {
+        ICloudSync.shared.setOmpCredentialsSyncEnabled(enabled)
     }
     func syncICloudNow() {
         Task { await ICloudSync.shared.syncNow() }
@@ -457,6 +471,18 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
                     balances[i].baseline = 0
                     changed = true
                 }
+                // An early build spuriously inflated Heimdallm's baseline from $5.00 to $10.00
+                // on credit hold releases. If stored state has an inflated baseline while balance is <= $5.00,
+                // repair it immediately to the actual tier.
+                if balances[i].id == "heimdallm", balances[i].baseline > 5.0, balances[i].remaining <= 5.0 {
+                    balances[i].baseline = max(PaymentReference.inferTier(for: balances[i].remaining), balances[i].remaining)
+                    changed = true
+                }
+                // Heimdallm ships paused; if an earlier update added it enabled without credentials, pause it.
+                if balances[i].id == "heimdallm", !hasStoredCredential("heimdallm"), balances[i].account.isEmpty, balances[i].baseline == 0, balances[i].disabled == nil {
+                    balances[i].disabled = true
+                    changed = true
+                }
             }
             if changed { save() }
         }
@@ -469,13 +495,6 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
            !balances.contains(where: { $0.id == "unaligned" }) {
             balances.append(Balance(id: "unaligned", name: "Unaligned", baseline: 0, remaining: 0, updated: .distantPast, account: ""))
             providerStatus["unaligned"] = "Connect in Settings"
-            save()
-        }
-        if UserDefaults.standard.bool(forKey: "HasCompletedOnboarding"),
-           UserDefaults.standard.string(forKey: "RemovedProviders")?.contains("heimdallm") != true,
-           !balances.contains(where: { $0.id == "heimdallm" }) {
-            balances.append(Balance(id: "heimdallm", name: "Heimdallm", baseline: 0, remaining: 0, updated: .distantPast, account: ""))
-            providerStatus["heimdallm"] = "Connect in Settings"
             save()
         }
         if CommandLine.arguments.contains("--preview") {
@@ -1029,6 +1048,38 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
             }
             return
         }
+        if r.provider == "heimdallm" {
+            if let ref = r.reference, ref > 0 {
+                balances[i].baseline = max(ref, r.remaining)
+            } else if balances[i].baseline <= 0 || (balances[i].baseline > 5.0 && balances[i].remaining <= 5.0) {
+                balances[i].baseline = PaymentReference.inferTier(for: r.remaining)
+            } else {
+                balances[i].baseline = max(balances[i].baseline, r.remaining)
+            }
+            providerStatus[r.provider] = "Connected · refreshes every 5 min"
+            if sortMode != .manual {
+                applySorting()
+            } else {
+                save(); updateTitles()
+            }
+            return
+        }
+        if r.provider == "unaligned" {
+            if let ref = r.reference, ref > 0 {
+                balances[i].baseline = max(ref, r.remaining)
+            } else if balances[i].baseline <= 0 {
+                balances[i].baseline = PaymentReference.inferTier(for: r.remaining)
+            } else {
+                balances[i].baseline = max(balances[i].baseline, r.remaining)
+            }
+            providerStatus[r.provider] = "Connected · refreshes every 5 min"
+            if sortMode != .manual {
+                applySorting()
+            } else {
+                save(); updateTitles()
+            }
+            return
+        }
         // Automatic 100% reference & top-up calculation for generic providers:
         if r.remaining > oldRemaining && oldRemaining > 0 {
             let delta = r.remaining - oldRemaining
@@ -1068,27 +1119,37 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
             // would write one provider's percentage into another provider's button.
             let identity = item.autosaveName ?? ""
             let isMergedItem = mergeIcons || identity == "merged"
-            if isMergedItem && mergedProvider == "overview" {
-                if activeBalances.isEmpty {
-                    if items[i].button?.title != "" { items[i].button?.title = "" }
-                    items[i].button?.image = BrandMark.appIconImage(size: 18)
-                    items[i].button?.toolTip = nil
-                    items[i].button?.setAccessibilityValue("No providers configured")
-                } else {
-                    let usdRemaining = activeBalances.reduce(0.0) { $0 + $1.remaining }
-                    let usdBaseline = activeBalances.reduce(0.0) { $0 + $1.baseline }
-                    let totalPercent = usdBaseline > 0 ? max(0, usdRemaining / usdBaseline * 100) : 0
-                    let percentText: String = {
-                        if usdBaseline <= 0 { return "—" }
-                        if totalPercent > 0 && totalPercent < 1 { return "<1%" }
-                        return "\(Int(floor(totalPercent)))%"
-                    }()
-                    if items[i].button?.title != percentText {
-                        items[i].button?.title = percentText
+            if isMergedItem {
+                if mergedProvider == "overview" {
+                    if activeBalances.isEmpty {
+                        if items[i].button?.title != "" { items[i].button?.title = "" }
+                        items[i].button?.image = BrandMark.appIconImage(size: 18)
+                        items[i].button?.toolTip = nil
+                        items[i].button?.setAccessibilityValue("No providers configured")
+                    } else {
+                        let usdRemaining = activeBalances.reduce(0.0) { $0 + $1.remaining }
+                        let usdBaseline = activeBalances.reduce(0.0) { $0 + $1.baseline }
+                        let totalPercent = usdBaseline > 0 ? max(0, usdRemaining / usdBaseline * 100) : 0
+                        let percentText: String = {
+                            if usdBaseline <= 0 { return "—" }
+                            if totalPercent > 0 && totalPercent < 1 { return "<1%" }
+                            return "\(Int(floor(totalPercent)))%"
+                        }()
+                        if items[i].button?.title != percentText {
+                            items[i].button?.title = percentText
+                        }
+                        items[i].button?.image = ProviderIcon.menuBarImage("overview")
+                        items[i].button?.toolTip = nil
+                        items[i].button?.setAccessibilityValue("\(percentText) remaining across all providers")
                     }
-                    items[i].button?.image = ProviderIcon.menuBarImage("overview")
+                } else {
+                    let b = selectedMergedBalance
+                    if items[i].button?.title != b.percentageLabel {
+                        items[i].button?.title = b.percentageLabel
+                    }
+                    items[i].button?.image = ProviderIcon.menuBarImage(b.id)
                     items[i].button?.toolTip = nil
-                    items[i].button?.setAccessibilityValue("\(percentText) remaining across all providers")
+                    items[i].button?.setAccessibilityValue("\(b.percentageLabel) remaining\(b.stale ? ", stale" : "")")
                 }
             } else {
                 guard let b = activeBalances.first(where: { $0.id == identity }) else { continue }

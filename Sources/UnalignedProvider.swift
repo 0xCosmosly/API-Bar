@@ -288,6 +288,124 @@ struct UnalignedProvider: BalanceProvider {
         return sawRow ? total : nil
     }
 
+    // MARK: - Pacing
+
+    /// Extracts 30-day token pacing and runway metrics from the Unaligned dashboard node payload.
+    /// Returns tokens per day and remaining runway days, or nil if metrics cannot be calculated.
+    static func extractPacing(json: Any, remaining: Double) -> (tokensPerDay: Double, runwayDays: Int)? {
+        guard remaining >= 0 else { return nil }
+
+        func numeric(_ value: Any?) -> Double? {
+            if let number = value as? NSNumber { return number.doubleValue }
+            if let string = value as? String {
+                let cleaned = string
+                    .replacingOccurrences(of: "$", with: "")
+                    .replacingOccurrences(of: ",", with: "")
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                return Double(cleaned)
+            }
+            return nil
+        }
+
+        func dollars(from raw: Double) -> Double {
+            if raw >= 1_000, raw.rounded() == raw { return raw / 1_000_000 }
+            return raw
+        }
+
+        var totalTokens: Double? = nil
+        var totalSpend: Double? = nil
+        var activeDaysSet = Set<String>()
+        var dailySpends: [String: Double] = [:]
+
+        // Strategy A: SvelteKit devalue node arrays
+        if let root = json as? [String: Any], let nodes = root["nodes"] as? [Any] {
+            func deref(_ value: Any, in data: [Any]) -> Any {
+                if let index = value as? Int, index >= 0, index < data.count { return data[index] }
+                return value
+            }
+            for case let node as [String: Any] in nodes {
+                guard let dataArray = node["data"] as? [Any] else { continue }
+                for element in dataArray {
+                    guard let dict = element as? [String: Any] else { continue }
+                    if totalTokens == nil {
+                        for key in ["tokens30d", "tokens"] {
+                            if let ref = dict[key] {
+                                let resolved = deref(ref, in: dataArray)
+                                if let tok = numeric(resolved), tok > 0 {
+                                    totalTokens = tok
+                                    break
+                                }
+                            }
+                        }
+                    }
+                    if totalSpend == nil {
+                        for key in ["spent30d", "spent"] {
+                            if let ref = dict[key] {
+                                let resolved = deref(ref, in: dataArray)
+                                if let sp = numeric(resolved), sp > 0 {
+                                    totalSpend = dollars(from: sp)
+                                    break
+                                }
+                            }
+                        }
+                    }
+                    if let usageRef = dict["usage"] {
+                        let resolvedUsage = deref(usageRef, in: dataArray)
+                        if let usageArr = resolvedUsage as? [Any] {
+                            for item in usageArr {
+                                let itemDict = deref(item, in: dataArray) as? [String: Any]
+                                guard let itemDict else { continue }
+                                let dayVal = deref(itemDict["day"] as Any, in: dataArray) as? String
+                                let costVal = numeric(deref(itemDict["cost"] as Any, in: dataArray)) ?? 0
+                                let reqVal = numeric(deref(itemDict["requests"] as Any, in: dataArray)) ?? 0
+                                let inTok = numeric(deref(itemDict["inputTokens"] as Any, in: dataArray)) ?? 0
+                                let outTok = numeric(deref(itemDict["outputTokens"] as Any, in: dataArray)) ?? 0
+                                if let day = dayVal, (costVal > 0 || reqVal > 0 || inTok > 0 || outTok > 0) {
+                                    activeDaysSet.insert(day)
+                                    dailySpends[day, default: 0] += dollars(from: costVal)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } else if let dict = json as? [String: Any] {
+            // Strategy B: Plain dictionary
+            if let t = numeric(dict["tokens30d"] ?? dict["tokens"]), t > 0 { totalTokens = t }
+            if let s = numeric(dict["spent30d"] ?? dict["spent"]), s > 0 { totalSpend = dollars(from: s) }
+            if let usageArr = dict["usage"] as? [[String: Any]] {
+                for item in usageArr {
+                    let day = item["day"] as? String
+                    let cost = numeric(item["cost"]) ?? 0
+                    let reqs = numeric(item["requests"]) ?? 0
+                    if let day, (cost > 0 || reqs > 0) {
+                        activeDaysSet.insert(day)
+                        dailySpends[day, default: 0] += dollars(from: cost)
+                    }
+                }
+            }
+        }
+
+        guard let tokens = totalTokens, tokens > 0 else { return nil }
+
+        let activeDays = max(1, activeDaysSet.isEmpty ? 30 : activeDaysSet.count)
+        let tokensPerDay = tokens / Double(activeDays)
+
+        let spend = totalSpend ?? dailySpends.values.reduce(0, +)
+        let dailySpend = spend > 0 ? (spend / Double(activeDays)) : 0
+        let runwayDays = dailySpend > 0 ? max(0, Int(floor(remaining / dailySpend))) : nil
+
+        if let runway = runwayDays {
+            return (tokensPerDay: tokensPerDay, runwayDays: runway)
+        }
+        return nil
+    }
+
+    static func extractPacing(from data: Data, remaining: Double) -> (tokensPerDay: Double, runwayDays: Int)? {
+        guard let json = try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed]) else { return nil }
+        return extractPacing(json: json, remaining: remaining)
+    }
+
     // MARK: - Fetch
 
     func fetchBalance() async throws -> Reading {
@@ -312,6 +430,10 @@ struct UnalignedProvider: BalanceProvider {
                 guard !parsed.account.isEmpty || account.isEmpty || account.hasSuffix(" Account") || account == parsed.account else {
                     throw ConnectorError.message("This Unaligned sign-in belongs to a different account. The previous balance was retained.")
                 }
+                var pacing: (tokensPerDay: Double, runwayDays: Int)? = nil
+                if let json = try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed]) {
+                    pacing = Self.extractPacing(json: json, remaining: parsed.remaining)
+                }
                 // A verified top-up total always wins over an inferred tier.
                 var baseline = parsed.baseline
                 if let billingURL = URL(string: Self.dataEndpoints[1]),
@@ -329,7 +451,9 @@ struct UnalignedProvider: BalanceProvider {
                     account: parsed.account,
                     url: endpoint,
                     expires: nil,
-                    reference: baseline
+                    reference: baseline,
+                    tokensPerDay: pacing?.tokensPerDay,
+                    runwayDays: pacing?.runwayDays
                 )
             } catch {
                 lastError = error

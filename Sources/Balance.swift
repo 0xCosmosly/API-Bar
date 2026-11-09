@@ -69,8 +69,8 @@ struct Balance: Codable, Equatable {
         Balance(id: "refuseless", name: "Refuseless", baseline: 0, remaining: 0, updated: .distantPast, account: ""),
         Balance(id: "lutheos", name: "Lutheos", baseline: 0, remaining: 0, updated: .distantPast, account: ""),
         Balance(id: "unaligned", name: "Unaligned", baseline: 0, remaining: 0, updated: .distantPast, account: ""),
-        Balance(id: "heimdallm", name: "Heimdallm", baseline: 0, remaining: 0, updated: .distantPast, account: ""),
         // Available to add, but paused until the user turns it on.
+        Balance(id: "heimdallm", name: "Heimdallm", baseline: 0, remaining: 0, updated: .distantPast, account: "", disabled: true),
         Balance(id: "yeta", name: "Yeta", baseline: 0, remaining: 0, updated: .distantPast, account: "", disabled: true)
     ]
 }

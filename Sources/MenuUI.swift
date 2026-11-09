@@ -32,13 +32,13 @@ func providerAccentColor(_ id: String) -> Color {
 
 func percentageColor(for percent: Double) -> Color {
     if percent >= 80 {
-        return Color.green
+        return Color(nsColor: percentageGreenNSColor)
     } else if percent >= 20 {
         return Color(NSColor.secondaryLabelColor)
     } else if percent >= 10 {
         return Color(nsColor: percentageYellowNSColor)
     } else {
-        return Color.red
+        return Color(nsColor: percentageRedNSColor)
     }
 }
 
@@ -962,6 +962,17 @@ struct IntegrationSyncSection: View {
                 credentialDetail: "Synchronizes your Pi API keys and authentication tokens (~/.pi/agent/auth.json) via your private iCloud vault.",
                 isOn: Binding(get: { app.isPiSyncEnabled }, set: { app.setPiSyncEnabled($0) }),
                 syncCredentials: Binding(get: { app.isPiCredentialsSyncEnabled }, set: { app.setPiCredentialsSyncEnabled($0) }),
+                compact: compact
+            )
+
+            if !compact { Divider().opacity(0.6) }
+
+            IntegrationSyncRow(
+                title: "Sync OMP Configuration (Optional)",
+                detail: "Syncs models and settings configured in OMP (~/.omp/agent) across devices via iCloud Drive.",
+                credentialDetail: "Synchronizes your OMP API keys and authentication tokens via your private iCloud vault.",
+                isOn: Binding(get: { app.isOmpSyncEnabled }, set: { app.setOmpSyncEnabled($0) }),
+                syncCredentials: Binding(get: { app.isOmpCredentialsSyncEnabled }, set: { app.setOmpCredentialsSyncEnabled($0) }),
                 compact: compact
             )
         }

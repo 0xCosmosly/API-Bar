@@ -41,7 +41,7 @@ public final class AppUpdater: ObservableObject {
     private var lastCheckedDate: Date?
 
     public var currentVersion: String {
-        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.5.2"
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.5.3"
     }
 
     public static var localBuildDate: Date {
@@ -246,7 +246,7 @@ public final class AppUpdater: ObservableObject {
             self.releaseNotes = release.notes
             self.releaseURL = release.releaseURL
             self.downloadURL = release.downloadURL
-            self.updateAvailable = isSemverNewer
+            self.updateAvailable = isSemverNewer || isSameVersionUpdated
 
             // Cooldown check: prevent rapid reinstallations
             let lastInstallTime = (UserDefaults.standard.object(forKey: "APIBarLastUpdateInstallTime") as? Date) ?? .distantPast
@@ -256,8 +256,8 @@ public final class AppUpdater: ObservableObject {
                 // User explicitly clicked "Check for Updates…":
                 // If a new version exists on GitHub, show the Software Update window with notes.
                 // Otherwise, show the native "You're Up to Date" confirmation dialog.
-                if isSemverNewer {
-                    self.statusMessage = "Update available: v\(release.version)"
+                if isSemverNewer || isSameVersionUpdated {
+                    self.statusMessage = isSemverNewer ? "Update available: v\(release.version)" : "Updated build available: v\(release.version)"
                     showUpdateWindow()
                 } else {
                     self.statusMessage = "Up to date (v\(currentVersion))."
@@ -273,8 +273,8 @@ public final class AppUpdater: ObservableObject {
             } else {
                 // Standard automatic background check on startup or periodic timer:
                 // NEVER automatically restart or reinstall the app! Just notify via UI state.
-                if isSemverNewer {
-                    self.statusMessage = "Update available: v\(release.version)"
+                if isSemverNewer || isSameVersionUpdated {
+                    self.statusMessage = isSemverNewer ? "Update available: v\(release.version)" : "Updated build available: v\(release.version)"
                 } else {
                     self.statusMessage = "Up to date (v\(currentVersion))."
                 }
@@ -497,16 +497,24 @@ struct SoftwareUpdateView: View {
                     .frame(width: 64, height: 64)
 
                 VStack(alignment: .leading, spacing: 5) {
-                    Text("A new version of API Bar is available!")
+                    let newVer = updater.latestVersion ?? "latest"
+                    let isSameVer = updater.latestVersion == updater.currentVersion
+                    Text(isSameVer ? "An updated build of API Bar is available!" : "A new version of API Bar is available!")
                         .font(.title3)
                         .fontWeight(.bold)
                         .foregroundStyle(Color.primary)
 
-                    let newVer = updater.latestVersion ?? "latest"
-                    Text("API Bar \(newVer) is now available — you have \(updater.currentVersion). Would you like to download it now?")
-                        .font(.body)
-                        .foregroundStyle(Color.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                    if isSameVer {
+                        Text("A refreshed build of API Bar \(newVer) is available with the latest updates. Would you like to install it now?")
+                            .font(.body)
+                            .foregroundStyle(Color.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } else {
+                        Text("API Bar \(newVer) is now available — you have \(updater.currentVersion). Would you like to download it now?")
+                            .font(.body)
+                            .foregroundStyle(Color.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
                 Spacer()
             }

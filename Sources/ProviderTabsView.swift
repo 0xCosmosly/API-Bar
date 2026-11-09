@@ -1,9 +1,21 @@
 import AppKit
 
+let percentageGreenNSColor = NSColor(name: nil, dynamicProvider: { appearance in
+    appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        ? NSColor.systemGreen
+        : NSColor(srgbRed: 16/255.0, green: 128/255.0, blue: 56/255.0, alpha: 1.0)
+})
+
 let percentageYellowNSColor = NSColor(name: nil, dynamicProvider: { appearance in
     appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
         ? NSColor.systemYellow
         : NSColor(srgbRed: 180/255.0, green: 120/255.0, blue: 0/255.0, alpha: 1.0)
+})
+
+let percentageRedNSColor = NSColor(name: nil, dynamicProvider: { appearance in
+    appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        ? NSColor.systemRed
+        : NSColor(srgbRed: 215/255.0, green: 38/255.0, blue: 30/255.0, alpha: 1.0)
 })
 
 func providerAccentNSColor(_ id: String) -> NSColor {

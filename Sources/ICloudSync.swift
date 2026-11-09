@@ -34,9 +34,10 @@ struct ICloudManifest: Codable, Equatable {
     var providerCount: Int
     var hasOpenCode: Bool?
     var hasPi: Bool?
+    var hasOmp: Bool?
     var appBuildTimestamp: Double?
 
-    init(version: Int = 1, lastModified: Date = Date(), deviceId: String, deviceName: String, providerCount: Int, hasOpenCode: Bool? = nil, hasPi: Bool? = nil, appBuildTimestamp: Double? = nil) {
+    init(version: Int = 1, lastModified: Date = Date(), deviceId: String, deviceName: String, providerCount: Int, hasOpenCode: Bool? = nil, hasPi: Bool? = nil, hasOmp: Bool? = nil, appBuildTimestamp: Double? = nil) {
         self.version = version
         self.lastModified = lastModified
         self.deviceId = deviceId
@@ -44,6 +45,7 @@ struct ICloudManifest: Codable, Equatable {
         self.providerCount = providerCount
         self.hasOpenCode = hasOpenCode
         self.hasPi = hasPi
+        self.hasOmp = hasOmp
         self.appBuildTimestamp = appBuildTimestamp
     }
 }
@@ -57,6 +59,8 @@ final class ICloudSync: ObservableObject {
     static let openCodeCredentialsEnabledKey = "ICloudSyncOpenCodeCredentialsEnabled"
     static let piEnabledKey = "ICloudSyncPiEnabled"
     static let piCredentialsEnabledKey = "ICloudSyncPiCredentialsEnabled"
+    static let ompEnabledKey = "ICloudSyncOmpEnabled"
+    static let ompCredentialsEnabledKey = "ICloudSyncOmpCredentialsEnabled"
     static let lastSyncKey = "ICloudSyncLastDate"
     static let deviceIdKey = "APIBarDeviceUUID"
 
@@ -67,6 +71,8 @@ final class ICloudSync: ObservableObject {
     @Published var isOpenCodeCredentialsSyncEnabled: Bool = true
     @Published var isPiSyncEnabled: Bool = false
     @Published var isPiCredentialsSyncEnabled: Bool = true
+    @Published var isOmpSyncEnabled: Bool = false
+    @Published var isOmpCredentialsSyncEnabled: Bool = true
     @Published private(set) var lastSyncDate: Date? = nil
     @Published private(set) var statusMessage: String = "Disabled"
     @Published private(set) var lastError: String? = nil
@@ -79,6 +85,8 @@ final class ICloudSync: ObservableObject {
     private var openCodeMonitorFD: Int32 = -1
     private var piMonitorSource: DispatchSourceFileSystemObject?
     private var piMonitorFD: Int32 = -1
+    private var ompMonitorSource: DispatchSourceFileSystemObject?
+    private var ompMonitorFD: Int32 = -1
     private var isPerformingSync: Bool = false
     private var lastPushedDate: Date = .distantPast
 
@@ -172,6 +180,32 @@ final class ICloudSync: ObservableObject {
         vaultDirectoryURL?.appendingPathComponent("pi-auth.json")
     }
 
+    var localOmpDirectoryURL: URL {
+        if let custom = ProcessInfo.processInfo.environment["APIBAR_OMP_DIR"], !custom.isEmpty {
+            return URL(fileURLWithPath: custom, isDirectory: true)
+        }
+        if let custom = ProcessInfo.processInfo.environment["OMP_AGENT_DIR"], !custom.isEmpty {
+            return URL(fileURLWithPath: custom, isDirectory: true)
+        }
+        return FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".omp/agent", isDirectory: true)
+    }
+
+    var cloudOmpDirectoryURL: URL? {
+        baseDirectoryURL?.appendingPathComponent("omp", isDirectory: true)
+    }
+
+    var localOmpCredentialsURL: URL? {
+        if let custom = ProcessInfo.processInfo.environment["APIBAR_OMP_CREDENTIALS_FILE"], !custom.isEmpty {
+            return URL(fileURLWithPath: custom)
+        }
+        return nil
+    }
+
+    var cloudOmpCredentialsURL: URL? {
+        vaultDirectoryURL?.appendingPathComponent("omp-credentials.json")
+    }
+
     init() {
         self.isEnabled = UserDefaults.standard.bool(forKey: Self.enabledKey)
         self.isOpenCodeSyncEnabled = UserDefaults.standard.bool(forKey: Self.openCodeEnabledKey)
@@ -185,6 +219,12 @@ final class ICloudSync: ObservableObject {
             self.isPiCredentialsSyncEnabled = true
         } else {
             self.isPiCredentialsSyncEnabled = UserDefaults.standard.bool(forKey: Self.piCredentialsEnabledKey)
+        }
+        self.isOmpSyncEnabled = UserDefaults.standard.bool(forKey: Self.ompEnabledKey)
+        if UserDefaults.standard.object(forKey: Self.ompCredentialsEnabledKey) == nil {
+            self.isOmpCredentialsSyncEnabled = true
+        } else {
+            self.isOmpCredentialsSyncEnabled = UserDefaults.standard.bool(forKey: Self.ompCredentialsEnabledKey)
         }
         if let ts = UserDefaults.standard.object(forKey: Self.lastSyncKey) as? Date {
             self.lastSyncDate = ts
@@ -204,6 +244,9 @@ final class ICloudSync: ObservableObject {
             if isPiSyncEnabled {
                 startPiMonitoring()
             }
+            if isOmpSyncEnabled {
+                startOmpMonitoring()
+            }
             Task { await syncNow() }
         }
     }
@@ -221,11 +264,15 @@ final class ICloudSync: ObservableObject {
             if isPiSyncEnabled {
                 startPiMonitoring()
             }
+            if isOmpSyncEnabled {
+                startOmpMonitoring()
+            }
             Task { await syncNow() }
         } else {
             stopMonitoring()
             stopOpenCodeMonitoring()
             stopPiMonitoring()
+            stopOmpMonitoring()
             updateStatusMessage()
         }
     }
@@ -299,6 +346,117 @@ final class ICloudSync: ObservableObject {
                     self.updateStatusMessage()
                 }
             }
+        }
+    }
+
+    func setOmpSyncEnabled(_ enabled: Bool) {
+        guard isOmpSyncEnabled != enabled else { return }
+        isOmpSyncEnabled = enabled
+        UserDefaults.standard.set(enabled, forKey: Self.ompEnabledKey)
+        if enabled && isEnabled {
+            startOmpMonitoring()
+            Task { @MainActor [weak self] in
+                guard let self = self else { return }
+                // Pull cloud state first so a newly enabled client never overwrites cloud config
+                let pulled = await self.pullAndMerge()
+                let pushed = await self.pushLocalState()
+                if pulled || pushed {
+                    self.updateStatusMessage()
+                }
+            }
+        } else {
+            stopOmpMonitoring()
+        }
+    }
+
+    func setOmpCredentialsSyncEnabled(_ enabled: Bool) {
+        guard isOmpCredentialsSyncEnabled != enabled else { return }
+        isOmpCredentialsSyncEnabled = enabled
+        UserDefaults.standard.set(enabled, forKey: Self.ompCredentialsEnabledKey)
+        if enabled && isEnabled && isOmpSyncEnabled {
+            Task { @MainActor [weak self] in
+                guard let self = self else { return }
+                let pulled = await self.pullAndMerge()
+                let pushed = await self.pushLocalState()
+                if pulled || pushed {
+                    self.updateStatusMessage()
+                }
+            }
+        }
+    }
+
+    private func findOmpBinary() -> String? {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        if let pathEnv = ProcessInfo.processInfo.environment["PATH"] {
+            for dir in pathEnv.split(separator: ":") where !dir.isEmpty {
+                let candidate = URL(fileURLWithPath: String(dir)).appendingPathComponent("omp").path
+                if FileManager.default.isExecutableFile(atPath: candidate) {
+                    return candidate
+                }
+            }
+        }
+        let candidates = [
+            home.appendingPathComponent(".local/bin/omp").path,
+            "/usr/local/bin/omp",
+            "/opt/homebrew/bin/omp",
+            home.appendingPathComponent(".bun/bin/omp").path,
+            home.appendingPathComponent(".cargo/bin/omp").path,
+            home.appendingPathComponent(".omp/bin/omp").path
+        ]
+        return candidates.first { FileManager.default.isExecutableFile(atPath: $0) }
+    }
+
+    func exportOmpCredentials() -> Data? {
+        if let testURL = localOmpCredentialsURL {
+            return try? Data(contentsOf: testURL)
+        }
+        guard let bin = findOmpBinary() else { return nil }
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: bin)
+        p.arguments = ["auth", "export"]
+        let pipe = Pipe()
+        p.standardOutput = pipe
+        p.standardError = Pipe()
+        do {
+            try p.run()
+            p.waitUntilExit()
+            if p.terminationStatus == 0 {
+                let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                if !data.isEmpty && (try? JSONSerialization.jsonObject(with: data)) != nil {
+                    return data
+                }
+            }
+        } catch {}
+        return nil
+    }
+
+    @discardableResult
+    func importOmpCredentials(data: Data) -> Bool {
+        if let testURL = localOmpCredentialsURL {
+            do {
+                try data.write(to: testURL, options: .atomic)
+                return true
+            } catch {
+                return false
+            }
+        }
+        guard let bin = findOmpBinary() else { return false }
+        let tempURL = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("apibar_omp_auth_\(UUID().uuidString).json")
+        do {
+            try data.write(to: tempURL, options: .atomic)
+            try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: tempURL.path)
+            defer { try? FileManager.default.removeItem(at: tempURL) }
+
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: bin)
+            p.arguments = ["auth", "import", tempURL.path]
+            p.standardOutput = Pipe()
+            p.standardError = Pipe()
+            try p.run()
+            p.waitUntilExit()
+            return p.terminationStatus == 0
+        } catch {
+            return false
         }
     }
 
@@ -522,8 +680,17 @@ final class ICloudSync: ObservableObject {
                     // remaining balance. An early Unaligned build stored its
                     // micro-dollar balance as the reference, and re-adopting that
                     // from the cloud would undo the local repair on every pull.
-                    let implausibleBaseline = remote.baseline > 1_000 && remote.remaining < 1_000
+                    let implausibleUnaligned = remote.id == "unaligned" && remote.baseline > 1_000 && remote.remaining < 1_000
                         && remote.baseline > remote.remaining * 1_000
+                    // An earlier build or an un-updated client spuriously inflated Heimdallm's
+                    // baseline to $10.00+ on credit hold releases. If a remote sync pushes an
+                    // inflated baseline while remaining is <= $5.00, or if this Mac already has
+                    // an authoritative baseline from the live API, reject the remote inflation.
+                    let implausibleHeimdallm = remote.id == "heimdallm" && (
+                        (remote.baseline > 5.0 && remote.remaining <= 5.0) ||
+                        (current[localIdx].baseline > 0 && remote.baseline > current[localIdx].baseline && (app.isConnected("heimdallm") || current[localIdx].live))
+                    )
+                    let implausibleBaseline = implausibleUnaligned || implausibleHeimdallm
                     if remote.baseline > 0 && remote.baseline != current[localIdx].baseline && !implausibleBaseline {
                         if remote.updated >= current[localIdx].updated || current[localIdx].baseline == 0 {
                             current[localIdx].baseline = max(remote.baseline, current[localIdx].remaining)
@@ -733,6 +900,59 @@ final class ICloudSync: ObservableObject {
             }
         }
 
+        // 6. Pull OMP configuration
+        if isOmpSyncEnabled,
+           let cloudOmp = cloudOmpDirectoryURL,
+           FileManager.default.fileExists(atPath: cloudOmp.path) {
+            let localOmp = localOmpDirectoryURL
+            let configFiles = ["models.yml", "config.yml", "models.json", "settings.json", "mcp.json"]
+            for file in configFiles {
+                let remoteFile = cloudOmp.appendingPathComponent(file)
+                guard FileManager.default.fileExists(atPath: remoteFile.path) else { continue }
+                let localFile = localOmp.appendingPathComponent(file)
+
+                let shouldCopy: Bool
+                if !FileManager.default.fileExists(atPath: localFile.path) {
+                    shouldCopy = true
+                } else if let remoteAttrs = try? FileManager.default.attributesOfItem(atPath: remoteFile.path),
+                          let localAttrs = try? FileManager.default.attributesOfItem(atPath: localFile.path),
+                          let remoteDate = remoteAttrs[.modificationDate] as? Date,
+                          let localDate = localAttrs[.modificationDate] as? Date {
+                    let remoteSize = (remoteAttrs[.size] as? NSNumber)?.int64Value ?? 0
+                    let localSize = (localAttrs[.size] as? NSNumber)?.int64Value ?? 0
+                    shouldCopy = remoteDate > localDate || remoteSize > (localSize + 100)
+                } else {
+                    shouldCopy = false
+                }
+
+                if shouldCopy, let data = try? Data(contentsOf: remoteFile), !data.isEmpty {
+                    let localData = try? Data(contentsOf: localFile)
+                    if localData != data {
+                        try? FileManager.default.createDirectory(at: localOmp, withIntermediateDirectories: true)
+                        if FileManager.default.fileExists(atPath: localFile.path) {
+                            let backupURL = localOmp.appendingPathComponent("\(file).bak")
+                            try? FileManager.default.removeItem(at: backupURL)
+                            try? FileManager.default.copyItem(at: localFile, to: backupURL)
+                        }
+                        try? data.write(to: localFile, options: .atomic)
+                        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: localFile.path)
+                        didChangeLocally = true
+                    }
+                }
+            }
+        }
+
+        // 6b. Pull OMP credentials
+        if isOmpSyncEnabled && isOmpCredentialsSyncEnabled,
+           let cloudCreds = cloudOmpCredentialsURL,
+           FileManager.default.fileExists(atPath: cloudCreds.path) {
+            if let data = try? Data(contentsOf: cloudCreds), !data.isEmpty {
+                if importOmpCredentials(data: data) {
+                    didChangeLocally = true
+                }
+            }
+        }
+
         if didChangeLocally {
             let now = Date()
             lastSyncDate = now
@@ -898,7 +1118,59 @@ final class ICloudSync: ObservableObject {
                 }
             }
 
-            // 6. Write manifest.json
+            // 6. Write OMP configuration
+            if isOmpSyncEnabled, let cloudOmp = cloudOmpDirectoryURL {
+                let localOmp = localOmpDirectoryURL
+                let configFiles = ["models.yml", "config.yml", "models.json", "settings.json", "mcp.json"]
+                var createdCloudDir = false
+
+                for file in configFiles {
+                    let localFile = localOmp.appendingPathComponent(file)
+                    guard FileManager.default.fileExists(atPath: localFile.path) else { continue }
+                    let cloudFile = cloudOmp.appendingPathComponent(file)
+
+                    let shouldPush: Bool
+                    if !FileManager.default.fileExists(atPath: cloudFile.path) {
+                        shouldPush = true
+                    } else if let remoteAttrs = try? FileManager.default.attributesOfItem(atPath: cloudFile.path),
+                               let localAttrs = try? FileManager.default.attributesOfItem(atPath: localFile.path),
+                               let remoteDate = remoteAttrs[.modificationDate] as? Date,
+                               let localDate = localAttrs[.modificationDate] as? Date {
+                        shouldPush = localDate > remoteDate
+                    } else {
+                        shouldPush = false
+                    }
+
+                    if shouldPush, let data = try? Data(contentsOf: localFile), !data.isEmpty {
+                        if !createdCloudDir {
+                            try? FileManager.default.createDirectory(at: cloudOmp, withIntermediateDirectories: true)
+                            try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: cloudOmp.path)
+                            createdCloudDir = true
+                        }
+                        let cloudData = try? Data(contentsOf: cloudFile)
+                        if cloudData != data {
+                            try? data.write(to: cloudFile, options: .atomic)
+                            try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: cloudFile.path)
+                            didTransferAny = true
+                        }
+                    }
+                }
+            }
+
+            // 6b. Write OMP credentials if enabled
+            if isOmpSyncEnabled && isOmpCredentialsSyncEnabled,
+               let cloudCreds = cloudOmpCredentialsURL {
+                if let data = exportOmpCredentials(), !data.isEmpty {
+                    let cloudData = try? Data(contentsOf: cloudCreds)
+                    if cloudData != data {
+                        try? data.write(to: cloudCreds, options: .atomic)
+                        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: cloudCreds.path)
+                        didTransferAny = true
+                    }
+                }
+            }
+
+            // 7. Write manifest.json
             let pushTime = Date()
             lastPushedDate = pushTime
             if let manifestURL = manifestURL {
@@ -912,6 +1184,11 @@ final class ICloudSync: ObservableObject {
                     hasPi: isPiSyncEnabled && (
                         FileManager.default.fileExists(atPath: localPiDirectoryURL.appendingPathComponent("models.json").path) ||
                         FileManager.default.fileExists(atPath: localPiDirectoryURL.appendingPathComponent("settings.json").path)
+                    ),
+                    hasOmp: isOmpSyncEnabled && (
+                        FileManager.default.fileExists(atPath: localOmpDirectoryURL.appendingPathComponent("models.yml").path) ||
+                        FileManager.default.fileExists(atPath: localOmpDirectoryURL.appendingPathComponent("config.yml").path) ||
+                        FileManager.default.fileExists(atPath: localOmpDirectoryURL.appendingPathComponent("models.json").path)
                     ),
                     appBuildTimestamp: AppUpdater.localBuildDate.timeIntervalSince1970
                 )
@@ -1074,6 +1351,49 @@ final class ICloudSync: ObservableObject {
         if piMonitorFD >= 0 {
             close(piMonitorFD)
             piMonitorFD = -1
+        }
+    }
+
+    func startOmpMonitoring() {
+        stopOmpMonitoring()
+        guard isEnabled && isOmpSyncEnabled else { return }
+        let dir = localOmpDirectoryURL
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+
+        let fd = open(dir.path, O_EVTONLY)
+        guard fd >= 0 else { return }
+        ompMonitorFD = fd
+
+        let source = DispatchSource.makeFileSystemObjectSource(
+            fileDescriptor: fd,
+            eventMask: [.write, .extend, .attrib, .rename, .delete],
+            queue: DispatchQueue.global(qos: .utility)
+        )
+
+        source.setEventHandler { [weak self] in
+            Task { @MainActor [weak self] in
+                guard let self = self, self.isEnabled, self.isOmpSyncEnabled, !self.isPerformingSync else { return }
+                self.schedulePush()
+                self.startOmpMonitoring()
+            }
+        }
+
+        source.setCancelHandler {
+            close(fd)
+        }
+
+        ompMonitorSource = source
+        source.resume()
+    }
+
+    func stopOmpMonitoring() {
+        if let source = ompMonitorSource {
+            source.cancel()
+            ompMonitorSource = nil
+        }
+        if ompMonitorFD >= 0 {
+            close(ompMonitorFD)
+            ompMonitorFD = -1
         }
     }
 }
