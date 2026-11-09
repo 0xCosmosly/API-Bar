@@ -14,6 +14,7 @@ struct InferHubProvider: BalanceProvider {
     static let usageEndpoint = "https://api.inferhub.dev/v1/me/usage?window=day&tz=UTC"
     static let meEndpoint = "https://inferhub.dev/api/me"
     static let dashboardURL = "https://inferhub.dev/dashboard"
+    static let dashboardUsageURL = "https://inferhub.dev/dashboard/usage"
     static let sessionEndpoint = "https://inferhub.dev/api/auth/session"
     static let allowedHosts: Set<String> = [
         "api.inferhub.dev",
@@ -144,7 +145,7 @@ struct InferHubProvider: BalanceProvider {
         )
     }
 
-    static func parseDashboard(_ dashString: String, sessionData: Data?, expectedAccount: String = "") throws -> Reading {
+    static func parseDashboard(_ dashString: String, usageString: String? = nil, sessionData: Data?, expectedAccount: String = "") throws -> Reading {
         var balanceAmount: Double? = nil
 
         // React component props ["$$", "0.99"] or ["$", "0.99"]
@@ -182,11 +183,55 @@ struct InferHubProvider: BalanceProvider {
             throw ConnectorError.message("InferHub did not return a valid balance. The previous balance was retained.")
         }
 
-        // Spend stats from {"stats":{"24h":{"requests":...,"spend":"..."}}}
+        // Spend & token stats
         var dailySpend: Double = 0
         var allTimeSpend: Double = 0
-        var requestsPerDay: Double? = nil
+        var tokensPerDay: Double? = nil
 
+        // Extract precise 24h tokens and spend from usage page: {"rangeLabel":"24h",...,"tokens":6555466,"spentUsdc":0.009126,...}
+        if let usage = usageString {
+            if let objRegex = try? NSRegularExpression(pattern: #"\{[^{}]*"range(?:Label|Id)":"24h"[^{}]*\}"#) {
+                let range = NSRange(usage.startIndex..<usage.endIndex, in: usage)
+                let matches = objRegex.matches(in: usage, options: [], range: range)
+                for match in matches {
+                    if let groupRange = Range(match.range, in: usage),
+                       let data = usage[groupRange].data(using: .utf8),
+                       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                        if let tok = number(json["tokens"]) ?? number(json["total_tokens"]), tok > 0 {
+                            tokensPerDay = tok
+                        }
+                        if let spend = number(json["spentUsdc"]) ?? number(json["spent_usdc"]) ?? number(json["spend"]), spend > 0 {
+                            dailySpend = spend
+                        }
+                        if tokensPerDay != nil {
+                            break
+                        }
+                    }
+                }
+            }
+            if tokensPerDay == nil {
+                if let tokensRegex = try? NSRegularExpression(pattern: #""range(?:Label|Id)":"24h"[^}]*"tokens":\s*([0-9]+)"#) {
+                    let range = NSRange(usage.startIndex..<usage.endIndex, in: usage)
+                    if let match = tokensRegex.firstMatch(in: usage, options: [], range: range),
+                       let groupRange = Range(match.range(at: 1), in: usage),
+                       let t = Double(usage[groupRange]), t > 0 {
+                        tokensPerDay = t
+                    }
+                }
+            }
+            if dailySpend == 0 {
+                if let spendRegex = try? NSRegularExpression(pattern: #""range(?:Label|Id)":"24h"[^}]*"spentUsdc":\s*([0-9]+(?:\.[0-9]+)?)"#) {
+                    let range = NSRange(usage.startIndex..<usage.endIndex, in: usage)
+                    if let match = spendRegex.firstMatch(in: usage, options: [], range: range),
+                       let groupRange = Range(match.range(at: 1), in: usage),
+                       let s = Double(usage[groupRange]), s > 0 {
+                        dailySpend = s
+                    }
+                }
+            }
+        }
+
+        // Overview stats fallback from {"stats":{"24h":{"requests":...,"spend":"..."}}}
         if let statsRegex = try? NSRegularExpression(pattern: #""stats":(\{"24h":\{.*?\}\})"#) {
             let range = NSRange(dashString.startIndex..<dashString.endIndex, in: dashString)
             if let match = statsRegex.firstMatch(in: dashString, options: [], range: range),
@@ -194,9 +239,14 @@ struct InferHubProvider: BalanceProvider {
                let statsData = dashString[groupRange].data(using: .utf8),
                let statsJSON = try? JSONSerialization.jsonObject(with: statsData) as? [String: Any] {
                 if let d24 = statsJSON["24h"] as? [String: Any] {
-                    dailySpend = number(d24["spend"]) ?? number(d24["spend_usdc"]) ?? 0
-                    if let reqs = number(d24["requests"]), reqs > 0 {
-                        requestsPerDay = reqs
+                    if dailySpend == 0 {
+                        dailySpend = number(d24["spend"]) ?? number(d24["spend_usdc"]) ?? 0
+                    }
+                    if tokensPerDay == nil {
+                        let tok = number(d24["tokens"]) ?? number(d24["total_tokens"])
+                        if let tok, tok > 0 {
+                            tokensPerDay = tok
+                        }
                     }
                 }
                 if let dall = statsJSON["all"] as? [String: Any] {
@@ -256,7 +306,7 @@ struct InferHubProvider: BalanceProvider {
             url: dashboardURL,
             expires: sessionExpires,
             reference: baseline,
-            tokensPerDay: requestsPerDay,
+            tokensPerDay: tokensPerDay,
             runwayDays: runwayDays
         )
     }
@@ -353,8 +403,16 @@ struct InferHubProvider: BalanceProvider {
                 throw ConnectorError.message("InferHub returned HTTP \(dashResp.statusCode). The previous balance was retained.")
             }
 
+            var usageString: String? = nil
+            if let dashboardUsageURL = URL(string: Self.dashboardUsageURL) {
+                if let (uData, uResp) = try? await http.request(url: dashboardUsageURL, headers: rscHeaders),
+                   uResp.statusCode == 200 {
+                    usageString = String(decoding: uData, as: UTF8.self)
+                }
+            }
+
             let dashString = String(decoding: dashData, as: UTF8.self)
-            let reading = try Self.parseDashboard(dashString, sessionData: sessionData, expectedAccount: balance.account)
+            let reading = try Self.parseDashboard(dashString, usageString: usageString, sessionData: sessionData, expectedAccount: balance.account)
             try? await http.persist()
             return reading
         }

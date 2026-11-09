@@ -936,7 +936,7 @@ func inferhubChecks() async throws {
     precondition(InferHubProvider.hasValidSession(cookies: [sessionCookie]))
     precondition(!InferHubProvider.hasValidSession(cookies: [StoredCookie(name: "theme", value: "dark", domain: "inferhub.dev")]))
 
-    // 7. Dashboard RSC/HTML balance and pacing parsing with /api/auth/session
+    // 7. Dashboard RSC/HTML balance and pacing parsing with /api/auth/session and usage log
     let syntheticDashboardRSC = """
     14:[["$","title","0",{"children":"InferHub — One API key. Every frontier model."}]]
     e:["$","div",null,{"className":"space-y-8","children":[["$","$L23",null,{"stats":{"24h":{"requests":120,"spend":"0.50"},"all":{"requests":1200,"spend":"2.50"}}}],["$","div",null,{"className":"text-xs uppercase tracking-wide text-zinc-500 font-medium","children":"Balance"}],["$","div",null,{"className":"mt-2 text-2xl font-semibold tabular-nums text-zinc-900 dark:text-zinc-100","children":["$$","4.50"]}],["$","div",null,{"className":"mt-1 text-xs text-zinc-500","children":"Consumer USDC balance"}]]}]
@@ -944,13 +944,23 @@ func inferhubChecks() async throws {
     let syntheticSessionJSON = """
     {"user":{"email":"developer@synthetic-inferhub.dev","id":"usr_synth_456"},"expires":"2026-12-01T00:00:00.000Z"}
     """
-    let dashReading = try InferHubProvider.parseDashboard(syntheticDashboardRSC, sessionData: Data(syntheticSessionJSON.utf8))
+    let syntheticUsageRSC = """
+    26:[null,{"rangeLabel":"24h","rangeId":"24h","requests":120,"tokens":6555466,"spentUsdc":0.50}]
+    """
+    let dashReading = try InferHubProvider.parseDashboard(syntheticDashboardRSC, usageString: syntheticUsageRSC, sessionData: Data(syntheticSessionJSON.utf8))
     precondition(abs(dashReading.remaining - 4.50) < 0.0001, "Dashboard remaining must be 4.50, got \(dashReading.remaining)")
     precondition(abs((dashReading.reference ?? 0) - 7.00) < 0.0001, "Dashboard baseline must be 4.50 + 2.50 = 7.00, got \(String(describing: dashReading.reference))")
     precondition(dashReading.runwayDays == 9, "Runway must be 4.50 / 0.50 = 9 days, got \(String(describing: dashReading.runwayDays))")
-    precondition(dashReading.tokensPerDay == 120, "Requests per day must be 120, got \(String(describing: dashReading.tokensPerDay))")
+    precondition(dashReading.tokensPerDay == 6555466, "Tokens per day must be 6555466, got \(String(describing: dashReading.tokensPerDay))")
     precondition(dashReading.account == "developer@synthetic-inferhub.dev")
     precondition(dashReading.url == "https://inferhub.dev/dashboard")
+    let dashPacing = PacingCalculator.pacingMessage(tokensPerDay: dashReading.tokensPerDay, runwayDays: dashReading.runwayDays)
+    precondition(dashPacing == "6.6M tokens per day - Runs out in 9 days", "Dashboard pacing message was: \(String(describing: dashPacing))")
+
+    // Fallback when usage page is unavailable (tokensPerDay is nil, requests count is not misreported as tokens)
+    let fallbackReading = try InferHubProvider.parseDashboard(syntheticDashboardRSC, sessionData: Data(syntheticSessionJSON.utf8))
+    precondition(fallbackReading.tokensPerDay == nil, "Fallback tokensPerDay must be nil")
+    precondition(fallbackReading.runwayDays == 9, "Fallback runwayDays must be 9")
 
     // 8. Initial balance catalog registration
     guard let inferhub = Balance.initial.first(where: { $0.id == "inferhub" }) else {

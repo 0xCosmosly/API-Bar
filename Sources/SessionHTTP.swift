@@ -169,7 +169,7 @@ actor SessionHTTP {
             allowed = HeimdallmProvider.allowedHosts.contains(host) && ["/api/frontend/v1/credits", "/api/frontend/v1/account", "/api/frontend/v1/generations/analytics"].contains(url.path) && body == nil && url.query == nil
         case "inferhub":
             let allowedHosts = InferHubProvider.allowedHosts
-            let validPaths = ["/dashboard", "/dashboard/keys", "/api/auth/session", "/api/me", "/v1/me/usage", "/v1/models"]
+            let validPaths = ["/dashboard", "/dashboard/keys", "/dashboard/usage", "/api/auth/session", "/api/me", "/v1/me/usage", "/v1/models"]
             allowed = allowedHosts.contains(host) && validPaths.contains(url.path) && body == nil
         default: allowed = (dynamicHost != nil && host == dynamicHost)
         }
