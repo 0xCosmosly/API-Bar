@@ -426,6 +426,23 @@ import SwiftUI
         precondition(autoInferHubDraft.jsonPath == "balance.amount_usdc")
         precondition(autoInferHubURL == "https://inferhub.dev/keys")
 
+        // Test Heimdallm top-up baseline calculation and anti-reversion:
+        // Adding $5 to an existing balance of $0.788 sets baseline to $5.788 (5 + previous balance)
+        let hmTestBal = Balance(id: "heimdallm", name: "Heimdallm", baseline: 5.0, remaining: 0.788, updated: Date(), account: "user@heimdallm.com", live: true)
+        let origBalances = app.balances
+        app.balances = [hmTestBal]
+        let hmTopUpReading = Reading(provider: "heimdallm", remaining: 5.788, currency: "USD", account: "user@heimdallm.com", url: "https://heimdallm.com/api/frontend/v1/credits", expires: nil, reference: 10.0)
+        app.apply(hmTopUpReading)
+        precondition(abs(app.balances[0].baseline - 5.788) < 0.001, "Heimdallm baseline after $5 top-up must be 5 + previous balance (5.788), got \(app.balances[0].baseline)")
+        precondition(app.balances[0].percentageLabel == "100%", "Heimdallm must be 100% right after top-up, got \(app.balances[0].percentageLabel)")
+
+        // Subsequent refresh spending down to 5.50 must preserve 5.788 baseline, not revert to 10.0
+        let hmSpendReading = Reading(provider: "heimdallm", remaining: 5.50, currency: "USD", account: "user@heimdallm.com", url: "https://heimdallm.com/api/frontend/v1/credits", expires: nil, reference: 10.0)
+        app.apply(hmSpendReading)
+        precondition(abs(app.balances[0].baseline - 5.788) < 0.001, "Heimdallm baseline must stay at 5.788 during spend-down, got \(app.balances[0].baseline)")
+        precondition(app.balances[0].percentageLabel == "95%", "Heimdallm must show 95% remaining for 5.50/5.788, got \(app.balances[0].percentageLabel)")
+        app.balances = origBalances
+
         // Test iCloud Sync: availability, push, pull & merge, session vault sync, status badges
         var cleanedRemoved = UserDefaults.standard.stringArray(forKey: "RemovedProviders") ?? []
         cleanedRemoved.removeAll(where: { $0 == "togetherai" })

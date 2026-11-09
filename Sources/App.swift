@@ -600,6 +600,13 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
                     balances[i].baseline = max(PaymentReference.inferTier(for: balances[i].remaining), balances[i].remaining)
                     changed = true
                 }
+                // When a $5 top-up was added to an existing balance (e.g. $0.79 -> $5.79),
+                // lifetime deposits of $10.00 spuriously inflated the baseline to $10.00 instead of
+                // the new cycle total ($5 + previous balance = $5.79). Repair it immediately.
+                if balances[i].id == "heimdallm", balances[i].baseline == 10.0, balances[i].remaining > 5.0, balances[i].remaining <= 6.5 {
+                    balances[i].baseline = balances[i].remaining
+                    changed = true
+                }
                 // Heimdallm ships paused; if an earlier update added it enabled without credentials, pause it.
                 if balances[i].id == "heimdallm", !hasStoredCredential("heimdallm"), balances[i].account.isEmpty, balances[i].baseline == 0, balances[i].disabled == nil {
                     balances[i].disabled = true
@@ -1107,14 +1114,14 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         if let tpd = r.tokensPerDay { balances[i].tokensPerDay = tpd }
         if let rd = r.runwayDays { balances[i].runwayDays = rd }
         if r.provider == "refuseless" {
-            if let ref = r.reference, ref > 0 {
+            if r.remaining > oldRemaining && oldRemaining > 0 {
+                let delta = r.remaining - oldRemaining
+                let paidAmount = PaymentReference.inferTier(for: delta)
+                balances[i].baseline = max(oldRemaining + paidAmount, r.remaining)
+            } else if let ref = r.reference, ref > 0 {
                 balances[i].baseline = max(ref, r.remaining)
             } else if balances[i].baseline <= 0 {
                 balances[i].baseline = PaymentReference.inferTier(for: r.remaining)
-            } else if r.remaining > oldRemaining && oldRemaining > 0 {
-                let delta = r.remaining - oldRemaining
-                let paidAmount = PaymentReference.inferTier(for: delta)
-                balances[i].baseline = max(balances[i].baseline + paidAmount, r.remaining)
             } else {
                 balances[i].baseline = max(balances[i].baseline, r.remaining)
             }
@@ -1127,7 +1134,11 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
             return
         }
         if r.provider == "lutheos" {
-            if let ref = r.reference, ref > 0 {
+            if r.remaining > oldRemaining && oldRemaining > 0 {
+                let delta = r.remaining - oldRemaining
+                let paidAmount = PaymentReference.inferTier(for: delta)
+                balances[i].baseline = max(oldRemaining + paidAmount, r.remaining)
+            } else if let ref = r.reference, ref > 0 {
                 if balances[i].baseline <= 0 || ref >= balances[i].baseline {
                     balances[i].baseline = max(ref, r.remaining)
                 } else {
@@ -1135,10 +1146,6 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
                 }
             } else if balances[i].baseline <= 0 {
                 balances[i].baseline = PaymentReference.inferTier(for: r.remaining)
-            } else if r.remaining > oldRemaining && oldRemaining > 0 {
-                let delta = r.remaining - oldRemaining
-                let paidAmount = PaymentReference.inferTier(for: delta)
-                balances[i].baseline = max(balances[i].baseline + paidAmount, r.remaining)
             } else {
                 balances[i].baseline = max(balances[i].baseline, r.remaining)
             }
@@ -1151,10 +1158,20 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
             return
         }
         if r.provider == "heimdallm" {
-            if let ref = r.reference, ref > 0 {
-                balances[i].baseline = max(ref, r.remaining)
-            } else if balances[i].baseline <= 0 || (balances[i].baseline > 5.0 && balances[i].remaining <= 5.0) {
+            if r.remaining > oldRemaining && oldRemaining > 0 {
+                let delta = r.remaining - oldRemaining
+                let paidAmount = PaymentReference.inferTier(for: delta)
+                balances[i].baseline = max(oldRemaining + paidAmount, r.remaining)
+            } else if balances[i].baseline <= 0 {
+                balances[i].baseline = max(r.reference ?? PaymentReference.inferTier(for: r.remaining), r.remaining)
+            } else if balances[i].baseline > 5.0 && balances[i].remaining <= 5.0 {
                 balances[i].baseline = PaymentReference.inferTier(for: r.remaining)
+            } else if balances[i].baseline == 10.0 && r.remaining > 5.0 && r.remaining <= 6.5 {
+                balances[i].baseline = r.remaining
+            } else if r.remaining > balances[i].baseline {
+                let excess = r.remaining - balances[i].baseline
+                let paidAmount = PaymentReference.inferTier(for: excess)
+                balances[i].baseline = max(balances[i].baseline + paidAmount, r.remaining)
             } else {
                 balances[i].baseline = max(balances[i].baseline, r.remaining)
             }
@@ -1183,14 +1200,14 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
             return
         }
         if r.provider == "inferhub" {
-            if let ref = r.reference, ref > 0 {
+            if r.remaining > oldRemaining && oldRemaining > 0 {
+                let delta = r.remaining - oldRemaining
+                let paidAmount = PaymentReference.inferTier(for: delta)
+                balances[i].baseline = max(oldRemaining + paidAmount, r.remaining)
+            } else if let ref = r.reference, ref > 0 {
                 balances[i].baseline = max(ref, r.remaining)
             } else if balances[i].baseline <= 0 {
                 balances[i].baseline = PaymentReference.inferTier(for: r.remaining)
-            } else if r.remaining > oldRemaining && oldRemaining > 0 {
-                let delta = r.remaining - oldRemaining
-                let paidAmount = PaymentReference.inferTier(for: delta)
-                balances[i].baseline = max(balances[i].baseline + paidAmount, r.remaining)
             } else {
                 balances[i].baseline = max(balances[i].baseline, r.remaining)
             }
@@ -1206,7 +1223,7 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         if r.remaining > oldRemaining && oldRemaining > 0 {
             let delta = r.remaining - oldRemaining
             let paidAmount = PaymentReference.inferTier(for: delta)
-            balances[i].baseline = max(balances[i].baseline + paidAmount, r.remaining)
+            balances[i].baseline = max(oldRemaining + paidAmount, r.remaining)
         } else if balances[i].baseline <= 0 {
             let ref = r.reference ?? PaymentReference.inferTier(for: r.remaining)
             balances[i].baseline = max(ref, r.remaining)
