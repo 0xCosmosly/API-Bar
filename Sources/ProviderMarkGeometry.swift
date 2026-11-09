@@ -50,8 +50,7 @@ enum ProviderMarkGeometry {
 
     /// Renders a mark into an alpha-only CGImage of `pixels` square.
     static func image(for provider: String, pixels: Int) -> CGImage? {
-        guard let mark = mark(for: provider),
-              let context = CGContext(data: nil,
+        guard let context = CGContext(data: nil,
                                       width: pixels,
                                       height: pixels,
                                       bitsPerComponent: 8,
@@ -64,6 +63,13 @@ enum ProviderMarkGeometry {
         // Source marks are top-down; CoreGraphics draws bottom-up.
         context.translateBy(x: 0, y: CGFloat(pixels))
         context.scaleBy(x: 1, y: -1)
+
+        if provider == "inferhub" {
+            drawInferHub(in: context, pixels: pixels)
+            return context.makeImage()
+        }
+
+        guard let mark = mark(for: provider) else { return nil }
         let scale = CGFloat(pixels) / mark.canvas
         context.setFillColor(NSColorBlack)
         for polygon in mark.polygons where polygon.count >= 3 {
@@ -76,6 +82,48 @@ enum ProviderMarkGeometry {
             context.fillPath()
         }
         return context.makeImage()
+    }
+
+    private static func drawInferHub(in context: CGContext, pixels: Int) {
+        let scale = CGFloat(pixels) / 512.0
+        context.setStrokeColor(NSColorBlack)
+        context.setFillColor(NSColorBlack)
+        context.setLineCap(.round)
+
+        // Spokes connecting central hub to outer compute nodes
+        let lines: [(x1: CGFloat, y1: CGFloat, x2: CGFloat, y2: CGFloat, width: CGFloat)] = [
+            (252, 250, 160, 136, 18),
+            (252, 250, 344, 70, 24),
+            (252, 250, 410, 220, 16),
+            (252, 250, 372, 386, 22),
+            (252, 250, 134, 384, 18)
+        ]
+        for line in lines {
+            context.setLineWidth(line.width * scale)
+            context.beginPath()
+            context.move(to: CGPoint(x: line.x1 * scale, y: line.y1 * scale))
+            context.addLine(to: CGPoint(x: line.x2 * scale, y: line.y2 * scale))
+            context.strokePath()
+        }
+
+        // Central hub and outer nodes
+        let circles: [(cx: CGFloat, cy: CGFloat, r: CGFloat)] = [
+            (252, 250, 62),
+            (160, 136, 27),
+            (344, 70, 37),
+            (410, 220, 24),
+            (372, 386, 32),
+            (134, 384, 25)
+        ]
+        for circle in circles {
+            let rect = CGRect(
+                x: (circle.cx - circle.r) * scale,
+                y: (circle.cy - circle.r) * scale,
+                width: circle.r * 2 * scale,
+                height: circle.r * 2 * scale
+            )
+            context.fillEllipse(in: rect)
+        }
     }
 
     private static let NSColorBlack = CGColor(red: 0, green: 0, blue: 0, alpha: 1)

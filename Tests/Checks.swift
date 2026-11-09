@@ -70,6 +70,7 @@ import AppKit
         try await unalignedChecks()
         try await yetaChecks()
         try await heimdallmChecks()
+        try await inferhubChecks()
         try secretAuditChecks()
         try await updaterChecks()
         try await redirectChecks()
@@ -838,6 +839,111 @@ func heimdallmChecks() async throws {
     print("Passed: Heimdallm credit parsing, baseline calculation, account resolution, rejected sessions, account pinning, cookie-only requests, endpoint restriction, and initial registration.")
 }
 
+func inferhubChecks() async throws {
+    // 1. Standard usage payload with USDC balance, day window tokens and spend
+    let usageJSON = """
+    {
+      "object": "account.usage",
+      "currency": "USDC",
+      "balance": {
+        "amount_usdc": "14.25",
+        "updated_at": "2026-11-09T06:00:00Z"
+      },
+      "window": {
+        "kind": "day",
+        "tz": "UTC",
+        "requests": 42,
+        "prompt_tokens": 120000,
+        "completion_tokens": 30000,
+        "total_tokens": 150000,
+        "spend_usdc": "0.45"
+      },
+      "all_time": {
+        "total_tokens": 6200000,
+        "spend_usdc": "23.80"
+      },
+      "user": {
+        "id": "usr_inferhub_42",
+        "email": "developer@inferhub.dev"
+      }
+    }
+    """
+    let reading = try InferHubProvider.parseUsage(Data(usageJSON.utf8))
+    precondition(abs(reading.remaining - 14.25) < 0.0001, "Remaining must be 14.25, got \(reading.remaining)")
+    precondition(abs((reading.reference ?? 0) - 38.05) < 0.0001, "Baseline must be 14.25 + 23.80 = 38.05, got \(reading.reference ?? 0)")
+    precondition(reading.tokensPerDay == 150000, "Tokens per day must be 150000, got \(String(describing: reading.tokensPerDay))")
+    precondition(reading.runwayDays == 31, "Runway must be 14.25 / 0.45 = 31 days, got \(String(describing: reading.runwayDays))")
+    precondition(reading.account == "developer@inferhub.dev", "Account must resolve to developer@inferhub.dev")
+    precondition(reading.currency == "USD")
+    precondition(ReadingValidation.valid(reading, balances: Balance.initial))
+
+    // Pacing message
+    let pacing = PacingCalculator.pacingMessage(tokensPerDay: reading.tokensPerDay, runwayDays: reading.runwayDays)
+    precondition(pacing == "150K tokens per day - Runs out in 31 days", "Pacing message was: \(String(describing: pacing))")
+
+    // 2. Direct numeric balance & tier inference without all_time history
+    let simpleJSON = """
+    {
+      "balance": 8.50,
+      "account_id": "usr_simple_99"
+    }
+    """
+    let simpleReading = try InferHubProvider.parseUsage(Data(simpleJSON.utf8))
+    precondition(abs(simpleReading.remaining - 8.50) < 0.0001)
+    precondition(simpleReading.reference == 10.0, "Tier for 8.50 must be inferred as 10.0, got \(String(describing: simpleReading.reference))")
+    precondition(simpleReading.account == "usr_simple_99")
+
+    // 3. String numeric balance at top-level
+    let stringJSON = """
+    {
+      "amount_usdc": "25.00"
+    }
+    """
+    let stringReading = try InferHubProvider.parseUsage(Data(stringJSON.utf8))
+    precondition(abs(stringReading.remaining - 25.00) < 0.0001)
+
+    // 4. Invalid balance / error responses rejected
+    let errorJSON = """
+    {"error":{"message":"missing or malformed authorization","type":"invalid_request_error","source":"inferhub"}}
+    """
+    do {
+        _ = try InferHubProvider.parseUsage(Data(errorJSON.utf8))
+        preconditionFailure("InferHub error payload must throw")
+    } catch { }
+
+    for invalid in [#"{}"#, #"{"balance": -5}"#, #"{"balance": "NaN"}"#, #"{"balance": 2000000000}"#] {
+        do {
+            _ = try InferHubProvider.parseUsage(Data(invalid.utf8))
+            preconditionFailure("Invalid payload accepted: \(invalid)")
+        } catch { }
+    }
+
+    // 5. Account pinning
+    do {
+        _ = try InferHubProvider.parseUsage(Data(usageJSON.utf8), expectedAccount: "other@example.com")
+        preconditionFailure("Accepted a mismatched account")
+    } catch { }
+
+    // 6. Key resolution
+    let authBearer = "Bearer sk-airo-syntheticKey123"
+    precondition(InferHubProvider.resolveKey(authHeader: authBearer, cookies: []) == "sk-airo-syntheticKey123")
+    let rawKey = "sk-airo-syntheticKey123"
+    precondition(InferHubProvider.resolveKey(authHeader: rawKey, cookies: []) == "sk-airo-syntheticKey123")
+    let keyCookie = StoredCookie(name: "inferhub_api_key", value: "sk-synthetic456", domain: "inferhub.dev")
+    precondition(InferHubProvider.resolveKey(authHeader: nil, cookies: [keyCookie]) == "sk-synthetic456")
+    precondition(InferHubProvider.hasValidSession(cookies: [keyCookie]))
+    precondition(!InferHubProvider.hasValidSession(cookies: [StoredCookie(name: "theme", value: "dark", domain: "inferhub.dev")]))
+
+    // 7. Initial balance catalog registration
+    guard let inferhub = Balance.initial.first(where: { $0.id == "inferhub" }) else {
+        preconditionFailure("Balance.initial must include inferhub")
+    }
+    precondition(!inferhub.isEnabled, "InferHub must ship disabled")
+    precondition(inferhub.name == "InferHub")
+
+    print("Passed: InferHub USDC balance parsing, token burn rate, runway pacing, error rejection, account pinning, and initial registration.")
+}
+
 /// Release gate: nothing in the working tree may contain a credential, a personal
 /// home path, or a real personal email address. Google's public web-client keys and
 /// the synthetic test fixtures are the only allowed exceptions, and they must stay
@@ -855,6 +961,7 @@ func secretAuditChecks() throws {
         "unaligned-test-session",
         "yeta-test-session",
         "heimdallm-test-session",
+        "inferhub-test-session",
         "lutheos-test-token",
         "1234567890123456"                          // synthetic Crowbot account number
     ]

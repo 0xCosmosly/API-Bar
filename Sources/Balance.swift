@@ -71,7 +71,8 @@ struct Balance: Codable, Equatable {
         Balance(id: "unaligned", name: "Unaligned", baseline: 0, remaining: 0, updated: .distantPast, account: ""),
         // Available to add, but paused until the user turns it on.
         Balance(id: "heimdallm", name: "Heimdallm", baseline: 0, remaining: 0, updated: .distantPast, account: "", disabled: true),
-        Balance(id: "yeta", name: "Yeta", baseline: 0, remaining: 0, updated: .distantPast, account: "", disabled: true)
+        Balance(id: "yeta", name: "Yeta", baseline: 0, remaining: 0, updated: .distantPast, account: "", disabled: true),
+        Balance(id: "inferhub", name: "InferHub", baseline: 0, remaining: 0, updated: .distantPast, account: "", disabled: true)
     ]
 }
 
@@ -199,6 +200,10 @@ enum ReadingValidation {
         if r.provider == "heimdallm" {
             let validHosts = ["heimdallm.com", "staging.heimdallm.com", "api.heimdallm.com"]
             return validHosts.contains(url.host ?? "") && url.path.hasPrefix("/api/frontend/v1") && (balance.account.isEmpty || balance.account.hasSuffix(" Account") || r.account == balance.account)
+        }
+        if r.provider == "inferhub" {
+            let validHosts = ["api.inferhub.dev", "inferhub.dev"]
+            return validHosts.contains(url.host ?? "") && (balance.account.isEmpty || balance.account.hasSuffix(" Account") || r.account == balance.account)
         }
         if let endpoint = balance.dynamicEndpoint, let dynamicURL = URL(string: endpoint) {
             return url.host == dynamicURL.host

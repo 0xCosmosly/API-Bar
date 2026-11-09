@@ -137,6 +137,7 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         case "unaligned": provName = "Unaligned"
         case "yeta": provName = "Yeta"
         case "heimdallm": provName = "Heimdallm"
+        case "inferhub": provName = "InferHub"
         default: provName = fallbackName
         }
         let wasConnected = isConnected(id) || balances.first(where: { $0.id == id })?.live == true || hasStoredCredential(id) || (balances.first(where: { $0.id == id })?.dynamicAuthHeader?.isEmpty == false)
@@ -756,6 +757,7 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         if provider == "unaligned" { return try await UnalignedProvider(http: client, account: balance.account).fetchBalance() }
         if provider == "yeta" { return try await YetaProvider(http: client, account: balance.account).fetchBalance() }
         if provider == "heimdallm" { return try await HeimdallmProvider(http: client, account: balance.account).fetchBalance() }
+        if provider == "inferhub" { return try await InferHubProvider(http: client, balance: balance).fetchBalance() }
         if provider == "vertex" { return try await GoogleProvider(http:client,account:balance.account).fetchBalance() }
         if balance.dynamicEndpoint != nil {
             return try await DynamicProvider(http: client, balance: balance).fetchBalance()
@@ -1169,6 +1171,26 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
                 balances[i].baseline = max(ref, r.remaining)
             } else if balances[i].baseline <= 0 {
                 balances[i].baseline = PaymentReference.inferTier(for: r.remaining)
+            } else {
+                balances[i].baseline = max(balances[i].baseline, r.remaining)
+            }
+            setConnectionState(for: r.provider, to: .connected(detail: "Connected · refreshes every 5 min", lastChecked: Date()))
+            if sortMode != .manual {
+                applySorting()
+            } else {
+                save(); updateTitles()
+            }
+            return
+        }
+        if r.provider == "inferhub" {
+            if let ref = r.reference, ref > 0 {
+                balances[i].baseline = max(ref, r.remaining)
+            } else if balances[i].baseline <= 0 {
+                balances[i].baseline = PaymentReference.inferTier(for: r.remaining)
+            } else if r.remaining > oldRemaining && oldRemaining > 0 {
+                let delta = r.remaining - oldRemaining
+                let paidAmount = PaymentReference.inferTier(for: delta)
+                balances[i].baseline = max(balances[i].baseline + paidAmount, r.remaining)
             } else {
                 balances[i].baseline = max(balances[i].baseline, r.remaining)
             }
@@ -1595,6 +1617,7 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         case "unaligned": return URL(string: "https://unaligned.pw/dashboard")!
         case "yeta": return URL(string: YetaProvider.dashboardURL)!
         case "heimdallm": return URL(string: HeimdallmProvider.dashboardURL)!
+        case "inferhub": return URL(string: InferHubProvider.dashboardURL)!
         default: return URL(string: "https://console.cloud.google.com/billing/\(b.account)/credits/all")!
         }
     }
@@ -1804,6 +1827,7 @@ enum ProviderIcon {
         case "unaligned": (targetW, targetH) = (15.2, 15.2)
         case "yeta": (targetW, targetH) = (14.6, 14.6)
         case "heimdallm": (targetW, targetH) = (15.0, 15.0)
+        case "inferhub": (targetW, targetH) = (15.0, 15.0)
         default: (targetW, targetH) = (15.0, 13.8) // crowbot
         }
         let targetRect = CGRect(x: (18.0 - targetW) / 2.0, y: (18.0 - targetH) / 2.0, width: targetW, height: targetH)

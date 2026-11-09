@@ -40,6 +40,8 @@ func providerAccentNSColor(_ id: String) -> NSColor {
         return NSColor(srgbRed: 202/255.0, green: 138/255.0, blue: 4/255.0, alpha: 1.0) // Yeta Amber #CA8A04
     case "heimdallm":
         return NSColor(srgbRed: 183/255.0, green: 23/255.0, blue: 31/255.0, alpha: 1.0) // Heimdall Crimson #B7171F
+    case "inferhub":
+        return NSColor(srgbRed: 124/255.0, green: 58/255.0, blue: 237/255.0, alpha: 1.0) // InferHub Violet #7C3AED
     default:
         return NSColor.systemBlue
     }

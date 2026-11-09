@@ -147,6 +147,9 @@ import SwiftUI
             // And the icon pipeline must accept it as a real mask, not a monogram.
             precondition(ProviderIcon.hasMask(for: provider), "\(provider) must resolve to a mask")
         }
+        let inferhubVector = ProviderMarkGeometry.image(for: "inferhub", pixels: 54)
+        precondition(inferhubVector != nil, "inferhub vector mask failed to render")
+        precondition(ProviderIcon.hasMask(for: "inferhub"), "inferhub must resolve to a mask")
         // Providers without geometry still fall back to a monogram rather than crashing.
         precondition(ProviderMarkGeometry.mark(for: "definitely-not-a-provider") == nil)
 
@@ -416,6 +419,12 @@ import SwiftUI
         precondition(autoHeimdallmDraft.endpoint == "https://heimdallm.com/api/frontend/v1/credits")
         precondition(autoHeimdallmDraft.jsonPath == "balance.spendable")
         precondition(autoHeimdallmURL == "https://heimdallm.com/account?tab=credits")
+
+        let (autoInferHubDraft, autoInferHubURL, _) = await AFMProviderExtractor.autoAddProvider(named: "InferHub", openBrowser: false)
+        precondition(autoInferHubDraft.name == "InferHub")
+        precondition(autoInferHubDraft.endpoint == "https://api.inferhub.dev/v1/me/usage")
+        precondition(autoInferHubDraft.jsonPath == "balance.amount_usdc")
+        precondition(autoInferHubURL == "https://inferhub.dev/keys")
 
         // Test iCloud Sync: availability, push, pull & merge, session vault sync, status badges
         var cleanedRemoved = UserDefaults.standard.stringArray(forKey: "RemovedProviders") ?? []

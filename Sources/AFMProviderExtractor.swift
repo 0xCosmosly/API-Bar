@@ -139,6 +139,16 @@ public enum AFMProviderExtractor {
             jsonPath: "balance.spendable",
             defaultBaseline: 0.0,
             aliases: ["heimdallm", "heimdallm.com", "heimdallm ai", "heimdall"]
+        ),
+        KnownProviderMeta(
+            id: "inferhub",
+            name: "InferHub",
+            domain: "inferhub.dev",
+            dashboardURL: "https://inferhub.dev/keys",
+            endpoint: "https://api.inferhub.dev/v1/me/usage",
+            jsonPath: "balance.amount_usdc",
+            defaultBaseline: 0.0,
+            aliases: ["inferhub", "inferhub.dev", "infer hub", "inferhub ai"]
         )
     ]
 
