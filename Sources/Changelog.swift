@@ -162,6 +162,42 @@ public final class ChangelogManager: ObservableObject {
     public static func builtInEntries() -> [ChangelogEntry] {
         return [
             ChangelogEntry(
+                version: "0.5.5",
+                releaseDate: "November 10, 2026",
+                title: "API Bar 0.5.5 — Pure Cookie Auth for InferHub, Multi-Device Sync Hardening & Baseline Protection",
+                summary: "Removes obsolete manual API key fields for InferHub in favor of seamless cookie session detection, synchronizes provider enabled states across devices, prevents settings race conditions from unmerging icons, and locks Heimdallm reload baselines against remote sync downgrades.",
+                highlights: [
+                    "InferHub cookie-first configuration: removed redundant manual API key field in Settings",
+                    "Multi-device provider sync: enabled/disabled states and token metrics now propagate cleanly across all Macs",
+                    "Anti-downgrade baseline protection: remote sync can never downgrade active Heimdallm reload baselines",
+                    "Settings modification locking: prevents background sync pushes from overwriting merged menu bar icon state"
+                ],
+                notes: """
+## API Bar 0.5.5
+
+This release streamlines InferHub configuration to pure cookie session detection, hardens multi-device iCloud sync against race conditions, and guarantees baseline stability across devices.
+
+---
+
+### ✨ What's New in 0.5.5
+
+#### 1. 🍪 Seamless InferHub Cookie Session Detection
+• Removed the obsolete manual API key input field from Settings; InferHub authenticates directly via your browser dashboard session cookies.
+• Full 24-hour token metrics and spend tracking are preserved without manual keys.
+
+#### 2. ☁️ Multi-Device Provider Sync Hardening
+• Provider enabled/disabled states now synchronize bidirectionally across all your Macs via iCloud Drive.
+• When a provider like InferHub is active on one machine, it appears immediately on other synced machines without remaining disabled.
+
+#### 3. 🛡️ Heimdallm Baseline Anti-Downgrade Protection
+• Incoming iCloud sync cycles can no longer downgrade a static top-up baseline back to the default $5.00 tier.
+• Restores and locks your combined total (`$5.00 reload + previous balance`) across all active devices.
+
+#### 4. 📌 Merged Menu Bar Icons State Persistence
+• Settings pushes now respect local modification timestamps, preventing background sync from unmerging menu bar icons.
+"""
+            ),
+            ChangelogEntry(
                 version: "0.5.4",
                 releaseDate: "November 9, 2026",
                 title: "API Bar 0.5.4 — InferHub Support, Static Top-Up Baselines & Sync Stability",

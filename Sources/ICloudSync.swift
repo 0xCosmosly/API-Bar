@@ -724,16 +724,29 @@ final class ICloudSync: ObservableObject {
                         && remote.baseline > remote.remaining * 1_000
                     // An earlier build or an un-updated client spuriously inflated Heimdallm's
                     // baseline to $10.00+ on credit hold releases. If a remote sync pushes an
-                    // inflated baseline while remaining is <= $5.00, or if this Mac already has
-                    // an authoritative baseline from the live API, reject the remote inflation.
+                    // inflated baseline while remaining is <= $5.00, reject it.
+                    // Also reject remote downgrading our static top-up baseline to the $5.00 tier.
                     let implausibleHeimdallm = remote.id == "heimdallm" && (
                         (remote.baseline >= 10.0 && remote.remaining <= 5.0) ||
-                        (current[localIdx].baseline > 0 && remote.baseline > current[localIdx].baseline && (app.isConnected("heimdallm") || current[localIdx].live))
+                        (current[localIdx].baseline > 5.0 && remote.baseline <= 5.0)
                     )
                     let implausibleBaseline = implausibleUnaligned || implausibleHeimdallm
                     if remote.baseline > 0 && remote.baseline != current[localIdx].baseline && !implausibleBaseline {
-                        if remote.updated >= current[localIdx].updated || current[localIdx].baseline == 0 {
+                        // Remote baseline can upgrade local baseline if higher or if local is uninitialised;
+                        // remote sync must never downgrade an active spend-down cycle baseline.
+                        if remote.baseline > current[localIdx].baseline || current[localIdx].baseline == 0 {
                             current[localIdx].baseline = max(remote.baseline, current[localIdx].remaining)
+                            didChangeLocally = true
+                        }
+                    }
+                    if let remoteDisabled = remote.disabled {
+                        if current[localIdx].disabled != remoteDisabled {
+                            current[localIdx].disabled = remoteDisabled
+                            didChangeLocally = true
+                        }
+                    } else if remote.live || remote.remaining > 0 {
+                        if current[localIdx].disabled == true {
+                            current[localIdx].disabled = false
                             didChangeLocally = true
                         }
                     }
@@ -759,6 +772,8 @@ final class ICloudSync: ObservableObject {
                         current[localIdx].account = remote.account
                         current[localIdx].expires = remote.expires
                         current[localIdx].live = remote.live || current[localIdx].live
+                        if let t = remote.tokensPerDay { current[localIdx].tokensPerDay = t }
+                        if let r = remote.runwayDays { current[localIdx].runwayDays = r }
                         didChangeLocally = true
                     }
                 } else if !removedSet.contains(remote.id) {
@@ -1022,17 +1037,26 @@ final class ICloudSync: ObservableObject {
 
             // 2. Write settings.json
             if let settingsURL = settingsURL {
+                let localSettingsTS = (UserDefaults.standard.object(forKey: "APIBarSettingsModified") as? Date) ?? Date()
                 let settings = ICloudSettings(
                     sortMode: app.sortMode.rawValue,
                     mergeIcons: app.mergeIcons,
                     mergedProvider: app.mergedProvider,
                     removedProviders: UserDefaults.standard.stringArray(forKey: "RemovedProviders") ?? [],
-                    lastModified: Date(),
+                    lastModified: localSettingsTS,
                     deviceName: deviceName
                 )
                 let data = try JSONEncoder().encode(settings)
                 let existing = try? Data(contentsOf: settingsURL)
-                if existing != data {
+                let shouldWrite: Bool
+                if let existing = existing,
+                   let remoteSettings = try? JSONDecoder().decode(ICloudSettings.self, from: existing) {
+                    // Do not clobber remote settings if remote is strictly newer than our local modifications
+                    shouldWrite = localSettingsTS >= remoteSettings.lastModified && existing != data
+                } else {
+                    shouldWrite = existing != data
+                }
+                if shouldWrite {
                     try data.write(to: settingsURL, options: .atomic)
                     try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: settingsURL.path)
                     didTransferAny = true

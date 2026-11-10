@@ -600,9 +600,10 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
                 // or 9.20 (when a micro-adjustment of $0.02 spurred a phantom $5 top-up).
                 // Restore the static total (amount reloaded + previous amount left = 5.78833452416).
                 if balances[i].id == "heimdallm" {
-                    if (balances[i].baseline == 5.0 || balances[i].baseline == 10.0 ||
+                    if (balances[i].baseline <= 5.0 || balances[i].baseline == 10.0 ||
                         abs(balances[i].baseline - 5.67581185256) < 0.001 ||
                         abs(balances[i].baseline - 9.20101205556) < 0.01),
+                       balances[i].baseline != 5.78833452416,
                        balances[i].remaining > 0, balances[i].remaining <= 5.78833452416 {
                         balances[i].baseline = 5.78833452416
                         changed = true

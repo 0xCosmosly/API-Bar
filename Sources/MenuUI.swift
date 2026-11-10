@@ -756,7 +756,7 @@ struct ProviderSettingsRow: View {
                 connectButton
                 removeButton
             }
-            if balance.dynamicEndpoint != nil || balance.id == "inferhub" {
+            if balance.dynamicEndpoint != nil {
                 apiKeyField
             }
         }
@@ -895,7 +895,7 @@ struct ProviderSettingsRow: View {
             Image(systemName: "key.fill")
                 .font(.caption)
                 .foregroundStyle(Color.secondary)
-            TextField(balance.id == "inferhub" ? "API Key (sk-airo-… or Bearer token)" : "Admin API Key (Bearer token)", text: Binding(
+            TextField("Admin API Key (Bearer token)", text: Binding(
                 get: { balance.dynamicAuthHeader ?? "" },
                 set: { app.setAuthHeader($0, for: balance.id) }
             ))
