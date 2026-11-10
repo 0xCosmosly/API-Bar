@@ -162,6 +162,45 @@ public final class ChangelogManager: ObservableObject {
     public static func builtInEntries() -> [ChangelogEntry] {
         return [
             ChangelogEntry(
+                version: "0.5.4",
+                releaseDate: "November 9, 2026",
+                title: "API Bar 0.5.4 — InferHub Support, Static Top-Up Baselines & Sync Stability",
+                summary: "Adds native support for InferHub with browser session auth and 24h burn-rate pacing, keeps Heimdallm top-up baselines static across spend-downs, and hardens iCloud sync state transitions.",
+                highlights: [
+                    "InferHub (inferhub.dev) AI aggregation platform balance and burn-rate pacing",
+                    "Dashboard session cookie extraction for InferHub with 24-hour token usage logs",
+                    "Official InferHub spokes-and-hub menu bar mark and Retina icon mask",
+                    "Heimdallm reload baseline stability: keeps cycle totals static during spend-downs and hold releases",
+                    "Automatic repair of corrupted or transient top-up baselines on startup",
+                    "iCloud sync state machine unsticking and multi-device push/pull hardening",
+                    "Formalized explicit state machines for providers, updater, iCloud sync, and menu bar presentation"
+                ],
+                notes: """
+## API Bar 0.5.4
+
+This release adds native support for InferHub (inferhub.dev), keeps Heimdallm top-up baselines strictly static across spend-down cycles and credit hold releases, and hardens iCloud multi-device sync state transitions.
+
+---
+
+### ✨ What's New in 0.5.4
+
+#### 1. ⚡️ InferHub (inferhub.dev) Support
+• Connects to InferHub using browser session cookies or API keys.
+• Extracts exact 24-hour token metrics and spend directly from the dashboard usage logs.
+• Computes real-time token burn-rate pacing and remaining runway days.
+• Features official InferHub vector geometry and Retina menu bar brand mark.
+
+#### 2. 🛡️ Heimdallm Reload Baseline Stability
+• Preserves your reload cycle total (`amount reloaded + previous balance`) across spend-downs below $5.00.
+• Disregards small balance adjustments and hold releases (under $3.00) from falsely triggering phantom reload events.
+• Automatically repairs legacy corrupted baseline totals on startup.
+
+#### 3. ☁️ iCloud Sync & State Machine Hardening
+• Resolved state machine latch preventing sync from returning to idle with active status.
+• Multi-device pull and merge protects local configurations from premature overwrite.
+"""
+            ),
+            ChangelogEntry(
                 version: "0.5.3",
                 releaseDate: "November 8, 2026",
                 title: "API Bar 0.5.3 — OMP Sync, Heimdallm Refinements & Pacing Fixes",
