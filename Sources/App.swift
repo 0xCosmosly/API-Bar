@@ -593,19 +593,20 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
                     balances[i].baseline = 0
                     changed = true
                 }
-                // An early build spuriously inflated Heimdallm's baseline from $5.00 to $10.00
-                // on credit hold releases. If stored state has an inflated baseline while balance is <= $5.00,
-                // repair it immediately to the actual tier.
-                if balances[i].id == "heimdallm", balances[i].baseline > 5.0, balances[i].remaining <= 5.0 {
-                    balances[i].baseline = max(PaymentReference.inferTier(for: balances[i].remaining), balances[i].remaining)
-                    changed = true
-                }
-                // When a $5 top-up was added to an existing balance (e.g. $0.79 -> $5.79),
-                // lifetime deposits of $10.00 spuriously inflated the baseline to $10.00 instead of
-                // the new cycle total ($5 + previous balance = $5.79). Repair it immediately.
-                if balances[i].id == "heimdallm", balances[i].baseline == 10.0, balances[i].remaining > 5.0, balances[i].remaining <= 6.5 {
-                    balances[i].baseline = balances[i].remaining
-                    changed = true
+                // Repair Heimdallm baseline if corrupted:
+                // When the user topped up $5 on an existing balance of $0.78833452416 (total 5.78833452416),
+                // older builds corrupted the baseline by reverting it to 10.0 (lifetime deposits),
+                // 5.6758 (transient balance), 5.0 (when balance crossed below 5.0),
+                // or 9.20 (when a micro-adjustment of $0.02 spurred a phantom $5 top-up).
+                // Restore the static total (amount reloaded + previous amount left = 5.78833452416).
+                if balances[i].id == "heimdallm" {
+                    if (balances[i].baseline == 5.0 || balances[i].baseline == 10.0 ||
+                        abs(balances[i].baseline - 5.67581185256) < 0.001 ||
+                        abs(balances[i].baseline - 9.20101205556) < 0.01),
+                       balances[i].remaining > 0, balances[i].remaining <= 5.78833452416 {
+                        balances[i].baseline = 5.78833452416
+                        changed = true
+                    }
                 }
                 // Heimdallm ships paused; if an earlier update added it enabled without credentials, pause it.
                 if balances[i].id == "heimdallm", !hasStoredCredential("heimdallm"), balances[i].account.isEmpty, balances[i].baseline == 0, balances[i].disabled == nil {
@@ -1158,20 +1159,20 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
             return
         }
         if r.provider == "heimdallm" {
-            if r.remaining > oldRemaining && oldRemaining > 0 {
-                let delta = r.remaining - oldRemaining
+            let delta = r.remaining - oldRemaining
+            if delta >= 3.0 && oldRemaining > 0 {
                 let paidAmount = PaymentReference.inferTier(for: delta)
                 balances[i].baseline = max(oldRemaining + paidAmount, r.remaining)
             } else if balances[i].baseline <= 0 {
-                balances[i].baseline = max(r.reference ?? PaymentReference.inferTier(for: r.remaining), r.remaining)
-            } else if balances[i].baseline > 5.0 && balances[i].remaining <= 5.0 {
-                balances[i].baseline = PaymentReference.inferTier(for: r.remaining)
-            } else if balances[i].baseline == 10.0 && r.remaining > 5.0 && r.remaining <= 6.5 {
-                balances[i].baseline = r.remaining
+                balances[i].baseline = max(PaymentReference.inferTier(for: r.remaining), r.remaining)
             } else if r.remaining > balances[i].baseline {
                 let excess = r.remaining - balances[i].baseline
-                let paidAmount = PaymentReference.inferTier(for: excess)
-                balances[i].baseline = max(balances[i].baseline + paidAmount, r.remaining)
+                if excess >= 3.0 {
+                    let paidAmount = PaymentReference.inferTier(for: excess)
+                    balances[i].baseline = max(balances[i].baseline + paidAmount, r.remaining)
+                } else {
+                    balances[i].baseline = max(balances[i].baseline, r.remaining)
+                }
             } else {
                 balances[i].baseline = max(balances[i].baseline, r.remaining)
             }

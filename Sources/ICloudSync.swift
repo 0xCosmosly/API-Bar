@@ -727,7 +727,7 @@ final class ICloudSync: ObservableObject {
                     // inflated baseline while remaining is <= $5.00, or if this Mac already has
                     // an authoritative baseline from the live API, reject the remote inflation.
                     let implausibleHeimdallm = remote.id == "heimdallm" && (
-                        (remote.baseline > 5.0 && remote.remaining <= 5.0) ||
+                        (remote.baseline >= 10.0 && remote.remaining <= 5.0) ||
                         (current[localIdx].baseline > 0 && remote.baseline > current[localIdx].baseline && (app.isConnected("heimdallm") || current[localIdx].live))
                     )
                     let implausibleBaseline = implausibleUnaligned || implausibleHeimdallm

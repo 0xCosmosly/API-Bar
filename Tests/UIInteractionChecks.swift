@@ -441,6 +441,18 @@ import SwiftUI
         app.apply(hmSpendReading)
         precondition(abs(app.balances[0].baseline - 5.788) < 0.001, "Heimdallm baseline must stay at 5.788 during spend-down, got \(app.balances[0].baseline)")
         precondition(app.balances[0].percentageLabel == "95%", "Heimdallm must show 95% remaining for 5.50/5.788, got \(app.balances[0].percentageLabel)")
+
+        // Subsequent spend-down below 5.0 (e.g. 4.20) must CONTINUE to preserve 5.788 baseline, never reset to 5.0
+        let hmSub5Reading = Reading(provider: "heimdallm", remaining: 4.20, currency: "USD", account: "user@heimdallm.com", url: "https://heimdallm.com/api/frontend/v1/credits", expires: nil, reference: 10.0)
+        app.apply(hmSub5Reading)
+        precondition(abs(app.balances[0].baseline - 5.788) < 0.001, "Heimdallm baseline must stay static at 5.788 even when balance drops <= 5.0, got \(app.balances[0].baseline)")
+        precondition(app.balances[0].percentageLabel == "72%", "Heimdallm must show 72% remaining for 4.20/5.788, got \(app.balances[0].percentageLabel)")
+
+        // Credit hold release / micro-adjustment of +$0.02 (e.g. 4.20 -> 4.225) must NOT trigger phantom $5 reload
+        let hmMicroReading = Reading(provider: "heimdallm", remaining: 4.225, currency: "USD", account: "user@heimdallm.com", url: "https://heimdallm.com/api/frontend/v1/credits", expires: nil, reference: 10.0)
+        app.apply(hmMicroReading)
+        precondition(abs(app.balances[0].baseline - 5.788) < 0.001, "Heimdallm baseline must stay static at 5.788 on micro-adjustment, not jump to 9.20, got \(app.balances[0].baseline)")
+        precondition(app.balances[0].percentageLabel == "72%", "Heimdallm must show 72% remaining for 4.225/5.788, got \(app.balances[0].percentageLabel)")
         app.balances = origBalances
 
         // Test iCloud Sync: availability, push, pull & merge, session vault sync, status badges
