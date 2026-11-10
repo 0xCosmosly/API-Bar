@@ -914,105 +914,79 @@ struct ProviderSettingsRow: View {
     }
 }
 
-/// One optional integration that API Bar mirrors through iCloud Drive.
-struct IntegrationSyncRow: View {
-    let title: String
-    let detail: String
-    let credentialDetail: String
-    @Binding var isOn: Bool
-    @Binding var syncCredentials: Bool
-    var compact = false
-
-    private var titleFont: Font { compact ? .subheadline : .body }
-    private var detailFont: Font { compact ? .caption : .subheadline }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: compact ? 3 : 6) {
-            Toggle(title, isOn: $isOn)
-                .font(titleFont)
-                .foregroundStyle(Color.primary)
-
-            Text(detail)
-                .font(detailFont)
-                .foregroundStyle(Color.secondary)
-
-            if isOn {
-                VStack(alignment: .leading, spacing: compact ? 2 : 4) {
-                    Toggle("Sync API Keys & Credentials", isOn: $syncCredentials)
-                        .font(compact ? .caption : .body)
-                        .fontWeight(compact ? .regular : .medium)
-                        .foregroundStyle(Color.primary)
-
-                    Text(credentialDetail)
-                        .font(detailFont)
-                        .foregroundStyle(Color.secondary)
-                }
-                .padding(compact ? 0 : 10)
-                .padding(.leading, compact ? 16 : 0)
-                .background(
-                    Group {
-                        if compact {
-                            Color.clear
-                        } else {
-                            RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.025))
-                        }
-                    }
-                )
-                .overlay(
-                    Group {
-                        if compact {
-                            Color.clear
-                        } else {
-                            RoundedRectangle(cornerRadius: 8).stroke(Color.primary.opacity(0.06), lineWidth: 1)
-                        }
-                    }
-                )
-                .padding(.top, compact ? 0 : 2)
-            }
-        }
-    }
-}
-
-/// The coding-agent integrations API Bar can sync. Onboarding and Settings used to
-/// each hand-roll these two blocks; they now share one definition so the copy and
-/// the toggles cannot drift apart.
+/// The coding-agent integrations API Bar can sync. OpenCode, Pi, and OMP are combined
+/// into a concise checkmark interface to keep Settings and Onboarding compact and clean.
 struct IntegrationSyncSection: View {
     @ObservedObject var app: APIBarApp
     @ObservedObject private var icloud = ICloudSync.shared
     var compact = false
 
+    private var anySyncEnabled: Bool {
+        app.isOpenCodeSyncEnabled || app.isPiSyncEnabled || app.isOmpSyncEnabled
+    }
+
+    private var credentialsEnabled: Bool {
+        if app.isOpenCodeSyncEnabled && app.isOpenCodeCredentialsSyncEnabled { return true }
+        if app.isPiSyncEnabled && app.isPiCredentialsSyncEnabled { return true }
+        if app.isOmpSyncEnabled && app.isOmpCredentialsSyncEnabled { return true }
+        return false
+    }
+
+    private var credentialsBinding: Binding<Bool> {
+        Binding(
+            get: { credentialsEnabled },
+            set: { enabled in
+                if app.isOpenCodeSyncEnabled { app.setOpenCodeCredentialsSyncEnabled(enabled) }
+                if app.isPiSyncEnabled { app.setPiCredentialsSyncEnabled(enabled) }
+                if app.isOmpSyncEnabled { app.setOmpCredentialsSyncEnabled(enabled) }
+            }
+        )
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: compact ? 10 : 14) {
-            IntegrationSyncRow(
-                title: "Sync OpenCode Configuration (Optional)",
-                detail: "Syncs models and providers configured in OpenCode (~/.config/opencode/opencode.json) across devices via iCloud Drive.",
-                credentialDetail: "Synchronizes your OpenCode API keys and authentication tokens via your private iCloud vault, so models connect without re-authenticating.",
-                isOn: Binding(get: { app.isOpenCodeSyncEnabled }, set: { app.setOpenCodeSyncEnabled($0) }),
-                syncCredentials: Binding(get: { app.isOpenCodeCredentialsSyncEnabled }, set: { app.setOpenCodeCredentialsSyncEnabled($0) }),
-                compact: compact
-            )
+        VStack(alignment: .leading, spacing: compact ? 6 : 8) {
+            Text("Sync Coding Agents (Optional)")
+                .font(compact ? .subheadline : .body)
+                .foregroundStyle(Color.primary)
 
-            if !compact { Divider().opacity(0.6) }
+            HStack(spacing: compact ? 16 : 22) {
+                Toggle("OpenCode", isOn: Binding(
+                    get: { app.isOpenCodeSyncEnabled },
+                    set: { enabled in
+                        if enabled && anySyncEnabled && !credentialsEnabled {
+                            app.setOpenCodeCredentialsSyncEnabled(false)
+                        }
+                        app.setOpenCodeSyncEnabled(enabled)
+                    }
+                ))
+                Toggle("Pi", isOn: Binding(
+                    get: { app.isPiSyncEnabled },
+                    set: { enabled in
+                        if enabled && anySyncEnabled && !credentialsEnabled {
+                            app.setPiCredentialsSyncEnabled(false)
+                        }
+                        app.setPiSyncEnabled(enabled)
+                    }
+                ))
+                Toggle("OMP", isOn: Binding(
+                    get: { app.isOmpSyncEnabled },
+                    set: { enabled in
+                        if enabled && anySyncEnabled && !credentialsEnabled {
+                            app.setOmpCredentialsSyncEnabled(false)
+                        }
+                        app.setOmpSyncEnabled(enabled)
+                    }
+                ))
+            }
+            .toggleStyle(.checkbox)
+            .font(compact ? .subheadline : .body)
 
-            IntegrationSyncRow(
-                title: "Sync Pi Configuration (Optional)",
-                detail: "Syncs models and settings configured in Pi (~/.pi/agent) across devices via iCloud Drive.",
-                credentialDetail: "Synchronizes your Pi API keys and authentication tokens (~/.pi/agent/auth.json) via your private iCloud vault.",
-                isOn: Binding(get: { app.isPiSyncEnabled }, set: { app.setPiSyncEnabled($0) }),
-                syncCredentials: Binding(get: { app.isPiCredentialsSyncEnabled }, set: { app.setPiCredentialsSyncEnabled($0) }),
-                compact: compact
-            )
-
-            if !compact { Divider().opacity(0.6) }
-
-            IntegrationSyncRow(
-                title: "Sync OMP Configuration (Optional)",
-                detail: "Syncs models and settings configured in OMP (~/.omp/agent) across devices via iCloud Drive.",
-                credentialDetail: "Synchronizes your OMP API keys and authentication tokens via your private iCloud vault.",
-                isOn: Binding(get: { app.isOmpSyncEnabled }, set: { app.setOmpSyncEnabled($0) }),
-                syncCredentials: Binding(get: { app.isOmpCredentialsSyncEnabled }, set: { app.setOmpCredentialsSyncEnabled($0) }),
-                compact: compact
-            )
+            if anySyncEnabled {
+                Toggle("Sync API keys & credentials", isOn: credentialsBinding)
+                    .toggleStyle(.checkbox)
+                    .font(compact ? .caption : .subheadline)
+                    .foregroundStyle(Color.secondary)
+            }
         }
     }
 }
