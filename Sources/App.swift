@@ -199,6 +199,10 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         get { ICloudSync.shared.isOmpCredentialsSyncEnabled }
         set { ICloudSync.shared.setOmpCredentialsSyncEnabled(newValue) }
     }
+    var isScriptableSyncEnabled: Bool {
+        get { ICloudSync.shared.isScriptableSyncEnabled }
+        set { ICloudSync.shared.setScriptableSyncEnabled(newValue) }
+    }
     var iCloudStatus: String {
         ICloudSync.shared.statusBadge
     }
@@ -225,6 +229,9 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
     }
     func setOmpCredentialsSyncEnabled(_ enabled: Bool) {
         ICloudSync.shared.setOmpCredentialsSyncEnabled(enabled)
+    }
+    func setScriptableSyncEnabled(_ enabled: Bool) {
+        ICloudSync.shared.setScriptableSyncEnabled(enabled)
     }
     func syncICloudNow() {
         Task { await ICloudSync.shared.syncNow() }

@@ -94,6 +94,7 @@ final class ICloudSync: ObservableObject {
     static let piCredentialsEnabledKey = "ICloudSyncPiCredentialsEnabled"
     static let ompEnabledKey = "ICloudSyncOmpEnabled"
     static let ompCredentialsEnabledKey = "ICloudSyncOmpCredentialsEnabled"
+    static let scriptableEnabledKey = "ICloudSyncScriptableEnabled"
     static let lastSyncKey = "ICloudSyncLastDate"
     static let deviceIdKey = "APIBarDeviceUUID"
 
@@ -107,6 +108,7 @@ final class ICloudSync: ObservableObject {
     @Published var isPiCredentialsSyncEnabled: Bool = true
     @Published var isOmpSyncEnabled: Bool = false
     @Published var isOmpCredentialsSyncEnabled: Bool = true
+    @Published var isScriptableSyncEnabled: Bool = true
     @Published private(set) var lastSyncDate: Date? = nil
     @Published private(set) var statusMessage: String = "Disabled"
     @Published private(set) var lastError: String? = nil
@@ -213,14 +215,28 @@ final class ICloudSync: ObservableObject {
         baseDirectoryURL?.appendingPathComponent("vault", isDirectory: true)
     }
 
+    var scriptableDocumentsDirectoryURL: URL? {
+        if let custom = ProcessInfo.processInfo.environment["APIBAR_SCRIPTABLE_DIR"], !custom.isEmpty {
+            return URL(fileURLWithPath: custom, isDirectory: true)
+        }
+        let scriptableDocs = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Mobile Documents/iCloud~dk~simonbs~Scriptable/Documents", isDirectory: true)
+        return FileManager.default.fileExists(atPath: scriptableDocs.path) ? scriptableDocs : nil
+    }
+
     var scriptableSnapshotURL: URL? {
         if let custom = ProcessInfo.processInfo.environment["APIBAR_SCRIPTABLE_FILE"], !custom.isEmpty {
             return URL(fileURLWithPath: custom)
         }
-        let scriptableDocs = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Mobile Documents/iCloud~dk~simonbs~Scriptable/Documents", isDirectory: true)
-        if FileManager.default.fileExists(atPath: scriptableDocs.path) {
-            return scriptableDocs.appendingPathComponent("api_bar_snapshot.json")
+        if let dir = scriptableDocumentsDirectoryURL {
+            return dir.appendingPathComponent("api_bar_snapshot.json")
+        }
+        return nil
+    }
+
+    var scriptableScriptURL: URL? {
+        if let dir = scriptableDocumentsDirectoryURL {
+            return dir.appendingPathComponent("API Bar.js")
         }
         return nil
     }
@@ -312,6 +328,11 @@ final class ICloudSync: ObservableObject {
             self.isOmpCredentialsSyncEnabled = true
         } else {
             self.isOmpCredentialsSyncEnabled = UserDefaults.standard.bool(forKey: Self.ompCredentialsEnabledKey)
+        }
+        if UserDefaults.standard.object(forKey: Self.scriptableEnabledKey) == nil {
+            self.isScriptableSyncEnabled = true
+        } else {
+            self.isScriptableSyncEnabled = UserDefaults.standard.bool(forKey: Self.scriptableEnabledKey)
         }
         if let ts = UserDefaults.standard.object(forKey: Self.lastSyncKey) as? Date {
             self.lastSyncDate = ts
@@ -453,6 +474,27 @@ final class ICloudSync: ObservableObject {
             }
         } else {
             stopOmpMonitoring()
+        }
+    }
+
+    func setScriptableSyncEnabled(_ enabled: Bool) {
+        guard isScriptableSyncEnabled != enabled else { return }
+        isScriptableSyncEnabled = enabled
+        UserDefaults.standard.set(enabled, forKey: Self.scriptableEnabledKey)
+        if enabled && isEnabled {
+            installScriptableTemplateIfNeeded()
+            Task { @MainActor [weak self] in
+                _ = await self?.pushLocalState()
+            }
+        }
+    }
+
+    func installScriptableTemplateIfNeeded() {
+        guard let dir = scriptableDocumentsDirectoryURL else { return }
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let scriptPath = dir.appendingPathComponent("API Bar.js")
+        if !FileManager.default.fileExists(atPath: scriptPath.path) {
+            try? ScriptableWidgetTemplate.scriptSource.write(to: scriptPath, atomically: true, encoding: .utf8)
         }
     }
 
@@ -1045,7 +1087,8 @@ final class ICloudSync: ObservableObject {
                     try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: balancesURL.path)
                     didTransferAny = true
                 }
-                if let scriptableURL = scriptableSnapshotURL {
+                if isScriptableSyncEnabled, let scriptableURL = scriptableSnapshotURL {
+                    installScriptableTemplateIfNeeded()
                     let existingScriptable = try? Data(contentsOf: scriptableURL)
                     if existingScriptable != data {
                         try? data.write(to: scriptableURL, options: .atomic)

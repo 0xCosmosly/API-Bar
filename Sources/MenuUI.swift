@@ -1759,6 +1759,10 @@ struct SettingsPane: View {
 
                     Divider().opacity(0.6)
 
+                    scriptableSection
+
+                    Divider().opacity(0.6)
+
                     HStack(alignment: .center) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(icloud.statusMessage)
@@ -1799,6 +1803,7 @@ struct SettingsPane: View {
             .background(RoundedRectangle(cornerRadius: 12).fill(Color(NSColor.controlBackgroundColor)))
             .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.primary.opacity(0.08), lineWidth: 1))
             .shadow(color: Color.black.opacity(0.03), radius: 2, x: 0, y: 1)
+
 
             browserSessionCard
 
@@ -2081,6 +2086,51 @@ struct SettingsPane: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             app.refreshBraveProfiles()
+        }
+    }
+
+    @ViewBuilder
+    private var scriptableSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Toggle("Sync with iPhone (Scriptable Widget)", isOn: Binding(
+                get: { app.isScriptableSyncEnabled },
+                set: { app.setScriptableSyncEnabled($0) }
+            ))
+            .font(.body)
+            .foregroundStyle(Color.primary)
+
+            Text("Mirrors your live AI quota and balance snapshots to iCloud for the Scriptable iPhone widget.")
+                .font(.subheadline)
+                .foregroundStyle(Color.secondary)
+
+            if app.isScriptableSyncEnabled {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("iPhone Setup Instructions:")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Color.primary)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("1. Install the free Scriptable app from the App Store on your iPhone.")
+                        Text("2. Open Scriptable on your iPhone — API Bar will already appear in your scripts via iCloud.")
+                        Text("3. Add a Scriptable widget to your iPhone Home Screen (Small, Medium, or Large).")
+                        Text("4. Long press the widget, choose Edit Widget, and pick API Bar as the script.")
+                    }
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(Color.secondary)
+
+                    if let dir = icloud.scriptableDocumentsDirectoryURL {
+                        Button("Reveal Script in Finder") {
+                            NSWorkspace.shared.selectFile(dir.appendingPathComponent("API Bar.js").path, inFileViewerRootedAtPath: dir.path)
+                        }
+                        .buttonStyle(PaperWhiteButtonStyle())
+                        .padding(.top, 2)
+                    }
+                }
+                .padding(10)
+                .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.025)))
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.primary.opacity(0.06), lineWidth: 1))
+                .padding(.top, 4)
+            }
         }
     }
 
