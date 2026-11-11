@@ -213,6 +213,18 @@ final class ICloudSync: ObservableObject {
         baseDirectoryURL?.appendingPathComponent("vault", isDirectory: true)
     }
 
+    var scriptableSnapshotURL: URL? {
+        if let custom = ProcessInfo.processInfo.environment["APIBAR_SCRIPTABLE_FILE"], !custom.isEmpty {
+            return URL(fileURLWithPath: custom)
+        }
+        let scriptableDocs = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Mobile Documents/iCloud~dk~simonbs~Scriptable/Documents", isDirectory: true)
+        if FileManager.default.fileExists(atPath: scriptableDocs.path) {
+            return scriptableDocs.appendingPathComponent("api_bar_snapshot.json")
+        }
+        return nil
+    }
+
     var localOpenCodeURL: URL {
         if let custom = ProcessInfo.processInfo.environment["APIBAR_OPENCODE_FILE"], !custom.isEmpty {
             return URL(fileURLWithPath: custom)
@@ -1024,7 +1036,7 @@ final class ICloudSync: ObservableObject {
             try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
             try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: base.path)
 
-            // 1. Write balances.json
+            // 1. Write balances.json and optional Scriptable snapshot
             if let balancesURL = balancesURL {
                 let data = try JSONEncoder().encode(app.balances)
                 let existing = try? Data(contentsOf: balancesURL)
@@ -1032,6 +1044,12 @@ final class ICloudSync: ObservableObject {
                     try data.write(to: balancesURL, options: .atomic)
                     try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: balancesURL.path)
                     didTransferAny = true
+                }
+                if let scriptableURL = scriptableSnapshotURL {
+                    let existingScriptable = try? Data(contentsOf: scriptableURL)
+                    if existingScriptable != data {
+                        try? data.write(to: scriptableURL, options: .atomic)
+                    }
                 }
             }
 
