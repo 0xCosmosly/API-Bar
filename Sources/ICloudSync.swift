@@ -500,6 +500,9 @@ final class ICloudSync: ObservableObject {
     }
 
     func readCodexBarSnapshot() -> [String: Any]? {
+        let isRunning = !NSRunningApplication.runningApplications(withBundleIdentifier: "com.steipete.codexbar").isEmpty
+        guard isRunning else { return nil }
+
         let home = FileManager.default.homeDirectoryForCurrentUser
         let engineStateURL = home.appendingPathComponent("Library/Application Support/com.steipete.codexbar/sync/engine-state.json")
         guard FileManager.default.fileExists(atPath: engineStateURL.path),
@@ -1199,7 +1202,7 @@ final class ICloudSync: ObservableObject {
                 }
                 if isScriptableSyncEnabled, let scriptableURL = scriptableSnapshotURL {
                     installScriptableTemplateIfNeeded()
-                    if let scriptableData = generateScriptablePayload(balances: app.balances) {
+                    if let scriptableData = generateScriptablePayload(balances: app.menuBarVisibleBalances) {
                         let existingScriptable = try? Data(contentsOf: scriptableURL)
                         if existingScriptable != scriptableData {
                             try? scriptableData.write(to: scriptableURL, options: .atomic)

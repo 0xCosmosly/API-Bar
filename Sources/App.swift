@@ -308,6 +308,33 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
             ?? balances.first(where: { $0.id == mergedProvider })
             ?? balances.first
     }
+    var menuBarVisibleBalances: [Balance] {
+        if mergeIcons {
+            if mergedProvider == "overview" {
+                if activeBalances.isEmpty { return [] }
+                let usdRemaining = activeBalances.reduce(0.0) { $0 + $1.remaining }
+                let usdBaseline = activeBalances.reduce(0.0) { $0 + $1.baseline }
+                return [
+                    Balance(
+                        id: "overview",
+                        name: "All Providers",
+                        baseline: usdBaseline,
+                        remaining: usdRemaining,
+                        updated: Date(),
+                        account: "\(activeBalances.count) active",
+                        expires: nil,
+                        live: true
+                    )
+                ]
+            } else if let b = selectedMergedBalance {
+                return [b]
+            } else {
+                return []
+            }
+        } else {
+            return activeBalances
+        }
+    }
 
     func removeProvider(id: String) {
         guard let index = balances.firstIndex(where: { $0.id == id }) else { return }
