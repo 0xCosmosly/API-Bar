@@ -9,7 +9,7 @@
 <p align="center">
   <a href="https://apple.com/macos"><img src="https://img.shields.io/badge/macOS-13.0%2B-blue?logo=apple&logoColor=white" alt="macOS 13.0+" /></a>
   <a href="https://swift.org"><img src="https://img.shields.io/badge/Swift-6.0-orange?logo=swift&logoColor=white" alt="Swift 6.0" /></a>
-  <a href="https://developer.apple.com"><img src="https://img.shields.io/badge/Architecture-Universal%20(Apple%20Silicon%20%26%20Intel)-purple" alt="Universal Architecture" /></a>
+  <a href="https://developer.apple.com"><img src="https://img.shields.io/badge/Architecture-Apple%20Silicon%20(arm64)-purple" alt="Apple Silicon" /></a>
   <a href="#-privacy--security"><img src="https://img.shields.io/badge/Privacy-100%25%20Local%20%C2%B7%20Zero%20Telemetry-success" alt="100% Local" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-lightgrey" alt="MIT License" /></a>
 </p>
@@ -44,6 +44,7 @@
 ## ✨ Why You'll Love API Bar
 
 - ⚡️ **Live Menu Bar Status**: View live percentage rings, remaining dollar amounts, or microdollar balances at a glance.
+- 📱 **iPhone Scriptable Widget**: Mirror your active menu bar balances and CodexBar session limits directly to your iOS Home Screen via iCloud.
 - ⏱️ **Runway & Burn Velocity**: Real-time pacing estimates calculated from your actual usage (e.g. `1.9M tokens/day · Runs out in 3 days`) so you're never caught off guard.
 - 🔑 **Zero API Key Hassle**: Automatically connects to your signed-in browser sessions (Brave, Google Chrome, Arc, Microsoft Edge, Vivaldi, Chromium). No hunting down administrative secret keys.
 - 🎛️ **Single or Individual Icons**: Merge all your AI platforms into one smart, compact menu bar gauge or pin individual provider badges side-by-side.
@@ -91,6 +92,7 @@
 | **Crowbot** | Chat & API usage credits (microdollar precision) | Browser session (`crowbot_session`) | Account quota |
 | **Yeta** | Prepaid gateway credit (ships paused) | Browser session (console) | Remaining + spent quota |
 | **Heimdallm** | AI platform inference credits | Browser session (`__Host-heimdallm_session`) | Total cycle credits |
+| **InferHub** | AI inference credit balance & token pacing | Browser session (cookies) | Account tier |
 | **Coding Agent Sync (Optional)** | OpenCode, Pi, and OMP configuration & credential vault sync | Apple iCloud Drive container | Automatic `.bak` safety |
 | **Custom / Any AI API** | OpenRouter, Groq, Together, DeepSeek, Local Ollama | cURL / JSON via on-device extractor | Custom reference |
 
@@ -126,7 +128,7 @@ flowchart LR
 ### System Requirements
 
 - **macOS 13.0 (Ventura)**, **macOS 14.0 (Sonoma)**, **macOS 15.0 (Sequoia)**, or later.
-- Universal binary runs natively on **Apple Silicon** (M1/M2/M3/M4) and **Intel** Macs.
+- Native **Apple Silicon** (M1, M2, M3, M4, or later).
 
 ---
 
@@ -171,7 +173,7 @@ Yes. Open **Settings → Add Custom Provider**. Enter the provider's name or pas
 ```
 API Bar/
 ├── Package.swift                    # Swift Package Manager manifest (macOS 13+)
-├── build.command                    # Universal release build & packaging script
+├── build.command                    # Apple Silicon release build & packaging script
 ├── check.command                    # Sandboxed test suite runner (zero side effects)
 ├── Resources/
 │   ├── Info.plist                   # App metadata & bundle configuration
@@ -208,7 +210,7 @@ To run the complete sandboxed verification suite without touching real user data
 
 ### Building & Packaging
 
-To compile a Universal binary and package `APIBar-app.zip`:
+To compile the native Apple Silicon binary and package `APIBar-app.zip`:
 
 ```sh
 ./build.command

@@ -12,10 +12,15 @@ if [ -z "${SDK:-}" ]; then
         fi
     fi
 fi
+ARCH="$(uname -m)"
+if [ "$ARCH" != "arm64" ]; then
+    echo "Error: API Bar requires Apple Silicon (arm64). Detected $ARCH." >&2
+    exit 1
+fi
 mkdir -p .cache/modules
-"$DEVELOPER_DIR/usr/bin/swiftc" -sdk "$SDK" -target "$(uname -m)-apple-macosx13.0" -parse-as-library -module-cache-path "$PWD/.cache/modules" Sources/BrandMark.swift Tools/MakeIcon.swift -o .cache/MakeIcon
+"$DEVELOPER_DIR/usr/bin/swiftc" -sdk "$SDK" -target "arm64-apple-macosx13.0" -parse-as-library -module-cache-path "$PWD/.cache/modules" Sources/BrandMark.swift Tools/MakeIcon.swift -o .cache/MakeIcon
 .cache/MakeIcon .cache/AppIcon.iconset Resources/AppIcon.icns
-"$DEVELOPER_DIR/usr/bin/swiftc" -sdk "$SDK" -target "$(uname -m)-apple-macosx13.0" -parse-as-library -module-cache-path "$PWD/.cache/modules" Sources/*.swift -o .cache/APIBar
+"$DEVELOPER_DIR/usr/bin/swiftc" -sdk "$SDK" -target "arm64-apple-macosx13.0" -parse-as-library -module-cache-path "$PWD/.cache/modules" Sources/*.swift -o .cache/APIBar
 STAGING="$(mktemp -d /tmp/apibar-build.XXXXXX)"
 trap 'rm -rf "$STAGING"' EXIT
 APP="$STAGING/API Bar.app"

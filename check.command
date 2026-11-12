@@ -22,13 +22,13 @@ export APIBAR_OPENCODE_FILE="$TEST_STATE/opencode.json"
 export APIBAR_PI_DIR="$TEST_STATE/pi_agent"
 export APIBAR_OMP_DIR="$TEST_STATE/omp_agent"
 mkdir -p "$APIBAR_VAULT_DIR" "$APIBAR_DATA_DIR" "$APIBAR_ICLOUD_DIR" "$APIBAR_PI_DIR" "$APIBAR_OMP_DIR"
-swiftc -sdk "$SDK" -parse-as-library -module-cache-path "$PWD/.cache/modules" Sources/BrandMark.swift Sources/Balance.swift Sources/Provider.swift Sources/Credentials.swift Sources/GoogleWebClientKeys.swift Sources/SessionHTTP.swift Sources/UnalignedProvider.swift Sources/YetaProvider.swift Sources/HeimdallmProvider.swift Sources/InferHubProvider.swift Sources/GoogleProvider.swift Sources/CrowbotProvider.swift Sources/AppUpdater.swift Sources/Changelog.swift Tests/Checks.swift -o .cache/checks/APIBarChecks
+swiftc -sdk "$SDK" -target "arm64-apple-macosx13.0" -parse-as-library -module-cache-path "$PWD/.cache/modules" Sources/BrandMark.swift Sources/Balance.swift Sources/Provider.swift Sources/Credentials.swift Sources/GoogleWebClientKeys.swift Sources/SessionHTTP.swift Sources/UnalignedProvider.swift Sources/YetaProvider.swift Sources/HeimdallmProvider.swift Sources/InferHubProvider.swift Sources/GoogleProvider.swift Sources/CrowbotProvider.swift Sources/AppUpdater.swift Sources/Changelog.swift Tests/Checks.swift -o .cache/checks/APIBarChecks
 .cache/checks/APIBarChecks
 plutil -lint Resources/Info.plist
 UI_SOURCES=()
 for source in Sources/*.swift; do
     if [[ "$source" != "Sources/Main.swift" ]]; then UI_SOURCES+=("$source"); fi
 done
-swiftc -sdk "$SDK" -parse-as-library -module-cache-path "$PWD/.cache/modules" "${UI_SOURCES[@]}" Tests/UIInteractionChecks.swift -o .cache/checks/UIInteractionChecks
+swiftc -sdk "$SDK" -target "arm64-apple-macosx13.0" -parse-as-library -module-cache-path "$PWD/.cache/modules" "${UI_SOURCES[@]}" Tests/UIInteractionChecks.swift -o .cache/checks/UIInteractionChecks
 .cache/checks/UIInteractionChecks --diagnostics "$PWD/.cache/checks/interface.json"
 rm -rf "$TEST_STATE"

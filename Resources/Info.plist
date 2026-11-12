@@ -18,6 +18,12 @@
 	<string>56</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>13.0</string>
+	<key>LSArchitecturePriority</key>
+	<array>
+		<string>arm64</string>
+	</array>
+	<key>LSRequiresNativeExecution</key>
+	<true/>
 	<key>LSUIElement</key>
 	<true/>
 	<key>NSHighResolutionCapable</key>
