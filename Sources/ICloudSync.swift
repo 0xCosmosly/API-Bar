@@ -1266,12 +1266,21 @@ final class ICloudSync: ObservableObject {
                     try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: balancesURL.path)
                     didTransferAny = true
                 }
-                if isScriptableSyncEnabled, let scriptableURL = scriptableSnapshotURL {
+                if isScriptableSyncEnabled {
                     installScriptableTemplateIfNeeded()
                     if let scriptableData = generateScriptablePayload(balances: app.menuBarVisibleBalances) {
-                        let existingScriptable = try? Data(contentsOf: scriptableURL)
-                        if existingScriptable != scriptableData {
-                            try? scriptableData.write(to: scriptableURL, options: .atomic)
+                        if let scriptableURL = scriptableSnapshotURL {
+                            let existingScriptable = try? Data(contentsOf: scriptableURL)
+                            if existingScriptable != scriptableData {
+                                try? scriptableData.write(to: scriptableURL, options: .atomic)
+                            }
+                        }
+                        let containerSnapshotURL = base.appendingPathComponent("api_bar_snapshot.json")
+                        let existingContainer = try? Data(contentsOf: containerSnapshotURL)
+                        if existingContainer != scriptableData {
+                            try? scriptableData.write(to: containerSnapshotURL, options: .atomic)
+                            try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: containerSnapshotURL.path)
+                            didTransferAny = true
                         }
                     }
                 }
