@@ -580,6 +580,9 @@ final class ICloudSync: ObservableObject {
         if !subDetails.isEmpty {
             dict["subDetails"] = subDetails.joined(separator: " · ")
         }
+        if let iconB64 = renderIconBase64(for: providerID, codexBar: true) {
+            dict["iconBase64"] = iconB64
+        }
         return dict
     }
 
@@ -595,14 +598,77 @@ final class ICloudSync: ObservableObject {
         }
     }
 
+    func renderIconBase64(for provider: String, codexBar: Bool = false) -> String? {
+        var baseImage: NSImage? = nil
+        if codexBar {
+            let svgURL = URL(fileURLWithPath: "/Applications/CodexBar.app/Contents/Resources/ProviderIcon-\(provider).svg")
+            if let data = try? Data(contentsOf: svgURL) {
+                baseImage = NSImage(data: data)
+            }
+        }
+        if baseImage == nil {
+            baseImage = ProviderIcon.image(provider)
+        }
+        guard let image = baseImage else { return nil }
+
+        let targetSize: CGFloat = 36
+        let size = NSSize(width: targetSize, height: targetSize)
+        guard let bitmap = NSBitmapImageRep(
+            bitmapDataPlanes: nil,
+            pixelsWide: Int(targetSize),
+            pixelsHigh: Int(targetSize),
+            bitsPerSample: 8,
+            samplesPerPixel: 4,
+            hasAlpha: true,
+            isPlanar: false,
+            colorSpaceName: .deviceRGB,
+            bytesPerRow: 0,
+            bitsPerPixel: 0
+        ) else { return nil }
+        bitmap.size = size
+        guard let context = NSGraphicsContext(bitmapImageRep: bitmap) else { return nil }
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = context
+        context.cgContext.clear(CGRect(origin: .zero, size: size))
+
+        let pad: CGFloat = 3
+        let drawRect = CGRect(x: pad, y: pad, width: targetSize - pad * 2, height: targetSize - pad * 2)
+        image.draw(in: drawRect, from: .zero, operation: .sourceOver, fraction: 1.0)
+
+        context.cgContext.setBlendMode(.sourceIn)
+        context.cgContext.setFillColor(NSColor.white.cgColor)
+        context.cgContext.fill(CGRect(origin: .zero, size: size))
+        context.flushGraphics()
+        NSGraphicsContext.restoreGraphicsState()
+
+        guard let pngData = bitmap.representation(using: .png, properties: [:]) else { return nil }
+        return pngData.base64EncodedString()
+    }
+
     func generateScriptablePayload(balances: [Balance]) -> Data? {
         var payload: [String: Any] = [:]
-        if let balancesData = try? JSONEncoder().encode(balances),
-           let balancesJson = try? JSONSerialization.jsonObject(with: balancesData) {
-            payload["balances"] = balancesJson
-        } else {
-            payload["balances"] = []
+        var serializedBalances: [[String: Any]] = []
+        for b in balances {
+            var item: [String: Any] = [
+                "id": b.id,
+                "name": b.name,
+                "baseline": b.baseline,
+                "remaining": b.remaining,
+                "live": b.live,
+                "account": b.account
+            ]
+            if let r = b.runwayDays {
+                item["runwayDays"] = r
+            }
+            if let t = b.tokensPerDay {
+                item["tokensPerDay"] = t
+            }
+            if let iconB64 = renderIconBase64(for: b.id, codexBar: false) {
+                item["iconBase64"] = iconB64
+            }
+            serializedBalances.append(item)
         }
+        payload["balances"] = serializedBalances
 
         if let codexbar = readCodexBarSnapshot() {
             payload["codexbar"] = codexbar
