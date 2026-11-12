@@ -493,9 +493,119 @@ final class ICloudSync: ObservableObject {
         guard let dir = scriptableDocumentsDirectoryURL else { return }
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let scriptPath = dir.appendingPathComponent("API Bar.js")
-        if !FileManager.default.fileExists(atPath: scriptPath.path) {
+        let existing = try? String(contentsOf: scriptPath, encoding: .utf8)
+        if existing == nil || (existing != nil && !existing!.contains("codexbar")) {
             try? ScriptableWidgetTemplate.scriptSource.write(to: scriptPath, atomically: true, encoding: .utf8)
         }
+    }
+
+    func readCodexBarSnapshot() -> [String: Any]? {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let engineStateURL = home.appendingPathComponent("Library/Application Support/com.steipete.codexbar/sync/engine-state.json")
+        guard FileManager.default.fileExists(atPath: engineStateURL.path),
+              let data = try? Data(contentsOf: engineStateURL),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let fleet = json["fleetSnapshots"] as? [String: [String: Any]] else {
+            return nil
+        }
+
+        let codexbarDefaults = UserDefaults(suiteName: "com.steipete.codexbar")
+        let selectedProvider = codexbarDefaults?.string(forKey: "selectedMenuProvider") ?? "antigravity"
+        let showUsed = codexbarDefaults?.bool(forKey: "usageBarsShowUsed") ?? false
+
+        var candidate: [String: Any]? = nil
+        var candidateFetched: Double = 0
+
+        for (_, snap) in fleet {
+            guard let provider = snap["provider"] as? String else { continue }
+            let fetched = snap["fetchedAt"] as? Double ?? 0
+            if provider.lowercased() == selectedProvider.lowercased() {
+                if fetched >= candidateFetched {
+                    candidate = snap
+                    candidateFetched = fetched
+                }
+            }
+        }
+
+        if candidate == nil {
+            for (_, snap) in fleet {
+                let fetched = snap["fetchedAt"] as? Double ?? 0
+                if fetched >= candidateFetched {
+                    candidate = snap
+                    candidateFetched = fetched
+                }
+            }
+        }
+
+        guard let snap = candidate else { return nil }
+
+        let providerID = (snap["provider"] as? String ?? selectedProvider).lowercased()
+        let usage = snap["usage"] as? [String: Any] ?? [:]
+        let primary = usage["primary"] as? [String: Any]
+        let usedPercent = primary?["usedPercent"] as? Double ?? 0.0
+        let remainingPercent = max(0.0, min(100.0, 100.0 - usedPercent))
+        let displayPercent = Int(round(showUsed ? usedPercent : remainingPercent))
+        let resetDesc = primary?["resetDescription"] as? String
+
+        var subDetails = [String]()
+        if let extra = usage["extraRateWindows"] as? [[String: Any]] {
+            for w in extra {
+                let title = w["title"] as? String ?? ""
+                if let win = w["window"] as? [String: Any],
+                   let pct = win["usedPercent"] as? Double {
+                    let displayPct = Int(round(showUsed ? pct : max(0.0, 100.0 - pct)))
+                    subDetails.append("\(title): \(displayPct)%")
+                }
+            }
+        }
+
+        let (displayName, badge) = codexbarProviderMeta(for: providerID)
+
+        var dict: [String: Any] = [
+            "provider": providerID,
+            "name": displayName,
+            "badge": badge,
+            "usedPercent": (usedPercent * 10).rounded() / 10,
+            "remainingPercent": (remainingPercent * 10).rounded() / 10,
+            "displayPercent": displayPercent,
+            "displayMode": showUsed ? "used" : "remaining",
+            "updatedAt": candidateFetched
+        ]
+        if let resetDesc = resetDesc, !resetDesc.isEmpty {
+            dict["resetDescription"] = resetDesc
+        }
+        if !subDetails.isEmpty {
+            dict["subDetails"] = subDetails.joined(separator: " · ")
+        }
+        return dict
+    }
+
+    private func codexbarProviderMeta(for id: String) -> (String, String) {
+        switch id {
+        case "antigravity": return ("Antigravity", "🌌")
+        case "codex": return ("Codex", "✳️")
+        case "cursor": return ("Cursor", "⚡️")
+        case "copilot": return ("GitHub Copilot", "🐙")
+        case "mistral": return ("Mistral", "🌪️")
+        case "claude": return ("Claude", "🧡")
+        default: return (id.capitalized, "🤖")
+        }
+    }
+
+    func generateScriptablePayload(balances: [Balance]) -> Data? {
+        var payload: [String: Any] = [:]
+        if let balancesData = try? JSONEncoder().encode(balances),
+           let balancesJson = try? JSONSerialization.jsonObject(with: balancesData) {
+            payload["balances"] = balancesJson
+        } else {
+            payload["balances"] = []
+        }
+
+        if let codexbar = readCodexBarSnapshot() {
+            payload["codexbar"] = codexbar
+        }
+
+        return try? JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted, .sortedKeys])
     }
 
     func setOmpCredentialsSyncEnabled(_ enabled: Bool) {
@@ -1089,9 +1199,11 @@ final class ICloudSync: ObservableObject {
                 }
                 if isScriptableSyncEnabled, let scriptableURL = scriptableSnapshotURL {
                     installScriptableTemplateIfNeeded()
-                    let existingScriptable = try? Data(contentsOf: scriptableURL)
-                    if existingScriptable != data {
-                        try? data.write(to: scriptableURL, options: .atomic)
+                    if let scriptableData = generateScriptablePayload(balances: app.balances) {
+                        let existingScriptable = try? Data(contentsOf: scriptableURL)
+                        if existingScriptable != scriptableData {
+                            try? scriptableData.write(to: scriptableURL, options: .atomic)
+                        }
                     }
                 }
             }
