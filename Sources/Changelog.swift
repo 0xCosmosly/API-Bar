@@ -162,6 +162,49 @@ public final class ChangelogManager: ObservableObject {
     public static func builtInEntries() -> [ChangelogEntry] {
         return [
             ChangelogEntry(
+                version: "0.5.6",
+                releaseDate: "November 11, 2026",
+                title: "API Bar 0.5.6 — Scriptable iOS Widget Sync, CodexBar Live Limits & System Light/Dark Mode",
+                summary: "Introduces full Scriptable iOS widget sync with live menu bar mirroring, real-time CodexBar active usage tracking, iOS system Light/Dark appearance adaptation, monochrome vector menu bar icons, and unified value formatting.",
+                highlights: [
+                    "Scriptable iOS widget: live bidirectional iCloud sync mirroring visible menu bar balances directly to your iPhone Home Screen",
+                    "CodexBar real-time limits: mirrors active Antigravity session and weekly limit gauges with refresh countdowns",
+                    "Strict menu bar mirroring: automatically filters the widget to match currently visible items in the macOS menu bar",
+                    "Dynamic iOS appearance: automatically adapts color themes to iOS Light and Dark mode",
+                    "Vector brand icons: extracted high-resolution monochrome menu bar icons for all providers and models",
+                    "Unified value formatting: cleanly styled as $x / x% left with matched typography",
+                    "Consolidated settings UI: checkmark toggles and automated template setup for Scriptable and agent sync"
+                ],
+                notes: """
+## API Bar 0.5.6
+
+This release introduces comprehensive iPhone Home Screen widget support through Scriptable, connects real-time CodexBar quota tracking, adapts dynamically to iOS system appearance, and polishes menu bar mirroring.
+
+---
+
+### ✨ What's New in 0.5.6
+
+#### 1. 📱 Scriptable iOS Widget Sync via iCloud
+• Mirror your active API Bar balances directly to iOS Home Screen widgets (Small, Medium, and Large).
+• Dual-container synchronization ensures updates are delivered reliably across iCloud Drive and the Scriptable app container.
+• Automatic one-click template installation from Settings with clear step-by-step instructions.
+
+#### 2. 🌌 CodexBar Live Limits & Countdown Timers
+• Real-time integration with CodexBar snapshots: display your active provider session and weekly quota limits side-by-side.
+• Includes short reset countdown descriptions (e.g. `Resets in 1d 22h`) directly in the widget card.
+
+#### 3. 🌓 Dynamic iOS Light and Dark Mode
+• Full system appearance awareness: cards, typography, borders, and progress bar tracks automatically transition between light and dark themes.
+
+#### 4. 🎨 Exact Menu Bar Vector Icons & Unified Typography
+• Embedded high-resolution monochrome vector marks matching your macOS menu bar icon style.
+• Clean `$x / x% left` value formatting with matched bold typography across all widget sizes.
+
+#### 5. 🎯 Strict Menu Bar Mirroring
+• The widget strictly reflects only what is currently active and visible in your macOS menu bar, hiding disabled or inactive providers.
+"""
+            ),
+            ChangelogEntry(
                 version: "0.5.5",
                 releaseDate: "November 10, 2026",
                 title: "API Bar 0.5.5 — Pure Cookie Auth for InferHub, Multi-Device Sync Hardening & Baseline Protection",
