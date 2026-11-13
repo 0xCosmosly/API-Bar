@@ -627,23 +627,10 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
                     balances[i].baseline = 0
                     changed = true
                 }
-                // Repair Heimdallm baseline if corrupted:
-                // When the user topped up $5 on an existing balance of $0.78833452416 (total 5.78833452416),
-                // older builds corrupted the baseline by reverting it to 10.0 (lifetime deposits),
-                // 5.6758 (transient balance), 5.0 (when balance crossed below 5.0),
-                // or 9.20 (when a micro-adjustment of $0.02 spurred a phantom $5 top-up).
-                // Restore the static total (amount reloaded + previous amount left = 5.78833452416).
-                if balances[i].id == "heimdallm" {
-                    if (balances[i].baseline <= 5.0 || balances[i].baseline == 10.0 ||
-                        abs(balances[i].baseline - 5.67581185256) < 0.001 ||
-                        abs(balances[i].baseline - 9.20101205556) < 0.01),
-                       balances[i].baseline != 5.78833452416,
-                       balances[i].remaining > 0, balances[i].remaining <= 5.78833452416 {
-                        balances[i].baseline = 5.78833452416
-                        changed = true
-                    }
-                }
-                // Heimdallm ships paused; if an earlier update added it enabled without credentials, pause it.
+                // Heimdallm baselines are no longer repaired with hardcoded
+                // cycle totals here: the server-derived cycle reference now
+                // heals a stale baseline on the next refresh, and a hardcoded
+                // value would pin a previous cycle's total over a new top-up.
                 if balances[i].id == "heimdallm", !hasStoredCredential("heimdallm"), balances[i].account.isEmpty, balances[i].baseline == 0, balances[i].disabled == nil {
                     balances[i].disabled = true
                     changed = true
@@ -1194,22 +1181,37 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
             return
         }
         if r.provider == "heimdallm" {
-            let delta = r.remaining - oldRemaining
-            if delta >= 3.0 && oldRemaining > 0 {
-                let paidAmount = PaymentReference.inferTier(for: delta)
-                balances[i].baseline = max(oldRemaining + paidAmount, r.remaining)
+            // The server-derived cycle total (newest deposit + unspent carryover)
+            // is authoritative: it both raises the baseline after a top-up and
+            // heals a stale baseline left over from a previous cycle. Remember it
+            // so the gauge stays correct after the ledger window scrolls past the
+            // deposit (the credits endpoint returns only the newest 50 entries).
+            if let cycle = r.reference, cycle > 0 {
+                balances[i].baseline = max(cycle, r.remaining)
+                balances[i].cycleBaseline = cycle
+            } else if let remembered = balances[i].cycleBaseline, remembered > 0 {
+                balances[i].baseline = max(remembered, r.remaining)
             } else if balances[i].baseline <= 0 {
                 balances[i].baseline = max(PaymentReference.inferTier(for: r.remaining), r.remaining)
-            } else if r.remaining > balances[i].baseline {
-                let excess = r.remaining - balances[i].baseline
-                if excess >= 3.0 {
-                    let paidAmount = PaymentReference.inferTier(for: excess)
-                    balances[i].baseline = max(balances[i].baseline + paidAmount, r.remaining)
+            } else {
+                // No ledger-backed reference and no remembered cycle: preserve
+                // the in-progress baseline across spend-downs and ignore
+                // micro-adjustments/hold releases.
+                let delta = r.remaining - oldRemaining
+                if delta >= 3.0 && oldRemaining > 0 {
+                    let paidAmount = PaymentReference.inferTier(for: delta)
+                    balances[i].baseline = max(oldRemaining + paidAmount, r.remaining)
+                } else if r.remaining > balances[i].baseline {
+                    let excess = r.remaining - balances[i].baseline
+                    if excess >= 3.0 {
+                        let paidAmount = PaymentReference.inferTier(for: excess)
+                        balances[i].baseline = max(balances[i].baseline + paidAmount, r.remaining)
+                    } else {
+                        balances[i].baseline = max(balances[i].baseline, r.remaining)
+                    }
                 } else {
                     balances[i].baseline = max(balances[i].baseline, r.remaining)
                 }
-            } else {
-                balances[i].baseline = max(balances[i].baseline, r.remaining)
             }
             setConnectionState(for: r.provider, to: .connected(detail: "Connected · refreshes every 5 min", lastChecked: Date()))
             if sortMode != .manual {

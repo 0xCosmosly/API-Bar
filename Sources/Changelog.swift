@@ -162,6 +162,39 @@ public final class ChangelogManager: ObservableObject {
     public static func builtInEntries() -> [ChangelogEntry] {
         return [
             ChangelogEntry(
+                version: "0.5.7",
+                releaseDate: "November 12, 2026",
+                title: "API Bar 0.5.7 — True Top-Up Cycle Baselines & Multi-Device Baseline Safety",
+                summary: "Derives Heimdallm's 100% baseline from the actual top-up cycle (newest deposit + unspent carryover) instead of lifetime deposits, remembers it across ledger windows, and stops stale devices from clobbering fresh baselines over iCloud.",
+                highlights: [
+                    "Server-derived cycle baselines: a $5 top-up on a $0.35 leftover now correctly reads 100% at $5.35, not the lifetime $15 deposited",
+                    "Cycle memory: the baseline survives the credits ledger scrolling past the deposit (50-entry window) and spends down correctly",
+                    "Stale-device protection: iCloud sync can no longer revert a freshly detected top-up to an older device's previous-cycle baseline",
+                    "Removed hardcoded baseline repair that pinned a previous cycle's total over new top-ups"
+                ],
+                notes: """
+## API Bar 0.5.7
+
+This release fixes Heimdallm baselines after a top-up and hardens multi-device baseline synchronization.
+
+---
+
+### ✨ What's New in 0.5.7
+
+#### 1. 💳 True Top-Up Cycle Baselines
+• The 100% reference is now the current cycle total: newest deposit plus whatever was left unspent before it.
+• Topping up $5 onto a $0.35 leftover now shows 100% at $5.35 — previously it stayed pinned to the old cycle's total (or lifetime deposits).
+• The cycle total is remembered on the balance, so the gauge stays correct after the ledger window moves past the deposit.
+
+#### 2. ☁️ Multi-Device Baseline Safety
+• A remote device's baseline snapshot is now advisory: a stale device can no longer overwrite a fresher local cycle baseline during iCloud pull.
+• The remembered cycle total syncs across devices, so every Mac converges on the same current cycle.
+
+#### 3. 🧹 Removed Hardcoded Repairs
+• The startup baseline repair that hardcoded one specific cycle total is gone; the server-derived cycle reference heals stale baselines generically.
+"""
+            ),
+            ChangelogEntry(
                 version: "0.5.6",
                 releaseDate: "November 11, 2026",
                 title: "API Bar 0.5.6 — Scriptable iOS Widget Sync, CodexBar Live Limits & System Light/Dark Mode",

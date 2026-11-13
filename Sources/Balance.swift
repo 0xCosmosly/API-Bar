@@ -24,6 +24,11 @@ struct Balance: Codable, Equatable {
     var dynamicAuthHeader: String?
     var tokensPerDay: Double? = nil
     var runwayDays: Int? = nil
+    /// The last server-derived top-up cycle total (newest deposit + unspent
+    /// carryover). Survives the ledger window scrolling past the deposit;
+    /// `baseline` alone cannot distinguish a stale previous cycle's total from
+    /// the current one.
+    var cycleBaseline: Double? = nil
     /// Optional so older `balances.json` files keep decoding. `true` is stored
     /// for a paused provider; `nil` means enabled.
     var disabled: Bool? = nil
@@ -36,7 +41,7 @@ struct Balance: Codable, Equatable {
         set { disabled = newValue ? nil : true }
     }
 
-    init(id: String, name: String, baseline: Double, remaining: Double, updated: Date, account: String, expires: String? = nil, live: Bool = false, dynamicEndpoint: String? = nil, dynamicJsonPath: String? = nil, dynamicCookieDomain: String? = nil, dynamicAuthHeader: String? = nil, tokensPerDay: Double? = nil, runwayDays: Int? = nil, disabled: Bool? = nil) {
+    init(id: String, name: String, baseline: Double, remaining: Double, updated: Date, account: String, expires: String? = nil, live: Bool = false, dynamicEndpoint: String? = nil, dynamicJsonPath: String? = nil, dynamicCookieDomain: String? = nil, dynamicAuthHeader: String? = nil, tokensPerDay: Double? = nil, runwayDays: Int? = nil, cycleBaseline: Double? = nil, disabled: Bool? = nil) {
         self.id = id; self.name = name; self.baseline = baseline; self.remaining = remaining
         self.updated = updated; self.account = account; self.expires = expires; self.live = live
         self.dynamicEndpoint = dynamicEndpoint; self.dynamicJsonPath = dynamicJsonPath
@@ -44,6 +49,7 @@ struct Balance: Codable, Equatable {
         self.dynamicAuthHeader = dynamicAuthHeader
         self.tokensPerDay = tokensPerDay
         self.runwayDays = runwayDays
+        self.cycleBaseline = cycleBaseline
         self.disabled = disabled
     }
     var percent: Double { baseline > 0 ? max(0, remaining / baseline * 100) : 0 }

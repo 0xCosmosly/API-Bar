@@ -37,7 +37,57 @@ struct HeimdallmProvider: BalanceProvider {
 
     // MARK: - Parsing
 
-    static func parseCredits(_ data: Data) throws -> (remaining: Double, baseline: Double, accountID: String) {
+    /// Derives the current top-up cycle's total (the true 100% reference) from
+    /// the credits ledger: the newest deposit plus whatever was left unspent
+    /// right before it. Equivalent to `available + debits since that deposit`,
+    /// which stays exact even though `totals.deposited` is a lifetime figure.
+    ///
+    /// Returns nil when the ledger cannot support the derivation: no deposit
+    /// entry in the returned window, or a truncated ledger whose debits do not
+    /// reconcile with the balance block (understating the cycle would silently
+    /// cap the gauge above 100%).
+    static func cycleTotal(balanceDict: [String: Any], entries: [[String: Any]]) -> Double? {
+        guard let newestDeposit = newestDepositEntry(entries),
+              let available = number(balanceDict["available"]) ?? number(balanceDict["spendable"]) else { return nil }
+        var spendSinceDeposit = 0.0
+        for entry in entries {
+            guard let amount = number(entry["amount"]), amount < 0,
+                  let created = entry["created_at"] as? String, created > newestDeposit.created_at else { continue }
+            spendSinceDeposit += -amount
+        }
+        let total = available + spendSinceDeposit
+        guard total.isFinite, total > 0, total >= available, total < 1_000_000_000 else { return nil }
+        // The ledger window is limited (50 entries). If debits after the newest
+        // deposit are incomplete, `total` understates the real cycle. Detect by
+        // reconciling with the authoritative balance block: available + debited
+        // must equal the lifetime deposited total. A mismatch means the window
+        // is truncated, so the derived cycle total cannot be trusted.
+        let debited = number(balanceDict["debited"])
+        let deposited = number(balanceDict["credited"])
+        if let debited, let deposited {
+            guard abs((available + debited) - deposited) < 0.01 else { return nil }
+        }
+        return total
+    }
+
+    private static func newestDepositEntry(_ entries: [[String: Any]]) -> (created_at: String, amount: Double)? {
+        var newest: (created_at: String, amount: Double)? = nil
+        for entry in entries {
+            guard (entry["kind"] as? String)?.lowercased() == "deposit",
+                  let created = entry["created_at"] as? String,
+                  let amount = number(entry["amount"]), amount > 0 else { continue }
+            if newest == nil || created > newest!.created_at {
+                newest = (created_at: created, amount: amount)
+            }
+        }
+        return newest
+    }
+
+    /// Parses the credits payload. `cycleBaseline` is the server-derived current
+    /// top-up cycle total (authoritative); `baseline` falls back to the legacy
+    /// lifetime-deposit derivation when the ledger cannot support the cycle
+    /// calculation, and must not be treated as authoritative.
+    static func parseCredits(_ data: Data) throws -> (remaining: Double, baseline: Double, cycleBaseline: Double?, accountID: String) {
         guard let root = try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed]) as? [String: Any] else {
             throw ConnectorError.message("Heimdallm returned a response that was not JSON. The previous balance was retained.")
         }
@@ -47,6 +97,7 @@ struct HeimdallmProvider: BalanceProvider {
 
         let balanceDict = (root["balance"] as? [String: Any]) ?? [:]
         let totalsDict = (root["totals"] as? [String: Any]) ?? [:]
+        let entries = root["entries"] as? [[String: Any]] ?? []
 
         guard let remaining = number(balanceDict["spendable"]) ?? number(balanceDict["available"]) ?? number(totalsDict["balance"]) else {
             throw ConnectorError.message("Heimdallm did not return a credit balance. The previous balance was retained.")
@@ -56,6 +107,20 @@ struct HeimdallmProvider: BalanceProvider {
             throw ConnectorError.message("Heimdallm returned an invalid balance. The previous balance was retained.")
         }
 
+        let cycle = cycleTotal(balanceDict: balanceDict, entries: entries)
+        let baseline: Double
+        if let cycle {
+            baseline = max(cycle, remaining)
+        } else {
+            baseline = fallbackBaseline(balanceDict: balanceDict, totalsDict: totalsDict, entries: entries, remaining: remaining)
+        }
+
+        let accountID = (root["account_id"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return (remaining: remaining, baseline: baseline, cycleBaseline: cycle, accountID: accountID)
+    }
+
+    /// Legacy derivation used only when the ledger cannot produce a cycle total.
+    private static func fallbackBaseline(balanceDict: [String: Any], totalsDict: [String: Any], entries: [[String: Any]], remaining: Double) -> Double {
         let credited = number(balanceDict["credited"]) ?? 0.0
         let deposited = number(totalsDict["deposited"]) ?? 0.0
         let rewards = number(totalsDict["referral_rewards"]) ?? 0.0
@@ -63,32 +128,26 @@ struct HeimdallmProvider: BalanceProvider {
         let totalCredited = max(credited, deposited + rewards + adjusted)
 
         var ledgerDeposits = 0.0
-        if let entries = root["entries"] as? [[String: Any]] {
-            for entry in entries {
-                let kind = (entry["kind"] as? String)?.lowercased()
-                if let kind, ["deposit", "credit", "referral_reward", "adjustment", "bonus"].contains(kind) {
-                    if let amt = number(entry["amount"]), amt > 0 {
-                        ledgerDeposits += amt
-                    }
+        for entry in entries {
+            let kind = (entry["kind"] as? String)?.lowercased()
+            if let kind, ["deposit", "credit", "referral_reward", "adjustment", "bonus"].contains(kind) {
+                if let amt = number(entry["amount"]), amt > 0 {
+                    ledgerDeposits += amt
                 }
             }
         }
 
         let spent = number(totalsDict["spent"]) ?? 0.0
         let totalFunds = totalCredited > 0 ? totalCredited : ledgerDeposits
-        let baseline: Double
         if totalFunds > 0 {
-            baseline = max(totalFunds, remaining)
+            return max(totalFunds, remaining)
         } else if spent > 0 {
-            baseline = max(remaining + spent, remaining)
+            return max(remaining + spent, remaining)
         } else if remaining > 0 {
-            baseline = PaymentReference.inferTier(for: remaining)
+            return PaymentReference.inferTier(for: remaining)
         } else {
-            baseline = 0.0
+            return 0.0
         }
-
-        let accountID = (root["account_id"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return (remaining: remaining, baseline: baseline, accountID: accountID)
     }
 
     static func parseAccount(_ data: Data) -> String? {
@@ -107,7 +166,7 @@ struct HeimdallmProvider: BalanceProvider {
     }
 
     static func parse(creditsData: Data, accountData: Data? = nil, url: String, account expectedAccount: String = "", tokensPerDay: Double? = nil, runwayDays: Int? = nil) throws -> Reading {
-        let (remaining, baseline, accountID) = try parseCredits(creditsData)
+        let (remaining, _, cycleBaseline, accountID) = try parseCredits(creditsData)
         var resolvedAccount = ""
         if let accountData {
             resolvedAccount = parseAccount(accountData) ?? ""
@@ -128,7 +187,10 @@ struct HeimdallmProvider: BalanceProvider {
             account: resolvedAccount,
             url: url,
             expires: nil,
-            reference: baseline,
+            // Only the server-derived cycle total is authoritative. The legacy
+            // lifetime-deposit fallback must never reset the gauge's 100% point,
+            // so it is not forwarded as a reference.
+            reference: cycleBaseline,
             tokensPerDay: tokensPerDay,
             runwayDays: runwayDays
         )
@@ -232,7 +294,7 @@ struct HeimdallmProvider: BalanceProvider {
         }
 
         var pacing: (tokensPerDay: Double, runwayDays: Int)? = nil
-        if let (remaining, _, _) = try? Self.parseCredits(creditsData),
+        if let (remaining, _, _, _) = try? Self.parseCredits(creditsData),
            let analyticsURL = URL(string: "https://\(host)/api/frontend/v1/generations/analytics"),
            let (analyticsData, analyticsResp) = try? await http.request(url: analyticsURL),
            analyticsResp.statusCode == 200 {

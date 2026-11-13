@@ -958,16 +958,39 @@ final class ICloudSync: ObservableObject {
                     // An earlier build or an un-updated client spuriously inflated Heimdallm's
                     // baseline to $10.00+ on credit hold releases. If a remote sync pushes an
                     // inflated baseline while remaining is <= $5.00, reject it.
-                    // Also reject remote downgrading our static top-up baseline to the $5.00 tier.
                     let implausibleHeimdallm = remote.id == "heimdallm" && (
-                        (remote.baseline >= 10.0 && remote.remaining <= 5.0) ||
-                        (current[localIdx].baseline > 5.0 && remote.baseline <= 5.0)
+                        remote.baseline >= 10.0 && remote.remaining <= 5.0
                     )
                     let implausibleBaseline = implausibleUnaligned || implausibleHeimdallm
+                    // The remembered cycle total travels with the balance. A
+                    // remote cycleBaseline means the remote device saw the
+                    // deposit while it was still inside the ledger window —
+                    // adopt it regardless of snapshot age, but never let a
+                    // remote without one erase a local memory.
+                    if let remoteCycle = remote.cycleBaseline, remoteCycle > 0,
+                       current[localIdx].cycleBaseline != remoteCycle {
+                        current[localIdx].cycleBaseline = remoteCycle
+                        current[localIdx].baseline = max(remoteCycle, current[localIdx].remaining)
+                        didChangeLocally = true
+                    }
+                    // Baselines encode the current top-up cycle. A remote copy is
+                    // only advisory: adopt it when local is uninitialised, or when
+                    // the remote snapshot is strictly newer AND still consistent
+                    // with the local snapshot it would replace (same cycle). A
+                    // newer remote balance alone must never rewrite the baseline,
+                    // and an older or same-cycle remote must never clobber a
+                    // fresher local baseline — that is exactly how a stale device
+                    // pinned a previous cycle's total over a fresh top-up.
                     if remote.baseline > 0 && remote.baseline != current[localIdx].baseline && !implausibleBaseline {
-                        // Remote baseline can upgrade local baseline if higher or if local is uninitialised;
-                        // remote sync must never downgrade an active spend-down cycle baseline.
-                        if remote.baseline > current[localIdx].baseline || current[localIdx].baseline == 0 {
+                        let localUninitialised = current[localIdx].baseline <= 0
+                        let remoteNewer = remote.updated > current[localIdx].updated
+                        // Same-cycle consistency: the remote baseline must still
+                        // cover the local remaining (a previous cycle's smaller
+                        // total would not) and represent a real top-up change
+                        // (at least a minimum deposit delta), not float noise.
+                        let sameCycle = remote.baseline >= current[localIdx].remaining
+                            && abs(remote.baseline - current[localIdx].baseline) >= 3.0
+                        if localUninitialised || (remoteNewer && sameCycle) {
                             current[localIdx].baseline = max(remote.baseline, current[localIdx].remaining)
                             didChangeLocally = true
                         }

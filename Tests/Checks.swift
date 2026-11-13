@@ -301,7 +301,8 @@ import AppKit
         // ChangelogManager checks: current version, previous versions, and selection
         let changelog = ChangelogManager.shared
         precondition(changelog.entries.count >= 7, "Changelog must include at least 7 built-in versions")
-        guard let entry056 = changelog.entries.first(where: { $0.version == "0.5.6" }),
+        guard let entry057 = changelog.entries.first(where: { $0.version == "0.5.7" }),
+              let entry056 = changelog.entries.first(where: { $0.version == "0.5.6" }),
               let entry055 = changelog.entries.first(where: { $0.version == "0.5.5" }),
               let entry054 = changelog.entries.first(where: { $0.version == "0.5.4" }),
               let entry053 = changelog.entries.first(where: { $0.version == "0.5.3" }),
@@ -311,27 +312,30 @@ import AppKit
               let entry049 = changelog.entries.first(where: { $0.version == "0.4.9" }),
               let entry048 = changelog.entries.first(where: { $0.version == "0.4.8" }),
               let entry047 = changelog.entries.first(where: { $0.version == "0.4.7" }) else {
-            preconditionFailure("Built-in changelog missing 0.5.6, 0.5.5, 0.5.4, 0.5.3, 0.5.2, 0.5.1, 0.5.0, 0.4.9, 0.4.8, or 0.4.7")
+            preconditionFailure("Built-in changelog missing 0.5.7, 0.5.6, 0.5.5, 0.5.4, 0.5.3, 0.5.2, 0.5.1, 0.5.0, 0.4.9, 0.4.8, or 0.4.7")
         }
-        precondition(entry056.isCurrent(currentVersion: "0.5.6") == true)
-        precondition(entry056.isPrevious(currentVersion: "0.5.6") == false)
-        precondition(entry056.isNewer(currentVersion: "0.5.5") == true)
-        precondition(entry055.isCurrent(currentVersion: "0.5.6") == false)
-        precondition(entry055.isPrevious(currentVersion: "0.5.6") == true)
-        precondition(entry054.isCurrent(currentVersion: "0.5.6") == false)
-        precondition(entry054.isPrevious(currentVersion: "0.5.6") == true)
-        precondition(entry053.isCurrent(currentVersion: "0.5.6") == false)
-        precondition(entry053.isPrevious(currentVersion: "0.5.6") == true)
-        precondition(entry052.isCurrent(currentVersion: "0.5.6") == false)
-        precondition(entry052.isPrevious(currentVersion: "0.5.6") == true)
-        precondition(entry051.isCurrent(currentVersion: "0.5.6") == false)
-        precondition(entry051.isPrevious(currentVersion: "0.5.6") == true)
-        precondition(entry050.isCurrent(currentVersion: "0.5.6") == false)
-        precondition(entry050.isPrevious(currentVersion: "0.5.6") == true)
-        precondition(entry049.isPrevious(currentVersion: "0.5.6") == true)
-        precondition(entry048.isPrevious(currentVersion: "0.5.6") == true)
-        precondition(entry047.isPrevious(currentVersion: "0.5.6") == true)
-        precondition(!entry056.highlights.isEmpty, "0.5.6 highlights must not be empty")
+        precondition(entry057.isCurrent(currentVersion: "0.5.7") == true)
+        precondition(entry057.isPrevious(currentVersion: "0.5.7") == false)
+        precondition(entry057.isNewer(currentVersion: "0.5.6") == true)
+        precondition(entry056.isCurrent(currentVersion: "0.5.7") == false)
+        precondition(entry056.isPrevious(currentVersion: "0.5.7") == true)
+        precondition(entry055.isCurrent(currentVersion: "0.5.7") == false)
+        precondition(entry055.isPrevious(currentVersion: "0.5.7") == true)
+        precondition(entry054.isCurrent(currentVersion: "0.5.7") == false)
+        precondition(entry054.isPrevious(currentVersion: "0.5.7") == true)
+        precondition(entry053.isCurrent(currentVersion: "0.5.7") == false)
+        precondition(entry053.isPrevious(currentVersion: "0.5.7") == true)
+        precondition(entry052.isCurrent(currentVersion: "0.5.7") == false)
+        precondition(entry052.isPrevious(currentVersion: "0.5.7") == true)
+        precondition(entry051.isCurrent(currentVersion: "0.5.7") == false)
+        precondition(entry051.isPrevious(currentVersion: "0.5.7") == true)
+        precondition(entry050.isCurrent(currentVersion: "0.5.7") == false)
+        precondition(entry050.isPrevious(currentVersion: "0.5.7") == true)
+        precondition(entry049.isPrevious(currentVersion: "0.5.7") == true)
+        precondition(entry048.isPrevious(currentVersion: "0.5.7") == true)
+        precondition(entry047.isPrevious(currentVersion: "0.5.7") == true)
+        precondition(!entry057.highlights.isEmpty, "0.5.7 highlights must not be empty")
+        precondition(!entry057.notes.isEmpty, "0.5.7 notes must not be empty")
         precondition(!entry056.notes.isEmpty, "0.5.6 notes must not be empty")
         precondition(!entry055.highlights.isEmpty, "0.5.5 highlights must not be empty")
         precondition(!entry055.notes.isEmpty, "0.5.5 notes must not be empty")
@@ -345,6 +349,7 @@ import AppKit
         precondition(!entry051.notes.isEmpty, "0.5.1 notes must not be empty")
         precondition(!entry050.highlights.isEmpty, "0.5.0 highlights must not be empty")
         // Release notes must not leak local machine details.
+        precondition(!entry057.notes.contains("/Users/"), "Changelog must not contain personal paths")
         precondition(!entry056.notes.contains("/Users/"), "Changelog must not contain personal paths")
         precondition(!entry055.notes.contains("/Users/"), "Changelog must not contain personal paths")
         precondition(!entry054.notes.contains("/Users/"), "Changelog must not contain personal paths")
@@ -353,14 +358,14 @@ import AppKit
         precondition(!entry051.notes.contains("/Users/"), "Changelog must not contain personal paths")
         // The shipped bundle version and the changelog must agree.
         if let plistVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String {
-            precondition(plistVersion == "0.5.6", "Info.plist version is \(plistVersion), expected 0.5.6")
+            precondition(plistVersion == "0.5.7", "Info.plist version is \(plistVersion), expected 0.5.7")
         }
 
         changelog.select(version: "0.5.4")
         precondition(changelog.selectedVersion == "0.5.4")
         precondition(changelog.selectedEntry?.version == "0.5.4")
-        changelog.select(version: "0.5.6")
-        precondition(changelog.selectedVersion == "0.5.6")
+        changelog.select(version: "0.5.7")
+        precondition(changelog.selectedVersion == "0.5.7")
 
         print("Passed: ChangelogManager version history, current/previous tagging, and selection.")
         print("Passed: AppUpdater semver parsing, newer version detection, and release tagging.")
@@ -733,14 +738,31 @@ final class MockHeimdallmProtocol: URLProtocol, @unchecked Sendable {
 }
 
 func heimdallmChecks() async throws {
-    let creditsBody = #"{"account_id":"acc_heimdall_123","balance":{"credited":"25.00","debited":"12.50","available":"12.50","held":"0","spendable":"12.50"},"totals":{"deposited":"25.00","refunded":"0","referral_rewards":"0","adjusted":"0","spent":"12.50","balance":"12.50"}}"#
+    let creditsBody = #"{"account_id":"acc_heimdall_123","balance":{"credited":"25.00","debited":"12.50","available":"12.50","held":"0","spendable":"12.50"},"totals":{"deposited":"25.00","refunded":"0","referral_rewards":"0","adjusted":"0","spent":"12.50","balance":"12.50"},"entries":[{"kind":"deposit","amount":"25.00","created_at":"2026-11-01T00:00:00.000Z"},{"kind":"usage","amount":"-12.50","created_at":"2026-11-05T00:00:00.000Z"}]}"#
     let accountBody = #"{"user":{"id":"usr_heimdall_1","email":"user@heimdallm.com","display_name":"HeimdallUser"},"account":{"id":"acc_heimdall_123","name":"Personal","credits":{"available":"12.50","spendable":"12.50"}}}"#
 
-    // Primary parsing: spendable balance, deposited reference, user identity
-    let (remaining, baseline, accountID) = try HeimdallmProvider.parseCredits(Data(creditsBody.utf8))
+    // Primary parsing: spendable balance, ledger cycle reference, user identity
+    let (remaining, baseline, cycleBaseline, accountID) = try HeimdallmProvider.parseCredits(Data(creditsBody.utf8))
     precondition(abs(remaining - 12.50) < 0.000001, "Heimdallm remaining must be 12.50, got \(remaining)")
     precondition(abs(baseline - 25.00) < 0.000001, "Heimdallm baseline must be 25.00, got \(baseline)")
+    precondition(abs((cycleBaseline ?? 0) - 25.00) < 0.000001, "Heimdallm cycle baseline must be 25.00, got \(cycleBaseline ?? 0)")
     precondition(accountID == "acc_heimdall_123")
+
+    // Cycle total after a top-up: $5 deposited onto a $0.35377301126 leftover
+    // (verbatim real payload shape). The cycle reference must be 5.35377301126
+    // (new deposit + carryover), NOT the lifetime deposited total ($15).
+    let topUpCredits = #"{"account_id":"acc_topup","balance":{"credited":"15","debited":"9.72462845634","available":"5.27537154366","held":"0.03451168","spendable":"5.24085986366"},"totals":{"deposited":"15","refunded":"0","referral_rewards":"0","adjusted":"0","spent":"9.72462845634","balance":"5.27537154366"},"entries":[{"kind":"deposit","amount":"5","description":"Card deposit: 5 USD","created_at":"2026-11-13T03:53:55.335Z"},{"kind":"usage","amount":"-0.0784014676","created_at":"2026-11-13T04:25:07.290Z"}]}"#
+    let topUpReading = try HeimdallmProvider.parse(creditsData: Data(topUpCredits.utf8), url: "https://heimdallm.com/api/frontend/v1/credits")
+    precondition(abs(topUpReading.remaining - 5.24085986366) < 0.000001)
+    precondition(abs((topUpReading.reference ?? 0) - 5.35377301126) < 0.000001, "Cycle baseline after $5 top-up must be 5.35377301126, got \(topUpReading.reference ?? 0)")
+
+    // A truncated ledger that cannot reconcile with the balance block must not
+    // produce an authoritative reference (it would understate the cycle).
+    let truncatedCredits = #"{"account_id":"acc_trunc","balance":{"credited":"15","debited":"9.64622698874","available":"5.35377301126","held":"0","spendable":"5.32024458926"},"totals":{"deposited":"15","refunded":"0","referral_rewards":"0","adjusted":"0","spent":"9.64622698874","balance":"5.35377301126"},"entries":[{"kind":"usage","amount":"-0.01","created_at":"2026-11-13T04:00:00.000Z"}]}"#
+    let (tRemaining, tBaseline, tCycle, _) = try HeimdallmProvider.parseCredits(Data(truncatedCredits.utf8))
+    precondition(abs(tRemaining - 5.32024458926) < 0.000001)
+    precondition(tCycle == nil, "Truncated ledger must not yield a cycle baseline")
+    precondition(tBaseline > 0, "Fallback baseline must still be derived")
 
     let resolvedAccount = HeimdallmProvider.parseAccount(Data(accountBody.utf8))
     precondition(resolvedAccount == "user@heimdallm.com")
@@ -760,13 +782,13 @@ func heimdallmChecks() async throws {
     let spentOnlyCredits = #"{"account_id":"acc_2","balance":{"spendable":"10.00","available":"10.00"},"totals":{"deposited":"0","spent":"15.00"}}"#
     let spentReading = try HeimdallmProvider.parse(creditsData: Data(spentOnlyCredits.utf8), url: "https://heimdallm.com/api/frontend/v1/credits")
     precondition(abs(spentReading.remaining - 10.00) < 0.000001)
-    precondition(abs((spentReading.reference ?? 0) - 25.00) < 0.000001)
+    precondition(spentReading.reference == nil, "Lifetime fallback must not be an authoritative reference")
 
     // Baseline calculation when deposited and spent are 0: tier inference
     let zeroTotalCredits = #"{"account_id":"acc_3","balance":{"spendable":"10.00","available":"10.00"},"totals":{"deposited":"0","spent":"0"}}"#
     let tierReading = try HeimdallmProvider.parse(creditsData: Data(zeroTotalCredits.utf8), url: "https://heimdallm.com/api/frontend/v1/credits")
     precondition(abs(tierReading.remaining - 10.00) < 0.000001)
-    precondition((tierReading.reference ?? 0) >= 10.00)
+    precondition(tierReading.reference == nil, "Tier-inference fallback must not be an authoritative reference")
 
     // Zero balance is valid
     let zeroCredits = #"{"account_id":"acc_4","balance":{"spendable":"0","available":"0"},"totals":{"deposited":"0","spent":"0"}}"#
@@ -777,16 +799,16 @@ func heimdallmChecks() async throws {
     let creditedOnly = #"{"account_id":"acc_5","balance":{"credited":"5.00","spendable":"4.96"},"totals":{"deposited":"0","spent":"0.04"}}"#
     let creditedReading = try HeimdallmProvider.parse(creditsData: Data(creditedOnly.utf8), url: "https://heimdallm.com/api/frontend/v1/credits")
     precondition(abs(creditedReading.remaining - 4.96) < 0.000001)
-    precondition(abs((creditedReading.reference ?? 0) - 5.00) < 0.000001)
+    precondition(creditedReading.reference == nil, "Credited fallback must not be an authoritative reference")
 
     let entriesDeposit = #"{"account_id":"acc_6","balance":{"spendable":"4.50"},"totals":{"deposited":"0","spent":"0.50"},"entries":[{"kind":"deposit","amount":"5.00"}]}"#
     let entriesReading = try HeimdallmProvider.parse(creditsData: Data(entriesDeposit.utf8), url: "https://heimdallm.com/api/frontend/v1/credits")
-    precondition(abs((entriesReading.reference ?? 0) - 5.00) < 0.000001)
+    precondition(entriesReading.reference == nil, "Deposit without a timestamp cannot anchor a cycle")
 
     // Authoritative totals take precedence over extraneous ledger rows
     let entriesWithAdjustments = #"{"account_id":"acc_7","balance":{"credited":"5.00","spendable":"4.92"},"totals":{"deposited":"5.00","spent":"0.08"},"entries":[{"kind":"deposit","amount":"5.00"},{"kind":"adjustment","amount":"5.00"}]}"#
     let adjReading = try HeimdallmProvider.parse(creditsData: Data(entriesWithAdjustments.utf8), url: "https://heimdallm.com/api/frontend/v1/credits")
-    precondition(abs((adjReading.reference ?? 0) - 5.00) < 0.000001, "Extraneous ledger adjustment must not inflate authoritative baseline")
+    precondition(adjReading.reference == nil, "Extraneous ledger adjustment must not become an authoritative baseline")
 
     // Hostile URL is rejected by ReadingValidation
     let hostile = Reading(provider: "heimdallm", remaining: 10, currency: "USD", account: "", url: "https://evil.example/api/frontend/v1/credits", expires: nil)
@@ -822,9 +844,9 @@ func heimdallmChecks() async throws {
     let http = SessionHTTP(provider: "heimdallm", cookies: [cookie], configuration: config)
     let fetched = try await HeimdallmProvider(http: http, account: "").fetchBalance()
     precondition(abs(fetched.remaining - 12.50) < 0.000001)
+    precondition(abs((fetched.reference ?? 0) - 25.00) < 0.000001, "Fetched reading must carry the cycle reference")
     precondition(fetched.account == "user@heimdallm.com")
     precondition(fetched.tokensPerDay == 1500000.0)
-    precondition(fetched.runwayDays == 16)
     let heimdallmBalWithPacing = Balance(id: "heimdallm", name: "Heimdallm", baseline: 25.0, remaining: 12.50, updated: Date(), account: "user@heimdallm.com", tokensPerDay: fetched.tokensPerDay, runwayDays: fetched.runwayDays)
     precondition(heimdallmBalWithPacing.pacingMessage == "1.5M tokens per day - Runs out in 16 days")
     precondition(MockHeimdallmProtocol.seen.count == 3)
@@ -1109,28 +1131,28 @@ func updaterChecks() async throws {
     if let plistData = try? Data(contentsOf: URL(fileURLWithPath: "Resources/Info.plist")),
        let plist = try? PropertyListSerialization.propertyList(from: plistData, format: nil) as? [String: Any],
        let shipped = plist["CFBundleShortVersionString"] as? String {
-        precondition(shipped == "0.5.6", "Info.plist must ship 0.5.6, got \(shipped)")
-        precondition(plist["CFBundleVersion"] as? String == "56", "CFBundleVersion must be 56")
+        precondition(shipped == "0.5.7", "Info.plist must ship 0.5.7, got \(shipped)")
+        precondition(plist["CFBundleVersion"] as? String == "57", "CFBundleVersion must be 57")
     } else {
         preconditionFailure("Could not read Resources/Info.plist")
     }
-    precondition(localVersion == "0.5.6", "Expected the updater to report 0.5.6, got \(localVersion)")
+    precondition(localVersion == "0.5.7", "Expected the updater to report 0.5.7, got \(localVersion)")
 
     // A newer release must be detected, with the zip asset selected.
-    setenv("APIBAR_UPDATER_ENDPOINT", try serve(releaseJSON(tag: "v0.5.7", name: "API Bar 0.5.7", zipSize: 2_200_000), at: "newer"), 1)
+    setenv("APIBAR_UPDATER_ENDPOINT", try serve(releaseJSON(tag: "v0.5.8", name: "API Bar 0.5.8", zipSize: 2_200_000), at: "newer"), 1)
     let newer = try await updater.fetchReleaseInfo()
-    precondition(newer.version == "0.5.7", "Tag v0.5.7 must parse to 0.5.7, got \(newer.version)")
-    precondition(AppUpdater.isVersion(newer.version, newerThan: localVersion), "0.5.7 must be newer than \(localVersion)")
+    precondition(newer.version == "0.5.8", "Tag v0.5.8 must parse to 0.5.8, got \(newer.version)")
+    precondition(AppUpdater.isVersion(newer.version, newerThan: localVersion), "0.5.8 must be newer than \(localVersion)")
     precondition(newer.downloadURL?.lastPathComponent == "APIBar-app.zip", "Updater must select the zip asset, got \(newer.downloadURL?.absoluteString ?? "nil")")
-    precondition(newer.notes.contains("notes for v0.5.7"))
+    precondition(newer.notes.contains("notes for v0.5.8"))
     await updater.checkForUpdates(manual: false)
-    precondition(updater.updateAvailable, "Newer version 0.5.7 must set updateAvailable")
-    precondition(updater.isSemverNewerAvailable, "0.5.7 must report isSemverNewerAvailable")
+    precondition(updater.updateAvailable, "Newer version 0.5.8 must set updateAvailable")
+    precondition(updater.isSemverNewerAvailable, "0.5.8 must report isSemverNewerAvailable")
 
     // The same version must not offer an update, even though an asset exists.
-    setenv("APIBAR_UPDATER_ENDPOINT", try serve(releaseJSON(tag: "v0.5.6", name: "API Bar 0.5.6", zipSize: 2_100_000), at: "same"), 1)
+    setenv("APIBAR_UPDATER_ENDPOINT", try serve(releaseJSON(tag: "v0.5.7", name: "API Bar 0.5.7", zipSize: 2_100_000), at: "same"), 1)
     let same = try await updater.fetchReleaseInfo()
-    precondition(same.version == "0.5.6")
+    precondition(same.version == "0.5.7")
     precondition(!AppUpdater.isVersion(same.version, newerThan: localVersion), "Same version must not be treated as an update")
     await updater.checkForUpdates(manual: false)
     precondition(!updater.updateAvailable, "Same version must not set updateAvailable")
@@ -1138,7 +1160,7 @@ func updaterChecks() async throws {
     precondition(updater.statusMessage.contains("Up to date"), "Expected Up to date status, got \(updater.statusMessage)")
 
     // An older release must never trigger a downgrade.
-    setenv("APIBAR_UPDATER_ENDPOINT", try serve(releaseJSON(tag: "v0.5.5", name: "API Bar 0.5.5", zipSize: 2_073_811), at: "older"), 1)
+    setenv("APIBAR_UPDATER_ENDPOINT", try serve(releaseJSON(tag: "v0.5.6", name: "API Bar 0.5.6", zipSize: 2_073_811), at: "older"), 1)
     let older = try await updater.fetchReleaseInfo()
     precondition(!AppUpdater.isVersion(older.version, newerThan: localVersion), "Older release must not be an update")
 

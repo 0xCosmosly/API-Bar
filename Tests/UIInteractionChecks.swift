@@ -426,33 +426,58 @@ import SwiftUI
         precondition(autoInferHubDraft.jsonPath == "balance.amount_usdc")
         precondition(autoInferHubURL == "https://inferhub.dev/dashboard")
 
-        // Test Heimdallm top-up baseline calculation and anti-reversion:
-        // Adding $5 to an existing balance of $0.788 sets baseline to $5.788 (5 + previous balance)
-        let hmTestBal = Balance(id: "heimdallm", name: "Heimdallm", baseline: 5.0, remaining: 0.788, updated: Date(), account: "user@heimdallm.com", live: true)
+        // Test Heimdallm cycle-reference baseline handling:
+        // A top-up with a server-derived cycle reference (new deposit + carryover)
+        // sets the baseline exactly, even when a stale higher baseline exists.
+        let hmTestBal = Balance(id: "heimdallm", name: "Heimdallm", baseline: 5.788, remaining: 0.354, updated: Date(), account: "user@heimdallm.com", live: true)
         let origBalances = app.balances
         app.balances = [hmTestBal]
-        let hmTopUpReading = Reading(provider: "heimdallm", remaining: 5.788, currency: "USD", account: "user@heimdallm.com", url: "https://heimdallm.com/api/frontend/v1/credits", expires: nil, reference: 10.0)
+        // Real-world shape: $5 deposited onto $0.35377301126 leftover; server
+        // reports remaining 5.35377301126 and cycle reference 5.35377301126.
+        // The stale 5.788 baseline (previous cycle) must be healed down to it.
+        let hmTopUpReading = Reading(provider: "heimdallm", remaining: 5.35377301126, currency: "USD", account: "user@heimdallm.com", url: "https://heimdallm.com/api/frontend/v1/credits", expires: nil, reference: 5.35377301126)
         app.apply(hmTopUpReading)
-        precondition(abs(app.balances[0].baseline - 5.788) < 0.001, "Heimdallm baseline after $5 top-up must be 5 + previous balance (5.788), got \(app.balances[0].baseline)")
+        precondition(abs(app.balances[0].baseline - 5.35377301126) < 0.000001, "Heimdallm baseline must adopt the server cycle reference 5.35377301126, got \(app.balances[0].baseline)")
+        precondition(abs((app.balances[0].cycleBaseline ?? 0) - 5.35377301126) < 0.000001, "Heimdallm must remember the cycle total after the ledger window scrolls past the deposit")
         precondition(app.balances[0].percentageLabel == "100%", "Heimdallm must be 100% right after top-up, got \(app.balances[0].percentageLabel)")
 
-        // Subsequent refresh spending down to 5.50 must preserve 5.788 baseline, not revert to 10.0
-        let hmSpendReading = Reading(provider: "heimdallm", remaining: 5.50, currency: "USD", account: "user@heimdallm.com", url: "https://heimdallm.com/api/frontend/v1/credits", expires: nil, reference: 10.0)
+        // Spend-down refresh without a ledger-backed reference must preserve the
+        // cycle baseline (5.35377301126), never revert to lifetime deposits.
+        let hmSpendReading = Reading(provider: "heimdallm", remaining: 5.10, currency: "USD", account: "user@heimdallm.com", url: "https://heimdallm.com/api/frontend/v1/credits", expires: nil)
         app.apply(hmSpendReading)
-        precondition(abs(app.balances[0].baseline - 5.788) < 0.001, "Heimdallm baseline must stay at 5.788 during spend-down, got \(app.balances[0].baseline)")
-        precondition(app.balances[0].percentageLabel == "95%", "Heimdallm must show 95% remaining for 5.50/5.788, got \(app.balances[0].percentageLabel)")
+        precondition(abs(app.balances[0].baseline - 5.35377301126) < 0.000001, "Heimdallm baseline must stay at 5.35377301126 during spend-down, got \(app.balances[0].baseline)")
+        precondition(app.balances[0].percentageLabel == "95%", "Heimdallm must show 95% remaining for 5.10/5.35377301126, got \(app.balances[0].percentageLabel)")
 
-        // Subsequent spend-down below 5.0 (e.g. 4.20) must CONTINUE to preserve 5.788 baseline, never reset to 5.0
-        let hmSub5Reading = Reading(provider: "heimdallm", remaining: 4.20, currency: "USD", account: "user@heimdallm.com", url: "https://heimdallm.com/api/frontend/v1/credits", expires: nil, reference: 10.0)
+        // Spend-down below the deposit amount must continue preserving the cycle baseline.
+        let hmSub5Reading = Reading(provider: "heimdallm", remaining: 4.20, currency: "USD", account: "user@heimdallm.com", url: "https://heimdallm.com/api/frontend/v1/credits", expires: nil)
         app.apply(hmSub5Reading)
-        precondition(abs(app.balances[0].baseline - 5.788) < 0.001, "Heimdallm baseline must stay static at 5.788 even when balance drops <= 5.0, got \(app.balances[0].baseline)")
-        precondition(app.balances[0].percentageLabel == "72%", "Heimdallm must show 72% remaining for 4.20/5.788, got \(app.balances[0].percentageLabel)")
+        precondition(abs(app.balances[0].baseline - 5.35377301126) < 0.000001, "Heimdallm baseline must stay static at 5.35377301126 even when balance drops <= 5.0, got \(app.balances[0].baseline)")
+        precondition(app.balances[0].percentageLabel == "78%", "Heimdallm must show 78% remaining for 4.20/5.35377301126, got \(app.balances[0].percentageLabel)")
 
-        // Credit hold release / micro-adjustment of +$0.02 (e.g. 4.20 -> 4.225) must NOT trigger phantom $5 reload
-        let hmMicroReading = Reading(provider: "heimdallm", remaining: 4.225, currency: "USD", account: "user@heimdallm.com", url: "https://heimdallm.com/api/frontend/v1/credits", expires: nil, reference: 10.0)
+        // Credit hold release / micro-adjustment of +$0.02 must NOT trigger a phantom reload.
+        let hmMicroReading = Reading(provider: "heimdallm", remaining: 4.225, currency: "USD", account: "user@heimdallm.com", url: "https://heimdallm.com/api/frontend/v1/credits", expires: nil)
         app.apply(hmMicroReading)
-        precondition(abs(app.balances[0].baseline - 5.788) < 0.001, "Heimdallm baseline must stay static at 5.788 on micro-adjustment, not jump to 9.20, got \(app.balances[0].baseline)")
-        precondition(app.balances[0].percentageLabel == "72%", "Heimdallm must show 72% remaining for 4.225/5.788, got \(app.balances[0].percentageLabel)")
+        precondition(abs(app.balances[0].baseline - 5.35377301126) < 0.000001, "Heimdallm baseline must stay static at 5.35377301126 on micro-adjustment, got \(app.balances[0].baseline)")
+        precondition(app.balances[0].percentageLabel == "78%", "Heimdallm must show 78% remaining for 4.225/5.35377301126, got \(app.balances[0].percentageLabel)")
+
+        // A fresh top-up with a new cycle reference must move the baseline again.
+        let hmSecondTopUp = Reading(provider: "heimdallm", remaining: 9.20, currency: "USD", account: "user@heimdallm.com", url: "https://heimdallm.com/api/frontend/v1/credits", expires: nil, reference: 9.20)
+        app.apply(hmSecondTopUp)
+        precondition(abs(app.balances[0].baseline - 9.20) < 0.000001, "Heimdallm baseline must adopt the new cycle reference 9.20, got \(app.balances[0].baseline)")
+        precondition(abs((app.balances[0].cycleBaseline ?? 0) - 9.20) < 0.000001, "Heimdallm must remember the new cycle total")
+        precondition(app.balances[0].percentageLabel == "100%")
+
+        // After the deposit scrolls out of the ledger window (reference nil),
+        // the remembered cycle total keeps the gauge on the current cycle.
+        let hmWindowScrolled = Reading(provider: "heimdallm", remaining: 8.90, currency: "USD", account: "user@heimdallm.com", url: "https://heimdallm.com/api/frontend/v1/credits", expires: nil)
+        app.apply(hmWindowScrolled)
+        precondition(abs(app.balances[0].baseline - 9.20) < 0.000001, "Remembered cycle baseline must survive the ledger window scrolling past the deposit, got \(app.balances[0].baseline)")
+        precondition(app.balances[0].percentageLabel == "96%", "Heimdallm must show 96% remaining for 8.90/9.20, got \(app.balances[0].percentageLabel)")
+
+        // No reference and no baseline: tier inference seeds the baseline once.
+        app.balances = [Balance(id: "heimdallm", name: "Heimdallm", baseline: 0, remaining: 0, updated: .distantPast, account: "user@heimdallm.com", live: true)]
+        app.apply(Reading(provider: "heimdallm", remaining: 4.96, currency: "USD", account: "user@heimdallm.com", url: "https://heimdallm.com/api/frontend/v1/credits", expires: nil))
+        precondition(app.balances[0].baseline >= 4.96, "Uninitialised Heimdallm baseline must be seeded at or above remaining")
         app.balances = origBalances
 
         // Test iCloud Sync: availability, push, pull & merge, session vault sync, status badges
@@ -513,18 +538,22 @@ import SwiftUI
             remoteBalances[fwIdx].baseline = 150.0
             remoteBalances[fwIdx].updated = Date()
         }
-        // Set local Heimdallm to authoritative 5.0 baseline
+        // Set local Heimdallm to the current cycle baseline (5.35377301126)
+        // refreshed just now; Device B still has the previous cycle's 5.788
+        // and no remembered cycle total.
         if let hmLocalIdx = app.balances.firstIndex(where: { $0.id == "heimdallm" }) {
-            app.balances[hmLocalIdx].baseline = 5.0
-            app.balances[hmLocalIdx].remaining = 4.92
+            app.balances[hmLocalIdx].baseline = 5.35377301126
+            app.balances[hmLocalIdx].remaining = 5.32024458926
             app.balances[hmLocalIdx].live = true
+            app.balances[hmLocalIdx].updated = Date()
+            app.balances[hmLocalIdx].cycleBaseline = 5.35377301126
             app.providerStatus["heimdallm"] = "Connected · refreshes every 5 min"
         }
-        // Device B running older build attempts to push inflated 10.0 baseline
+        // Device B pushes the stale previous-cycle baseline with an older snapshot time.
         if let hmIdx = remoteBalances.firstIndex(where: { $0.id == "heimdallm" }) {
-            remoteBalances[hmIdx].baseline = 10.0
-            remoteBalances[hmIdx].remaining = 4.92
-            remoteBalances[hmIdx].updated = Date()
+            remoteBalances[hmIdx].baseline = 5.78833452416
+            remoteBalances[hmIdx].remaining = 5.32024458926
+            remoteBalances[hmIdx].updated = Date().addingTimeInterval(-60)
         }
         let remoteCustom = Balance(
             id: "togetherai",
@@ -573,7 +602,7 @@ import SwiftUI
         }
         precondition(mergedFw.baseline == 150.0, "Fireworks baseline did not update from iCloud: got \(mergedFw.baseline)")
         if let mergedHm = app.balances.first(where: { $0.id == "heimdallm" }) {
-            precondition(mergedHm.baseline == 5.0, "Heimdallm baseline must not be inflated by remote 10.0: got \(mergedHm.baseline)")
+            precondition(abs(mergedHm.baseline - 5.35377301126) < 0.000001, "Stale remote Heimdallm baseline (previous cycle) must not clobber the fresher local cycle baseline: got \(mergedHm.baseline)")
         }
         guard let mergedTogether = app.balances.first(where: { $0.id == "togetherai" }) else {
             preconditionFailure("Together AI was not merged from iCloud")
