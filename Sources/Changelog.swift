@@ -162,6 +162,29 @@ public final class ChangelogManager: ObservableObject {
     public static func builtInEntries() -> [ChangelogEntry] {
         return [
             ChangelogEntry(
+                version: "0.5.10",
+                releaseDate: "November 12, 2026",
+                title: "API Bar 0.5.10 — Compact Runway Labels",
+                summary: "The widget's CodexBar card now shows the same compact \"· 2d runway\" label as API Bar's own provider cards, instead of the verbose pacing sentence.",
+                highlights: [
+                    "Compact runway label: the CodexBar card sub-label now reads \"· 2d runway\", exactly matching API Bar's balance cards",
+                    "All devices converge: multi-device template conflicts over the Scriptable widget are resolved as every Mac updates"
+                ],
+                notes: """
+## API Bar 0.5.10
+
+The CodexBar card in the iOS widget now matches API Bar's own card style.
+
+---
+
+### ✨ What's New in 0.5.10
+
+#### 1. 🎯 Compact Runway Label
+• The CodexBar card sub-label now reads "· 2d runway" — the exact format API Bar's own provider cards use.
+• Dollar summaries remain fully replaced by token pacing on all synced devices.
+"""
+            ),
+            ChangelogEntry(
                 version: "0.5.9",
                 releaseDate: "November 12, 2026",
                 title: "API Bar 0.5.9 — CodexBar Token Pacing in the iOS Widget",
