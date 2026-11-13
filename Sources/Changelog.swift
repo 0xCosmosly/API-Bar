@@ -162,6 +162,36 @@ public final class ChangelogManager: ObservableObject {
     public static func builtInEntries() -> [ChangelogEntry] {
         return [
             ChangelogEntry(
+                version: "0.5.9",
+                releaseDate: "November 12, 2026",
+                title: "API Bar 0.5.9 — CodexBar Token Pacing in the iOS Widget",
+                summary: "Replaces dollar summaries in the widget's CodexBar card with API Bar-style token pacing (tokens per day and a spend-based runway), since not all models publish pricing outputs in CodexBar.",
+                highlights: [
+                    "Token pacing for CodexBar cards: providers with a per-day token ledger (Mistral) now show \"24.1M tokens per day - Runs out in 2 days\" instead of dollar summaries",
+                    "Spend-based runway: runway derives from the window's remaining spend over the average active-day spend, mirroring API Bar's own balance cards",
+                    "Graceful fallback: quota-window providers without token ledgers (Antigravity) keep their time-based reset labels",
+                    "Pure derivation module: CodexBar pacing logic is extracted into a UI-free source compiled by the test suite"
+                ],
+                notes: """
+## API Bar 0.5.9
+
+The widget's CodexBar card now paces in tokens instead of dollars.
+
+---
+
+### ✨ What's New in 0.5.9
+
+#### 1. 📈 API Bar-Style Token Pacing
+• CodexBar providers that publish a per-day token ledger (Mistral) now display \"24.1M tokens per day - Runs out in 2 days\" in the widget card.
+• Dollar summaries are unreliable across CodexBar providers — not all models have pricing outputs — so pacing replaces them wherever token data exists.
+• Runway is spend-based, exactly like API Bar's own provider cards.
+
+#### 2. 🧭 Graceful Fallbacks
+• Quota-window providers without token ledgers (Antigravity, Codex, Cursor) keep their time-based reset labels.
+• Windows without a spend summary yield no pacing rather than a fabricated guess.
+"""
+            ),
+            ChangelogEntry(
                 version: "0.5.7",
                 releaseDate: "November 12, 2026",
                 title: "API Bar 0.5.7 — True Top-Up Cycle Baselines & Multi-Device Baseline Safety",

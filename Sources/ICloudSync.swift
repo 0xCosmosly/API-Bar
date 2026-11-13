@@ -583,6 +583,12 @@ final class ICloudSync: ObservableObject {
             }
         }
 
+        // Token pacing, mirroring API Bar's own cards: tokens per day plus a
+        // spend-based runway. Dollar summaries are unreliable across CodexBar
+        // providers (not all models publish pricing), so the widget prefers
+        // this pacing line over the dollar reset description when available.
+        let pacing = CodexBarPacing.pacing(usage: usage, displayWindow: displayWindow)
+
         let (displayName, badge) = codexbarProviderMeta(for: providerID)
 
         var dict: [String: Any] = [
@@ -595,7 +601,9 @@ final class ICloudSync: ObservableObject {
             "displayMode": showUsed ? "used" : "remaining",
             "updatedAt": candidateFetched
         ]
-        if let resetDesc = resetDesc, !resetDesc.isEmpty {
+        if let pacing {
+            dict["pacing"] = pacing
+        } else if let resetDesc = resetDesc, !resetDesc.isEmpty {
             dict["resetDescription"] = resetDesc
         }
         if !subDetails.isEmpty {
