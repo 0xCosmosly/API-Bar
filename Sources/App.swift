@@ -93,7 +93,8 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
             return .empty
         }
         if mergeIcons {
-            if mergedProvider == "overview" {
+            // "sync" is a detail tab; the menu bar reading stays the aggregate.
+            if mergedProvider == "overview" || mergedProvider == "sync" {
                 let usdRemaining = activeBalances.reduce(0.0) { $0 + $1.remaining }
                 let usdBaseline = activeBalances.reduce(0.0) { $0 + $1.baseline }
                 let pct = usdBaseline > 0 ? max(0, usdRemaining / usdBaseline * 100) : nil
@@ -211,6 +212,14 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
     }
     func setICloudSyncEnabled(_ enabled: Bool) {
         ICloudSync.shared.setEnabled(enabled)
+        // The Sync tab only exists while sync is on; fall back to Overview so
+        // the popover never shows a tab that is no longer in the tab bar.
+        if !enabled && mergedProvider == "sync" {
+            mergedProvider = "overview"
+            UserDefaults.standard.set("overview", forKey: "MergedProvider")
+            configureStatusItems()
+            updateTitles()
+        }
     }
     func setOpenCodeSyncEnabled(_ enabled: Bool) {
         ICloudSync.shared.setOpenCodeSyncEnabled(enabled)
@@ -310,7 +319,9 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
     }
     var menuBarVisibleBalances: [Balance] {
         if mergeIcons {
-            if mergedProvider == "overview" {
+            // The Sync tab mirrors the Overview aggregate, so the widget shows
+            // the same total the menu bar does.
+            if mergedProvider == "overview" || mergedProvider == "sync" {
                 if activeBalances.isEmpty { return [] }
                 let usdRemaining = activeBalances.reduce(0.0) { $0 + $1.remaining }
                 let usdBaseline = activeBalances.reduce(0.0) { $0 + $1.baseline }
@@ -469,7 +480,10 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         ICloudSync.shared.schedulePush()
     }
     func selectMergedProvider(_ provider: String) {
-        guard provider == "overview" || activeBalances.contains(where: { $0.id == provider }) else { return }
+        // "sync" is a valid selection only while iCloud sync is on; it has no
+        // balance entry of its own.
+        let isSync = provider == "sync" && ICloudSync.shared.isEnabled
+        guard isSync || provider == "overview" || activeBalances.contains(where: { $0.id == provider }) else { return }
         mergedProvider = provider
         UserDefaults.standard.set(provider, forKey: "MergedProvider")
         UserDefaults.standard.set(Date(), forKey: "APIBarSettingsModified")
@@ -707,8 +721,8 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
             let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
             item.autosaveName = identity
             item.button?.setAccessibilityIdentifier(identity)
-            let name = identity == "merged" ? "All providers" : (balances.first(where: { $0.id == identity })?.name ?? "API Bar")
-            item.button?.setAccessibilityLabel("API Bar — \(name)")
+            let name = identity == "merged" ? "All providers" : (balances.first(where: { $0.id == identity })?.name ?? "Harness Sync")
+            item.button?.setAccessibilityLabel("Harness Sync — \(name)")
             let menu = NSMenu(); menu.delegate = self
             menu.identifier = NSUserInterfaceItemIdentifier(identity)
             item.menu = menu
@@ -886,7 +900,7 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
     func chooseBraveProfile() {
         let panel = NSOpenPanel()
         panel.title = "Grant Access to \(browserName) Browser"
-        panel.message = "Select your '\(browserName)' folder (or a profile folder like 'Default') to allow API Bar to import your sessions."
+        panel.message = "Select your '\(browserName)' folder (or a profile folder like 'Default') to allow Harness Sync to import your sessions."
         panel.prompt = "Grant Access"
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
@@ -1303,7 +1317,10 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
             let identity = item.autosaveName ?? ""
             let isMergedItem = mergeIcons || identity == "merged"
             if isMergedItem {
-                if mergedProvider == "overview" {
+                // The Sync tab is a detail view, not a separate reading: the
+                // menu bar keeps showing the Overview total so switching tabs
+                // never changes what the user sees at a glance.
+                if mergedProvider == "sync" || mergedProvider == "overview" {
                     if activeBalances.isEmpty {
                         if items[i].button?.title != "" { items[i].button?.title = "" }
                         items[i].button?.image = BrandMark.appIconImage(size: 18)
@@ -1338,7 +1355,7 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
                     }
                     items[i].button?.image = ProviderIcon.menuBarImage("overview")
                     items[i].button?.toolTip = nil
-                    items[i].button?.setAccessibilityValue("API Bar — No active providers")
+                    items[i].button?.setAccessibilityValue("Harness Sync — No active providers")
                 }
             } else {
                 guard let b = activeBalances.first(where: { $0.id == identity }) else { continue }
@@ -1380,9 +1397,9 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
             action(menu, "Settings…", #selector(settings), 0, "gearshape").keyEquivalent = ","
             action(menu, "Check for Updates…", #selector(checkForUpdates), 0, "arrow.triangle.2.circlepath")
             action(menu, "Changelog…", #selector(showChangelog), 0, "clock.arrow.circlepath")
-            action(menu, "About API Bar…", #selector(about), 0, "info.circle")
+            action(menu, "About Harness Sync…", #selector(about), 0, "info.circle")
             menu.addItem(.separator())
-            action(menu, "Quit API Bar", #selector(quit), 0, "power").keyEquivalent = "q"
+            action(menu, "Quit Harness Sync", #selector(quit), 0, "power").keyEquivalent = "q"
             return
         }
         guard let index = balances.firstIndex(where: { $0.id == menu.identifier?.rawValue }) else { return }
@@ -1410,9 +1427,9 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         action(menu, "Settings…", #selector(settings), index, "gearshape").keyEquivalent = ","
         action(menu, "Check for Updates…", #selector(checkForUpdates), index, "arrow.triangle.2.circlepath")
         action(menu, "Changelog…", #selector(showChangelog), index, "clock.arrow.circlepath")
-        action(menu, "About API Bar…", #selector(about), index, "info.circle")
+        action(menu, "About Harness Sync…", #selector(about), index, "info.circle")
         menu.addItem(.separator())
-        action(menu, "Quit API Bar", #selector(quit), index, "power").keyEquivalent = "q"
+        action(menu, "Quit Harness Sync", #selector(quit), index, "power").keyEquivalent = "q"
     }
     func disabled(_ menu: NSMenu, _ title: String) {
         let item = NSMenuItem(title: title, action: nil, keyEquivalent: ""); item.isEnabled = false; menu.addItem(item)
@@ -1492,14 +1509,14 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         openChangelog.target = self
         appMenu.addItem(openChangelog)
         appMenu.addItem(.separator())
-        let hideItem = NSMenuItem(title: "Hide API Bar", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+        let hideItem = NSMenuItem(title: "Hide Harness Sync", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         appMenu.addItem(hideItem)
         let hideOthersItem = NSMenuItem(title: "Hide Others", action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h")
         hideOthersItem.keyEquivalentModifierMask = [.command, .option]
         appMenu.addItem(hideOthersItem)
         appMenu.addItem(withTitle: "Show All", action: #selector(NSApplication.unhideAllApplications(_:)), keyEquivalent: "")
         appMenu.addItem(.separator())
-        let quitItem = NSMenuItem(title: "Quit API Bar", action: #selector(quit), keyEquivalent: "q")
+        let quitItem = NSMenuItem(title: "Quit Harness Sync", action: #selector(quit), keyEquivalent: "q")
         quitItem.target = self
         appMenu.addItem(quitItem)
         appMenuItem.submenu = appMenu
@@ -1552,7 +1569,7 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         }
         let window = ClosableWindow(contentRect: NSRect(x: 0, y: 0, width: 660, height: 720), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
         window.minSize = NSSize(width: 620, height: 600)
-        window.title = "API Bar Settings"; window.isReleasedWhenClosed = false
+        window.title = "Harness Sync Settings"; window.isReleasedWhenClosed = false
         window.delegate = self
         window.contentView = NSHostingView(rootView: SettingsPane(app: self))
         window.center(); window.makeKeyAndOrderFront(nil); settingsWindow = window; NSApp.activate(ignoringOtherApps: true)
@@ -1572,7 +1589,7 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
             return
         }
         let window = ClosableWindow(contentRect: NSRect(x: 0, y: 0, width: 540, height: 580), styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
-        window.title = "Welcome to API Bar"
+        window.title = "Welcome to Harness Sync"
         window.isReleasedWhenClosed = false
         window.delegate = self
         window.contentView = NSHostingView(rootView: OnboardingView(app: self, onFinish: { [weak self, weak window] in
@@ -1614,7 +1631,7 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         }
         let window = ClosableWindow(contentRect: NSRect(x: 0, y: 0, width: 740, height: 580), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
         window.minSize = NSSize(width: 600, height: 440)
-        window.title = "API Bar Changelog"
+        window.title = "Harness Sync Changelog"
         window.isReleasedWhenClosed = false
         window.delegate = self
         window.contentView = NSHostingView(rootView: ChangelogView())
@@ -1723,7 +1740,7 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
     @objc func about() {
         let short = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
         let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"
-        alert("API Bar \(short) (\(build))", "A small companion for account-wide Vertex AI, Fireworks, Crowbot, Google AI Studio, Cerebras, and Refuseless balances. Menu bar percentages, balance details, baseline settings, and Start at Login.\n\nConnect in Settings to refresh account balances using sessions stored in macOS Keychain. Failed requests keep the last successful balance. Background refresh never requests Keychain approval.\n\nMenu styling and provider symbols follow CodexBar. Independent app; not affiliated with CodexBar, Google, Fireworks, or Cerebras.")
+        alert("Harness Sync \(short) (\(build))", "A small companion for account-wide Vertex AI, Fireworks, Crowbot, Google AI Studio, Cerebras, and Refuseless balances. Menu bar percentages, balance details, baseline settings, and Start at Login.\n\nConnect in Settings to refresh account balances using sessions stored in macOS Keychain. Failed requests keep the last successful balance. Background refresh never requests Keychain approval.\n\nMenu styling and provider symbols follow CodexBar. Independent app; not affiliated with CodexBar, Google, Fireworks, or Cerebras.")
     }
     func alert(_ title: String, _ message: String) {
         let a = NSAlert()
@@ -1936,6 +1953,40 @@ enum ProviderIcon {
         }
         result.isTemplate = false
         whiteCache[provider] = result
+        return result
+    }
+
+    /// Menu bar glyph for the Sync item. Rendered from the SF Symbol so it
+    /// matches the tab icon and stays legible at menu bar size.
+    static func syncMenuBarImage() -> NSImage {
+        if let cached = whiteCache["sync"] { return cached }
+        let size = NSSize(width: 18, height: 18)
+        let result = NSImage(size: size)
+        let config = NSImage.SymbolConfiguration(pointSize: 15, weight: .regular)
+        guard let symbol = NSImage(systemSymbolName: "icloud", accessibilityDescription: "iCloud Sync")?
+            .withSymbolConfiguration(config) else { return result }
+        for scale in [1, 2, 3] {
+            let px = 18 * scale
+            guard let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil,
+                pixelsWide: px, pixelsHigh: px,
+                bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
+                isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0) else { continue }
+            bitmap.size = size
+            guard let context = NSGraphicsContext(bitmapImageRep: bitmap) else { continue }
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = context
+            context.cgContext.clear(CGRect(x: 0, y: 0, width: 18, height: 18))
+            symbol.draw(in: NSRect(origin: .zero, size: size), from: .zero, operation: .sourceOver, fraction: 1.0)
+            context.cgContext.setBlendMode(.sourceIn)
+            context.cgContext.setFillColor(NSColor.black.cgColor)
+            context.cgContext.fill(CGRect(x: 0, y: 0, width: 18, height: 18))
+            context.flushGraphics()
+            NSGraphicsContext.restoreGraphicsState()
+            result.addRepresentation(bitmap)
+        }
+        // Template rendering lets macOS tint it for light/dark menu bars.
+        result.isTemplate = true
+        whiteCache["sync"] = result
         return result
     }
 }

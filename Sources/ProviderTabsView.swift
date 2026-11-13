@@ -98,7 +98,14 @@ struct ProviderTabItem: Equatable {
             width: iconSize.width,
             height: iconSize.height
         )
-        if let baseImage = ProviderIcon.image(tabItem.id).copy() as? NSImage {
+        // The Sync tab shows the iCloud glyph rather than a provider mark: it
+        // reports synchronization, not a balance, so a monogram box would read
+        // as a provider with no brand.
+        let iconImage: NSImage? = tabItem.id == "sync"
+            ? NSImage(systemSymbolName: "icloud", accessibilityDescription: "iCloud Sync")
+            : ProviderIcon.image(tabItem.id)
+
+        if let baseImage = iconImage?.copy() as? NSImage {
             baseImage.isTemplate = false
             baseImage.lockFocus()
             (isSelected ? NSColor.white : NSColor.labelColor).set()
@@ -188,12 +195,17 @@ struct ProviderTabItem: Equatable {
     private let columns = 4
     private let rowHeight: CGFloat = 48.0
 
-    static func defaultItems(balances: [Balance]) -> [ProviderTabItem] {
+    static func defaultItems(balances: [Balance], includeSync: Bool = false) -> [ProviderTabItem] {
         let totalRemaining = balances.reduce(0.0) { $0 + $1.remaining }
         let totalBaseline = balances.reduce(0.0) { $0 + $1.baseline }
         let totalPercent = totalBaseline > 0 ? max(0, totalRemaining / totalBaseline * 100) : 0
         let anyLive = balances.contains { $0.live }
         var result = [ProviderTabItem(id: "overview", name: "Overview", accentColor: nil, percent: totalPercent, isLive: anyLive)]
+        // The Sync tab sits immediately right of Overview and only exists while
+        // iCloud sync is enabled — it has no meaning when sync is off.
+        if includeSync {
+            result.append(ProviderTabItem(id: "sync", name: "Sync", accentColor: nil, percent: 100, isLive: true))
+        }
         for b in balances {
             result.append(ProviderTabItem(id: b.id, name: b.name, accentColor: providerAccentNSColor(b.id), percent: b.percent, isLive: b.live))
         }
@@ -201,7 +213,7 @@ struct ProviderTabItem: Equatable {
     }
 
     convenience init(providers: [Balance], selectedID: String, onSelect: @escaping (String) -> Void) {
-        self.init(items: Self.defaultItems(balances: providers), selectedID: selectedID, onSelect: onSelect)
+        self.init(items: Self.defaultItems(balances: providers, includeSync: ICloudSync.shared.isEnabled), selectedID: selectedID, onSelect: onSelect)
     }
 
     init(items: [ProviderTabItem], selectedID: String, onSelect: @escaping (String) -> Void) {
@@ -340,7 +352,7 @@ struct ProviderTabItem: Equatable {
 
     init(app: APIBarApp) {
         self.app = app
-        let items = ProviderTabsView.defaultItems(balances: app.balances)
+        let items = ProviderTabsView.defaultItems(balances: app.balances, includeSync: ICloudSync.shared.isEnabled)
         tabs = ProviderTabsView(items: items, selectedID: app.mergedProvider) { [weak app] id in
             app?.selectMergedProvider(id)
         }
@@ -355,17 +367,19 @@ struct ProviderTabItem: Equatable {
         // Paused providers are hidden here, matching refresh(). Passing the full
         // list made the tab ids flip between calls, which rebuilt the buttons and
         // left callers holding stale references.
-        let items = ProviderTabsView.defaultItems(balances: balances.filter(\.isEnabled))
+        let items = ProviderTabsView.defaultItems(balances: balances.filter(\.isEnabled), includeSync: ICloudSync.shared.isEnabled)
         tabs.updateItems(items)
         refresh()
     }
 
     func refresh() {
         tabs.selectedID = app.mergedProvider
-        tabs.updateItems(ProviderTabsView.defaultItems(balances: app.activeBalances))
+        tabs.updateItems(ProviderTabsView.defaultItems(balances: app.activeBalances, includeSync: ICloudSync.shared.isEnabled))
         detail?.removeFromSuperview()
         let card: NSView
-        if app.mergedProvider == "overview" || app.activeBalances.isEmpty {
+        if app.mergedProvider == "sync" {
+            card = SyncCard(app: app)
+        } else if app.mergedProvider == "overview" || app.activeBalances.isEmpty {
             card = OverviewCard(app: app)
         } else if let b = app.activeBalances.first(where: { $0.id == app.mergedProvider }) ?? app.selectedMergedBalance {
             card = BalanceCard(b, status: app.providerStatus[b.id])

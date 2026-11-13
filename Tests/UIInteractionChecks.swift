@@ -34,6 +34,10 @@ import SwiftUI
         _ = NSApplication.shared
         let app = APIBarApp()
         app.setSortMode(.manual)
+        // Start from a known sync state: an earlier aborted run can leave the
+        // toggle persisted as on, which would insert the Sync tab and shift
+        // every positional assertion below.
+        app.setICloudSyncEnabled(false)
         app.balances = Balance.initial
         let view = MergedMenuView(app: app)
         app.mergedMenuView = view
@@ -70,6 +74,31 @@ import SwiftUI
             precondition(mergedBtn.title == (app.activeBalances.first(where: { $0.id == "fireworks" })?.percentageLabel ?? "—"))
         }
         precondition(view.tabs === tabs, "Provider switch replaced the live click target")
+
+        // The Sync tab exists only while iCloud sync is on, and sits immediately
+        // right of Overview so it never displaces a provider tab's position.
+        let syncOffIDs = tabs.items.map(\.id)
+        precondition(!syncOffIDs.contains("sync"), "Sync tab must be absent while sync is off")
+        app.setICloudSyncEnabled(true)
+        view.refresh()
+        let syncOnIDs = view.tabs.items.map(\.id)
+        precondition(syncOnIDs.count == syncOffIDs.count + 1, "Enabling sync must add exactly one tab")
+        precondition(syncOnIDs.prefix(2) == ["overview", "sync"], "Sync tab must sit immediately right of Overview, got \(syncOnIDs.prefix(3))")
+        precondition(Array(syncOnIDs.dropFirst(2)) == Array(syncOffIDs.dropFirst()), "Enabling sync must not reorder provider tabs")
+        app.selectMergedProvider("sync")
+        precondition(app.mergedProvider == "sync")
+        precondition(view.tabs.selectedID == "sync")
+        // Turning sync off while the Sync tab is selected must fall back to Overview.
+        app.setICloudSyncEnabled(false)
+        view.refresh()
+        precondition(app.mergedProvider == "overview", "Disabling sync must fall back to Overview, got \(app.mergedProvider)")
+        precondition(!view.tabs.items.map(\.id).contains("sync"), "Sync tab must disappear when sync is disabled")
+
+        // Restore the provider selection this flow had before the Sync-tab test,
+        // so the card-height guard below measures the same card as before.
+        app.selectMergedProvider("fireworks")
+        view.refresh()
+
         let reps = BrandMark.image().representations.compactMap { $0 as? NSBitmapImageRep }
         precondition(reps.map(\.pixelsWide) == [18, 36, 54] && BrandMark.image().isTemplate)
         for (provider, rep) in [("mark", reps[0])] + ["overview", "vertex", "fireworks", "crowbot", "aistudio", "cerebras", "refuseless", "lutheos"].flatMap({ id in ProviderIcon.image(id).representations.compactMap { rep in (id, rep as! NSBitmapImageRep) } }) {
@@ -81,7 +110,7 @@ import SwiftUI
             let minH = (provider == "fireworks" || provider == "refuseless" || provider == "lutheos") ? rep.pixelsHigh * 35 / 100 : rep.pixelsHigh * 6 / 10
             precondition(!ys.isEmpty && ys.max()! - ys.min()! > minH, "Retina brand clipped by a mixed AppKit/CoreGraphics transform")
         }
-        precondition(view.frame.height <= tabs.frame.height + 200, "Merged menu retained the empty credits footer")
+        precondition(view.frame.height <= tabs.frame.height + 200, "Merged menu retained the empty credits footer: view \(view.frame.height) vs tabs \(tabs.frame.height)")
 
         // Test removeProvider and addProvider
         let initialCount = app.balances.count
@@ -690,6 +719,10 @@ import SwiftUI
         try initialOmpModels.write(to: localOmpModelsFile, atomically: true, encoding: .utf8)
         try initialOmpConfig.write(to: localOmpConfigFile, atomically: true, encoding: .utf8)
 
+        // Reset persisted state first: an earlier run (or a real session) can
+        // leave the toggle on, which would fail the default check below.
+        ICloudSync.shared.setOmpSyncEnabled(false)
+        UserDefaults.standard.removeObject(forKey: ICloudSync.ompEnabledKey)
         precondition(ICloudSync.shared.isOmpSyncEnabled == false, "OMP sync must be disabled by default")
         ICloudSync.shared.setOmpSyncEnabled(true)
         precondition(ICloudSync.shared.isOmpSyncEnabled == true)
@@ -730,6 +763,21 @@ import SwiftUI
         try? FileManager.default.removeItem(at: mockOmpCredsFile)
         unsetenv("APIBAR_OMP_CREDENTIALS_FILE")
 
+        // Harness toggles must travel with settings: a harness enabled on the
+        // other Mac has to start pulling here, otherwise the cloud config
+        // updates but is never applied.
+        precondition(pushedSettings.ompSyncEnabled != nil, "Pushed settings must carry the OMP toggle")
+        precondition(pushedSettings.scriptableSyncEnabled != nil, "Pushed settings must carry the Scriptable toggle")
+        ICloudSync.shared.setOmpSyncEnabled(false)
+        precondition(ICloudSync.shared.isOmpSyncEnabled == false)
+        var toggledRemote = (try? JSONDecoder().decode(ICloudSettings.self, from: Data(contentsOf: settingsFile))) ?? pushedSettings
+        toggledRemote.ompSyncEnabled = true
+        toggledRemote.lastModified = Date().addingTimeInterval(120)
+        try JSONEncoder().encode(toggledRemote).write(to: settingsFile, options: .atomic)
+        _ = await ICloudSync.shared.pullAndMerge()
+        precondition(ICloudSync.shared.isOmpSyncEnabled == true, "A remote OMP toggle must enable OMP sync locally")
+        precondition(UserDefaults.standard.bool(forKey: ICloudSync.ompEnabledKey), "Adopted toggle must persist")
+
         precondition(ICloudSync.shared.statusBadge == "Active" || ICloudSync.shared.statusBadge == "Synced")
         precondition(app.iCloudStatusMessage.contains("Synced") || app.iCloudStatusMessage.contains("ago") || app.iCloudStatusMessage.contains("just now"))
 
@@ -747,7 +795,7 @@ import SwiftUI
 
         app.showChangelog()
         precondition(app.changelogWindow != nil, "app.changelogWindow must be non-nil after showChangelog()")
-        precondition(app.changelogWindow?.title == "API Bar Changelog")
+        precondition(app.changelogWindow?.title == "Harness Sync Changelog")
         app.changelogWindow?.close()
         precondition(app.changelogWindow == nil, "app.changelogWindow must be nil after close()")
 

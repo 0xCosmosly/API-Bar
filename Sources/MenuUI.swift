@@ -413,24 +413,320 @@ struct OverviewCardContent: View {
 
             Divider()
 
-            // Footer
+            // Balance refresh footer. It sits above the iCloud row so its
+            // "refreshes every 5 min" cannot be mistaken for sync cadence.
             HStack(alignment: .center) {
                 Text("Last checked: \(relativeTimeString(for: app.lastRefresh ?? .distantPast))")
                     .font(.system(size: 11.5))
                     .foregroundStyle(Color.secondary)
                 Spacer()
-                Text("Refreshes every 5 min")
+                Text("Balances refresh every 5 min")
                     .font(.system(size: 11.5))
                     .foregroundStyle(Color.secondary)
             }
             .padding(.horizontal, 16)
-            .padding(.bottom, 10)
+
+            Divider()
+
+            // iCloud sync status — mirrors the Settings toggle so the popover
+            // shows whether this Mac is syncing without opening Settings.
+            ICloudSyncStatusRow(app: app)
+                .padding(.horizontal, 16)
+                .padding(.bottom, 10)
         }
         .frame(width: 365, alignment: .leading)
     }
 }
 
 public let kCardWidth: CGFloat = 365.0
+
+/// Single source of truth for iCloud sync presentation. `state` lags
+/// `isEnabled` right after the toggle flips, so both are folded into one answer
+/// here; the Overview row and the Sync tab both read this, which keeps their
+/// headline, badge, tint, and row checks from ever disagreeing.
+@MainActor
+enum SyncStatusPresentation: Equatable {
+    case off, unavailable, failed, syncing, idle
+
+    init(_ sync: ICloudSync) {
+        guard sync.isEnabled else { self = .off; return }
+        switch sync.state {
+        case .disabled: self = .off
+        case .unavailable: self = .unavailable
+        case .failed: self = .failed
+        case .syncing: self = .syncing
+        case .idle: self = .idle
+        }
+    }
+
+    var headline: String {
+        switch self {
+        case .off: return "Sync is off"
+        case .unavailable: return "iCloud unavailable"
+        case .failed: return "Sync error"
+        case .syncing: return "Syncing…"
+        case .idle: return "Up to date"
+        }
+    }
+
+    var badge: String {
+        switch self {
+        case .off: return "Off"
+        case .unavailable: return "Unavailable"
+        case .failed: return "Error"
+        case .syncing: return "Syncing…"
+        case .idle: return "Active"
+        }
+    }
+
+    var tint: Color {
+        switch self {
+        case .off: return .secondary
+        case .unavailable: return .orange
+        case .failed: return .red
+        case .syncing: return .accentColor
+        case .idle: return .green
+        }
+    }
+
+    /// True only when sync is actually running, so per-item checks stay honest.
+    var isLive: Bool { self == .idle || self == .syncing }
+}
+
+/// Compact iCloud sync line for the Overview card. Mirrors the Settings toggle
+/// so the popover answers "is this Mac syncing?" without opening Settings.
+struct ICloudSyncStatusRow: View {
+    @ObservedObject var app: APIBarApp
+    @ObservedObject private var icloud = ICloudSync.shared
+
+    private var status: SyncStatusPresentation { SyncStatusPresentation(icloud) }
+
+    private var detail: String {
+        switch status {
+        case .off: return "Turn on in Settings"
+        case .unavailable: return icloud.statusMessage
+        case .failed: return icloud.lastError ?? "The last sync failed"
+        case .syncing: return "Syncing with iCloud…"
+        case .idle:
+            if let date = icloud.lastSyncDate { return "Last synced \(relativeTimeString(for: date))" }
+            return icloud.statusMessage
+        }
+    }
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 8) {
+            Image(systemName: "icloud")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(status.tint)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text("iCloud Sync")
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .foregroundStyle(Color.primary)
+                Text(detail)
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(Color.secondary)
+                    .lineLimit(1)
+            }
+
+            Spacer()
+
+            Text(status.badge)
+                .font(.system(size: 11, weight: .bold, design: .rounded))
+                .foregroundStyle(status.tint)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 2)
+                .background(Capsule().fill(status.tint.opacity(0.12)))
+        }
+    }
+}
+
+/// Full iCloud sync detail tab, shown to the right of Overview while sync is on.
+struct SyncCardContent: View {
+    @ObservedObject var app: APIBarApp
+    @ObservedObject private var icloud = ICloudSync.shared
+
+    private var status: SyncStatusPresentation { SyncStatusPresentation(icloud) }
+
+    private var tint: Color { status.tint }
+
+    private var headline: String { status.headline }
+
+    private var subtitle: String {
+        switch status {
+        case .off:
+            return "Turn on Sync with iCloud in Settings to keep providers, baselines, and agent configs current across your Macs."
+        case .failed:
+            return icloud.lastError ?? "The last sync failed."
+        case .unavailable:
+            return icloud.statusMessage
+        case .syncing:
+            return "Syncing with iCloud…"
+        case .idle:
+            if let date = icloud.lastSyncDate { return "Last synced \(relativeTimeString(for: date))" }
+            return icloud.statusMessage
+        }
+    }
+
+    /// Only harnesses that are actually syncing are listed: an entry for a
+    /// disabled harness is noise in a card that answers "what is moving?".
+    private var harnessRows: [(name: String, detail: String)] {
+        var rows: [(String, String)] = []
+        if app.isOpenCodeSyncEnabled {
+            rows.append(("OpenCode", app.isOpenCodeCredentialsSyncEnabled ? "Config + credentials" : "Config only"))
+        }
+        if app.isPiSyncEnabled {
+            rows.append(("Pi", app.isPiCredentialsSyncEnabled ? "Config + credentials" : "Config only"))
+        }
+        if app.isOmpSyncEnabled {
+            rows.append(("OMP", app.isOmpCredentialsSyncEnabled ? "Config + credentials" : "Config only"))
+        }
+        return rows
+    }
+
+    /// Absolute timestamp, e.g. "Nov 13, 2026 at 10:52 AM".
+    private var lastSyncAbsolute: String {
+        guard let date = icloud.lastSyncDate else { return "Not yet synced" }
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
+    }
+
+    /// What the most recent cycle actually moved. Each phrase is produced by
+    /// diffing the previous cloud state against the new one, so it names the
+    /// real change rather than a category.
+    private var changeDescription: String {
+        if case .syncing = status { return "Sync in progress…" }
+        guard status.isLive else { return "Nothing is syncing while this is off." }
+        if let error = icloud.lastError { return error }
+        // No timestamp yet means no cycle has run, so there is nothing to
+        // report — claiming "no changes" would imply a completed sync.
+        guard icloud.lastSyncDate != nil else { return "Waiting for the first sync cycle." }
+        return SyncChangeLog.sentence(icloud.lastChangeSummary)
+    }
+
+    /// Which machine produced the synced state, from the cloud manifest.
+    private var sourceDevice: String? {
+        guard let url = ICloudSync.shared.manifestURL,
+              let data = try? Data(contentsOf: url),
+              let manifest = try? JSONDecoder().decode(ICloudManifest.self, from: data) else { return nil }
+        return manifest.deviceName
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            // Hero
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Image(systemName: "icloud")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(tint)
+                    Text(headline)
+                        .font(.system(size: 20, weight: .bold, design: .rounded))
+                        .foregroundStyle(Color.primary)
+                    Spacer()
+                    Text(status.badge)
+                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .foregroundStyle(tint)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Capsule().fill(tint.opacity(0.12)))
+                }
+                Text(subtitle)
+                    .font(.system(size: 12.5))
+                    .foregroundStyle(Color.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
+
+            Divider()
+
+            // What syncs, in the requested order: enabled harnesses first,
+            // then the provider set, then the widget. Disabled harnesses are
+            // omitted entirely rather than shown as inert rows.
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(harnessRows, id: \.name) { row in
+                    syncRow(icon: "terminal", title: "Harness - \(row.name)",
+                            detail: row.detail, on: status.isLive)
+                }
+                syncRow(icon: "square.stack.3d.up", title: "Providers & Models",
+                        detail: "\(app.activeBalances.count) active providers", on: status.isLive)
+                if app.isScriptableSyncEnabled {
+                    syncRow(icon: "app.badge", title: "Scriptable Widget",
+                            detail: "iPhone Home Screen", on: status.isLive)
+                }
+            }
+            .padding(.horizontal, 16)
+
+            Divider()
+
+            // Last sync: one header line naming the source machine, then what
+            // actually changed. Folding the device into the header keeps the
+            // section to two lines instead of three.
+            VStack(alignment: .leading, spacing: 3) {
+                Text(sourceDevice.map { "Last Synced - \($0)" } ?? "Last Synced")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(Color.secondary)
+                    .textCase(.uppercase)
+                    .tracking(0.6)
+                Text(lastSyncAbsolute)
+                    .font(.system(size: 12.5, weight: .medium))
+                    .foregroundStyle(Color.primary)
+                Text(changeDescription)
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(Color.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.horizontal, 16)
+            .padding(.bottom, 10)
+        }
+        .frame(width: 365, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private func syncRow(icon: String, title: String, detail: String, on: Bool) -> some View {
+        HStack(alignment: .center, spacing: 8) {
+            Image(systemName: icon)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(on ? Color.accentColor : Color.secondary)
+                .frame(width: 16)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                    .font(.system(size: 12.5, weight: .medium))
+                    .foregroundStyle(Color.primary)
+                Text(detail)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.secondary)
+            }
+
+            Spacer()
+
+            Image(systemName: on ? "checkmark.circle.fill" : "minus.circle")
+                .font(.system(size: 12))
+                .foregroundStyle(on ? Color.green : Color.secondary.opacity(0.6))
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 5)
+        .background(RoundedRectangle(cornerRadius: 7).fill(Color.primary.opacity(0.03)))
+    }
+}
+
+@MainActor final class SyncCard: NSView {
+    init(app: APIBarApp) {
+        let host = VibrantHost(rootView: SyncCardContent(app: app))
+        super.init(frame: NSRect(x: 0, y: 0, width: kCardWidth, height: 240))
+        host.frame = bounds
+        addSubview(host)
+        let height = ceil(host.fittingSize.height)
+        frame.size.height = height
+        frame.size.width = kCardWidth
+        host.frame = bounds; host.autoresizingMask = [.width, .height]
+    }
+    required init?(coder: NSCoder) { fatalError() }
+}
 
 @MainActor final class OverviewCard: NSView {
     init(app: APIBarApp) {
@@ -523,7 +819,7 @@ struct ManageProvidersSheet: View {
                     Text("Select Providers to Add")
                         .font(.headline)
                         .fontWeight(.semibold)
-                    Text("Choose which natively supported providers to monitor in API Bar.")
+                    Text("Choose which natively supported providers to monitor in Harness Sync.")
                         .font(.subheadline)
                         .foregroundStyle(Color.secondary)
                 }
@@ -1025,7 +1321,7 @@ struct OnboardingView: View {
                     .resizable()
                     .frame(width: 44, height: 44)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Welcome to API Bar")
+                    Text("Welcome to Harness Sync")
                         .font(.title2)
                         .fontWeight(.bold)
                     Text("Live API credit balances right in your menu bar.")
@@ -1096,7 +1392,7 @@ struct OnboardingView: View {
 
             VStack(alignment: .leading, spacing: 14) {
                 featureRow(icon: "chart.bar.xaxis", title: "Live Credit Gauges", description: "Monitor remaining balance and automatic 100% baseline usage across Vertex AI, Fireworks, Cerebras, Google AI Studio, Refuseless, Lutheos, Unaligned, Crowbot, and Heimdallm.")
-                featureRow(icon: "shield.checkered", title: "Zero API Key Hassle", description: "API Bar securely reads authenticated sessions from \(app.browserName) Browser directly on your device. No credentials ever leave your Mac.")
+                featureRow(icon: "shield.checkered", title: "Zero API Key Hassle", description: "Harness Sync securely reads authenticated sessions from \(app.browserName) Browser directly on your device. No credentials ever leave your Mac.")
                 featureRow(icon: "menubar.rectangle", title: "Flexible Menu Bar Display", description: "View all providers in a single compact merged gauge or separate icons for each provider.")
                 featureRow(icon: "lock.shield", title: "100% Private & Local", description: "Zero telemetry or external servers. All credentials stay strictly in your local macOS Keychain.")
             }
@@ -1118,7 +1414,7 @@ struct OnboardingView: View {
                     Text("Select Providers to Monitor")
                         .font(.title3)
                         .fontWeight(.bold)
-                    Text("Choose which natively supported providers to track in API Bar.")
+                    Text("Choose which natively supported providers to track in Harness Sync.")
                         .font(.subheadline)
                         .foregroundStyle(Color.secondary)
                 }
@@ -1271,7 +1567,7 @@ struct OnboardingView: View {
                         .frame(height: 16)
                         .padding(.horizontal, 4)
 
-                    Button("Relaunch API Bar") {
+                    Button("Relaunch Harness Sync") {
                         app.relaunchApp()
                     }
                     .buttonStyle(PaperWhiteButtonStyle())
@@ -1571,7 +1867,7 @@ struct SettingsPane: View {
             HStack(alignment: .center) {
                 HStack(spacing: 10) {
                     Image(nsImage: BrandMark.appIconImage(size: 32)).resizable().frame(width: 32, height: 32)
-                    Text("API Bar").font(.title2).fontWeight(.bold).foregroundStyle(Color.primary)
+                    Text("Harness Sync").font(.title2).fontWeight(.bold).foregroundStyle(Color.primary)
                     let versionStr = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? updater.currentVersion
                     Text("v\(versionStr)")
                         .font(.subheadline).foregroundStyle(Color.secondary)
@@ -1615,7 +1911,7 @@ struct SettingsPane: View {
                         .font(.title3)
                         .foregroundStyle(Color.accentColor)
                     VStack(alignment: .leading, spacing: 2) {
-                        let bannerTitle = updater.isSemverNewerAvailable ? "API Bar v\(ver) is available!" : "Refreshed build of API Bar v\(ver) is available!"
+                        let bannerTitle = updater.isSemverNewerAvailable ? "Harness Sync v\(ver) is available!" : "Refreshed build of Harness Sync v\(ver) is available!"
                         Text(bannerTitle)
                             .font(.headline)
                             .fontWeight(.bold)
@@ -1647,7 +1943,7 @@ struct SettingsPane: View {
                     }))
                     .font(.body)
                     .foregroundStyle(Color.primary)
-                    Text("Launch API Bar automatically whenever you log into your Mac.")
+                    Text("Launch Harness Sync automatically whenever you log into your Mac.")
                         .font(.subheadline)
                         .foregroundStyle(Color.secondary)
                 }
@@ -2023,7 +2319,7 @@ struct SettingsPane: View {
                                         }
 
                                         HStack {
-                                            Button("Save & Add to API Bar") {
+                                            Button("Save & Add to Harness Sync") {
                                                 if let finalDraft = afmDraft {
                                                     app.addCustomProvider(finalDraft)
                                                     withAnimation {
@@ -2111,9 +2407,9 @@ struct SettingsPane: View {
 
                     VStack(alignment: .leading, spacing: 4) {
                         Text("1. Install the free Scriptable app from the App Store on your iPhone.")
-                        Text("2. Open Scriptable on your iPhone — API Bar will already appear in your scripts via iCloud.")
+                        Text("2. Open Scriptable on your iPhone — Harness Sync will already appear in your scripts via iCloud.")
                         Text("3. Add a Scriptable widget to your iPhone Home Screen (Small, Medium, or Large).")
-                        Text("4. Long press the widget, choose Edit Widget, and pick API Bar as the script.")
+                        Text("4. Long press the widget, choose Edit Widget, and pick Harness Sync as the script.")
                     }
                     .font(.system(size: 11.5))
                     .foregroundStyle(Color.secondary)
@@ -2180,7 +2476,7 @@ struct SettingsPane: View {
                         .font(.headline)
                         .fontWeight(.semibold)
                 }
-                Text("If you already turned Full Disk Access ON in macOS System Settings, click Relaunch API Bar to apply. You can also use Folder Access Only for instant, permanent access without System Settings.")
+                Text("If you already turned Full Disk Access ON in macOS System Settings, click Relaunch Harness Sync to apply. You can also use Folder Access Only for instant, permanent access without System Settings.")
                     .font(.subheadline)
                     .foregroundStyle(Color.secondary)
                 HStack(spacing: 8) {
@@ -2200,7 +2496,7 @@ struct SettingsPane: View {
                         .frame(height: 16)
                         .padding(.horizontal, 4)
 
-                    Button("Relaunch API Bar") {
+                    Button("Relaunch Harness Sync") {
                         app.relaunchApp()
                     }
                     .buttonStyle(PaperWhiteButtonStyle())
@@ -2335,7 +2631,7 @@ struct SettingsPane: View {
     private func runAddKnownProvider(_ meta: KnownProviderMeta) {
         if let initial = Balance.initial.first(where: { $0.id == meta.id }) {
             app.addProvider(initial)
-            setAFMState(.succeeded(message: "Added \(meta.name) to API Bar."))
+            setAFMState(.succeeded(message: "Added \(meta.name) to Harness Sync."))
             return
         }
         setAFMState(.analyzing(source: meta.name))

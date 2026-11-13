@@ -6,6 +6,17 @@ struct ICloudSettings: Codable, Equatable {
     var mergeIcons: Bool?
     var mergedProvider: String?
     var removedProviders: [String]?
+    // Harness sync toggles travel with settings so enabling a harness on one
+    // Mac enables it everywhere. Without this, the receiving Mac skips the
+    // pull entirely because its own toggle is still off — the cloud config
+    // updates but is never applied.
+    var openCodeSyncEnabled: Bool?
+    var openCodeCredentialsEnabled: Bool?
+    var piSyncEnabled: Bool?
+    var piCredentialsEnabled: Bool?
+    var ompSyncEnabled: Bool?
+    var ompCredentialsEnabled: Bool?
+    var scriptableSyncEnabled: Bool?
     var lastModified: Date
     var deviceName: String
 
@@ -14,6 +25,13 @@ struct ICloudSettings: Codable, Equatable {
         mergeIcons: Bool? = nil,
         mergedProvider: String? = nil,
         removedProviders: [String]? = nil,
+        openCodeSyncEnabled: Bool? = nil,
+        openCodeCredentialsEnabled: Bool? = nil,
+        piSyncEnabled: Bool? = nil,
+        piCredentialsEnabled: Bool? = nil,
+        ompSyncEnabled: Bool? = nil,
+        ompCredentialsEnabled: Bool? = nil,
+        scriptableSyncEnabled: Bool? = nil,
         lastModified: Date = Date(),
         deviceName: String = Host.current().localizedName ?? "Mac"
     ) {
@@ -21,6 +39,13 @@ struct ICloudSettings: Codable, Equatable {
         self.mergeIcons = mergeIcons
         self.mergedProvider = mergedProvider
         self.removedProviders = removedProviders
+        self.openCodeSyncEnabled = openCodeSyncEnabled
+        self.openCodeCredentialsEnabled = openCodeCredentialsEnabled
+        self.piSyncEnabled = piSyncEnabled
+        self.piCredentialsEnabled = piCredentialsEnabled
+        self.ompSyncEnabled = ompSyncEnabled
+        self.ompCredentialsEnabled = ompCredentialsEnabled
+        self.scriptableSyncEnabled = scriptableSyncEnabled
         self.lastModified = lastModified
         self.deviceName = deviceName
     }
@@ -112,6 +137,9 @@ final class ICloudSync: ObservableObject {
     @Published private(set) var lastSyncDate: Date? = nil
     @Published private(set) var statusMessage: String = "Disabled"
     @Published private(set) var lastError: String? = nil
+    /// Human-readable summary of what the most recent sync moved, for the Sync
+    /// card. Empty when the last cycle found nothing to transfer.
+    @Published private(set) var lastChangeSummary: [String] = []
 
     public func transition(to newState: CloudSyncState) {
         self.state = newState
@@ -972,6 +1000,47 @@ final class ICloudSync: ObservableObject {
                     UserDefaults.standard.set(merged, forKey: "MergedProvider")
                     didChangeLocally = true
                 }
+                // Adopt harness toggles so a harness enabled on one Mac pulls
+                // here too. Applied before the harness pull blocks below, which
+                // are gated on these flags.
+                if let remoteOmp = remoteSettings.ompSyncEnabled, remoteOmp != isOmpSyncEnabled {
+                    isOmpSyncEnabled = remoteOmp
+                    UserDefaults.standard.set(remoteOmp, forKey: Self.ompEnabledKey)
+                    remoteOmp ? startOmpMonitoring() : stopOmpMonitoring()
+                    didChangeLocally = true
+                }
+                if let remoteOmpCreds = remoteSettings.ompCredentialsEnabled, remoteOmpCreds != isOmpCredentialsSyncEnabled {
+                    isOmpCredentialsSyncEnabled = remoteOmpCreds
+                    UserDefaults.standard.set(remoteOmpCreds, forKey: Self.ompCredentialsEnabledKey)
+                    didChangeLocally = true
+                }
+                if let remoteOpenCode = remoteSettings.openCodeSyncEnabled, remoteOpenCode != isOpenCodeSyncEnabled {
+                    isOpenCodeSyncEnabled = remoteOpenCode
+                    UserDefaults.standard.set(remoteOpenCode, forKey: Self.openCodeEnabledKey)
+                    remoteOpenCode ? startOpenCodeMonitoring() : stopOpenCodeMonitoring()
+                    didChangeLocally = true
+                }
+                if let remoteOpenCodeCreds = remoteSettings.openCodeCredentialsEnabled, remoteOpenCodeCreds != isOpenCodeCredentialsSyncEnabled {
+                    isOpenCodeCredentialsSyncEnabled = remoteOpenCodeCreds
+                    UserDefaults.standard.set(remoteOpenCodeCreds, forKey: Self.openCodeCredentialsEnabledKey)
+                    didChangeLocally = true
+                }
+                if let remotePi = remoteSettings.piSyncEnabled, remotePi != isPiSyncEnabled {
+                    isPiSyncEnabled = remotePi
+                    UserDefaults.standard.set(remotePi, forKey: Self.piEnabledKey)
+                    remotePi ? startPiMonitoring() : stopPiMonitoring()
+                    didChangeLocally = true
+                }
+                if let remotePiCreds = remoteSettings.piCredentialsEnabled, remotePiCreds != isPiCredentialsSyncEnabled {
+                    isPiCredentialsSyncEnabled = remotePiCreds
+                    UserDefaults.standard.set(remotePiCreds, forKey: Self.piCredentialsEnabledKey)
+                    didChangeLocally = true
+                }
+                if let remoteScriptable = remoteSettings.scriptableSyncEnabled, remoteScriptable != isScriptableSyncEnabled {
+                    isScriptableSyncEnabled = remoteScriptable
+                    UserDefaults.standard.set(remoteScriptable, forKey: Self.scriptableEnabledKey)
+                    didChangeLocally = true
+                }
                 UserDefaults.standard.set(remoteSettings.lastModified, forKey: "APIBarSettingsModified")
             }
         }
@@ -1312,6 +1381,7 @@ final class ICloudSync: ObservableObject {
         guard checkAvailability() else { return false }
 
         var didTransferAny = false
+        var changed: [String] = []
 
         do {
             try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
@@ -1322,6 +1392,15 @@ final class ICloudSync: ObservableObject {
                 let data = try JSONEncoder().encode(app.balances)
                 let existing = try? Data(contentsOf: balancesURL)
                 if existing != data {
+                    // Diff against what the cloud held so the Sync card can name
+                    // the actual change ("Added Mistral provider") rather than a
+                    // generic category.
+                    if let existing,
+                       let previous = try? JSONDecoder().decode([Balance].self, from: existing) {
+                        changed.append(contentsOf: SyncChangeLog.providerChanges(old: previous, new: app.balances))
+                    } else {
+                        changed.append("Uploaded \(app.balances.count) providers")
+                    }
                     try data.write(to: balancesURL, options: .atomic)
                     try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: balancesURL.path)
                     didTransferAny = true
@@ -1346,6 +1425,7 @@ final class ICloudSync: ObservableObject {
                             try? scriptableData.write(to: containerSnapshotURL, options: .atomic)
                             try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: containerSnapshotURL.path)
                             didTransferAny = true
+                            changed.append("Updated Scriptable widget snapshot")
                         }
                     }
                 }
@@ -1359,6 +1439,13 @@ final class ICloudSync: ObservableObject {
                     mergeIcons: app.mergeIcons,
                     mergedProvider: app.mergedProvider,
                     removedProviders: UserDefaults.standard.stringArray(forKey: "RemovedProviders") ?? [],
+                    openCodeSyncEnabled: isOpenCodeSyncEnabled,
+                    openCodeCredentialsEnabled: isOpenCodeCredentialsSyncEnabled,
+                    piSyncEnabled: isPiSyncEnabled,
+                    piCredentialsEnabled: isPiCredentialsSyncEnabled,
+                    ompSyncEnabled: isOmpSyncEnabled,
+                    ompCredentialsEnabled: isOmpCredentialsSyncEnabled,
+                    scriptableSyncEnabled: isScriptableSyncEnabled,
                     lastModified: localSettingsTS,
                     deviceName: deviceName
                 )
@@ -1376,6 +1463,7 @@ final class ICloudSync: ObservableObject {
                     try data.write(to: settingsURL, options: .atomic)
                     try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: settingsURL.path)
                     didTransferAny = true
+                    changed.append("Updated sync preferences")
                 }
             }
 
@@ -1395,6 +1483,7 @@ final class ICloudSync: ObservableObject {
                                 try? data.write(to: cloudFile, options: .atomic)
                                 try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: cloudFile.path)
                                 didTransferAny = true
+                                changed.append("Updated saved sessions")
                             }
                         }
                     }
@@ -1423,6 +1512,7 @@ final class ICloudSync: ObservableObject {
                         try data.write(to: cloudOpenCode, options: .atomic)
                         try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: cloudOpenCode.path)
                         didTransferAny = true
+                        changed.append("Updated OpenCode config")
                     }
                 }
             }
@@ -1436,6 +1526,7 @@ final class ICloudSync: ObservableObject {
                         try data.write(to: cloudCreds, options: .atomic)
                         try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: cloudCreds.path)
                         didTransferAny = true
+                        changed.append("Updated OpenCode credentials")
                     }
                 }
             }
@@ -1474,6 +1565,7 @@ final class ICloudSync: ObservableObject {
                             try? data.write(to: cloudFile, options: .atomic)
                             try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: cloudFile.path)
                             didTransferAny = true
+                            changed.append("Updated Pi \(file)")
                         }
                     }
                 }
@@ -1490,6 +1582,7 @@ final class ICloudSync: ObservableObject {
                         try? data.write(to: cloudAuth, options: .atomic)
                         try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: cloudAuth.path)
                         didTransferAny = true
+                        changed.append("Updated Pi credentials")
                     }
                 }
             }
@@ -1528,6 +1621,7 @@ final class ICloudSync: ObservableObject {
                             try? data.write(to: cloudFile, options: .atomic)
                             try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: cloudFile.path)
                             didTransferAny = true
+                            changed.append("Updated OMP \(file)")
                         }
                     }
                 }
@@ -1542,6 +1636,7 @@ final class ICloudSync: ObservableObject {
                         try? data.write(to: cloudCreds, options: .atomic)
                         try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: cloudCreds.path)
                         didTransferAny = true
+                        changed.append("Updated OMP credentials")
                     }
                 }
             }
@@ -1576,6 +1671,7 @@ final class ICloudSync: ObservableObject {
             if didTransferAny {
                 lastSyncDate = pushTime
                 UserDefaults.standard.set(lastSyncDate, forKey: Self.lastSyncKey)
+                lastChangeSummary = changed
             }
             updateStatusMessage()
             lastError = nil

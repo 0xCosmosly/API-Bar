@@ -14,7 +14,7 @@ public enum InstallStage: String, Equatable, Codable, Sendable {
         case .downloading: return "Downloading update from GitHub…"
         case .extracting: return "Extracting update archive…"
         case .replacingBundle: return "Replacing application bundle…"
-        case .relaunching: return "Relaunching API Bar…"
+        case .relaunching: return "Relaunching Harness Sync…"
         case .failed: return "Installation failed."
         }
     }
@@ -180,7 +180,7 @@ public final class AppUpdater: ObservableObject {
         guard let tagName = json["tag_name"] as? String, !tagName.isEmpty else { return nil }
         let releaseVer = tagName.hasPrefix("v") ? String(tagName.dropFirst()) : tagName
         guard !releaseVer.isEmpty else { return nil }
-        let title = json["name"] as? String ?? "API Bar v\(releaseVer)"
+        let title = json["name"] as? String ?? "Harness Sync v\(releaseVer)"
         let notes = json["body"] as? String ?? "No release notes provided."
         let htmlUrlStr = json["html_url"] as? String
         let releaseHtmlURL = htmlUrlStr.flatMap { URL(string: $0) }
@@ -254,7 +254,7 @@ public final class AppUpdater: ObservableObject {
                     let matchedTagUrl = String(entryText[tagRange])
                     let tag = matchedTagUrl.components(separatedBy: "/").last ?? ""
                     if !tag.isEmpty {
-                        var title = "API Bar \(tag)"
+                        var title = "Harness Sync \(tag)"
                         if let titleStart = entryText.range(of: "<title>"),
                            let titleEnd = entryText.range(of: "</title>", range: titleStart.upperBound..<entryText.endIndex) {
                             title = String(entryText[titleStart.upperBound..<titleEnd.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
@@ -310,7 +310,7 @@ public final class AppUpdater: ObservableObject {
                     let cleanVer = tag.hasPrefix("v") ? String(tag.dropFirst()) : tag
                     return ReleaseInfo(
                         version: cleanVer,
-                        title: "API Bar v\(cleanVer)",
+                        title: "Harness Sync v\(cleanVer)",
                         notes: "Latest release available at \(finalURL.absoluteString)",
                         releaseURL: finalURL,
                         downloadURL: URL(string: "https://github.com/\(Self.repoOwner)/\(Self.repoName)/releases/download/\(tag)/APIBar-app.zip"),
@@ -556,7 +556,7 @@ public final class AppUpdater: ObservableObject {
         let alert = NSAlert()
         alert.icon = NSApp.applicationIconImage ?? BrandMark.appIconImage(size: 128)
         alert.messageText = "You're Up to Date"
-        alert.informativeText = "API Bar v\(currentVersion) is currently the latest version. If you're having any issues, hit Redownload to install a fresh copy."
+        alert.informativeText = "Harness Sync v\(currentVersion) is currently the latest version. If you're having any issues, hit Redownload to install a fresh copy."
         alert.addButton(withTitle: "OK")
         alert.addButton(withTitle: "Redownload")
         let prevPolicy = NSApp.activationPolicy()
@@ -612,18 +612,18 @@ struct SoftwareUpdateView: View {
                 VStack(alignment: .leading, spacing: 5) {
                     let newVer = updater.latestVersion ?? "latest"
                     let isSameVer = updater.latestVersion == updater.currentVersion
-                    Text(isSameVer ? "An updated build of API Bar is available!" : "A new version of API Bar is available!")
+                    Text(isSameVer ? "An updated build of Harness Sync is available!" : "A new version of Harness Sync is available!")
                         .font(.title3)
                         .fontWeight(.bold)
                         .foregroundStyle(Color.primary)
 
                     if isSameVer {
-                        Text("A refreshed build of API Bar \(newVer) is available with the latest updates. Would you like to install it now?")
+                        Text("A refreshed build of Harness Sync \(newVer) is available with the latest updates. Would you like to install it now?")
                             .font(.body)
                             .foregroundStyle(Color.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     } else {
-                        Text("API Bar \(newVer) is now available — you have \(updater.currentVersion). Would you like to download it now?")
+                        Text("Harness Sync \(newVer) is now available — you have \(updater.currentVersion). Would you like to download it now?")
                             .font(.body)
                             .foregroundStyle(Color.secondary)
                             .fixedSize(horizontal: false, vertical: true)

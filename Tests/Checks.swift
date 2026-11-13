@@ -72,6 +72,7 @@ import AppKit
         try await heimdallmChecks()
         try await inferhubChecks()
         try codexbarPacingChecks()
+        try syncChangeLogChecks()
         try secretAuditChecks()
         try await updaterChecks()
         try await redirectChecks()
@@ -1020,6 +1021,63 @@ func inferhubChecks() async throws {
     precondition(inferhub.name == "InferHub")
 
     print("Passed: InferHub USDC balance parsing, token burn rate, runway pacing, error rejection, account pinning, and initial registration.")
+}
+
+func syncChangeLogChecks() throws {
+    func bal(_ id: String, _ name: String, baseline: Double = 10, remaining: Double = 5, disabled: Bool? = nil, account: String = "a@b.c") -> Balance {
+        Balance(id: id, name: name, baseline: baseline, remaining: remaining, updated: Date(), account: account, disabled: disabled)
+    }
+
+    // A newly added provider is named specifically, not lumped into a category.
+    let added = SyncChangeLog.providerChanges(
+        old: [bal("vertex", "Vertex AI")],
+        new: [bal("vertex", "Vertex AI"), bal("mistral", "Mistral")]
+    )
+    precondition(added == ["Added Mistral provider"], "Expected a specific add phrase, got \(added)")
+
+    let removed = SyncChangeLog.providerChanges(
+        old: [bal("vertex", "Vertex AI"), bal("mistral", "Mistral")],
+        new: [bal("vertex", "Vertex AI")]
+    )
+    precondition(removed == ["Removed Mistral provider"], "Expected a specific remove phrase, got \(removed)")
+
+    // Baseline edits are distinguished from add/remove.
+    let baseline = SyncChangeLog.providerChanges(
+        old: [bal("mistral", "Mistral", baseline: 10)],
+        new: [bal("mistral", "Mistral", baseline: 15)]
+    )
+    precondition(baseline == ["Updated Mistral baseline"], "Expected baseline phrase, got \(baseline)")
+
+    // Pause/resume uses the provider's own name.
+    let paused = SyncChangeLog.providerChanges(
+        old: [bal("mistral", "Mistral", disabled: nil)],
+        new: [bal("mistral", "Mistral", disabled: true)]
+    )
+    precondition(paused == ["Paused Mistral"], "Expected pause phrase, got \(paused)")
+
+    // An unchanged set produces no phrases at all.
+    let same = SyncChangeLog.providerChanges(
+        old: [bal("vertex", "Vertex AI")],
+        new: [bal("vertex", "Vertex AI")]
+    )
+    precondition(same.isEmpty, "Unchanged providers must yield no phrases, got \(same)")
+
+    // Harness file diffs name the files.
+    let harness = SyncChangeLog.harnessChanges(
+        harness: "OMP",
+        old: ["models.yml"],
+        new: ["models.yml", "config.yml"]
+    )
+    precondition(harness == ["Added OMP config.yml"], "Expected harness file phrase, got \(harness)")
+
+    // Sentence assembly: 1, 2, 3+, and overflow cases.
+    precondition(SyncChangeLog.sentence([]) == "No changes — everything was already current.")
+    precondition(SyncChangeLog.sentence(["Added Mistral provider"]) == "Added Mistral provider.")
+    precondition(SyncChangeLog.sentence(["A", "B"]) == "A and B.")
+    precondition(SyncChangeLog.sentence(["A", "B", "C"]) == "A, B, and C.")
+    precondition(SyncChangeLog.sentence(["A", "B", "C", "D"]) == "A, B, and C (+1 more).")
+
+    print("Passed: sync change descriptions name specific providers, baselines, harness files, and sentence assembly.")
 }
 
 func codexbarPacingChecks() throws {
