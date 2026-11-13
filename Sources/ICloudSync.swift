@@ -499,8 +499,16 @@ final class ICloudSync: ObservableObject {
         // template, so JS fixes reach devices that already have the script.
         // User edits to the Scriptable copy are overwritten; the template is
         // app-owned and regenerated on every install.
+        //
+        // The write is in place (no temp-file rename): Scriptable registers
+        // widgets by file presence, and an atomic rename in the iCloud-synced
+        // Documents directory transiently removes the destination while iCloud
+        // propagates the change — Scriptable intermittently lost track of the
+        // script. An in-place write keeps the file present at all times; a
+        // concurrent reader can hit a partial write, but the widget's loader
+        // falls back to the iCloud Drive copy in that case.
         if existing != template {
-            try? template.write(to: scriptPath, atomically: true, encoding: .utf8)
+            try? template.write(to: scriptPath, atomically: false, encoding: .utf8)
         }
     }
 
@@ -1324,7 +1332,12 @@ final class ICloudSync: ObservableObject {
                         if let scriptableURL = scriptableSnapshotURL {
                             let existingScriptable = try? Data(contentsOf: scriptableURL)
                             if existingScriptable != scriptableData {
-                                try? scriptableData.write(to: scriptableURL, options: .atomic)
+                                // In place, not atomic: a temp-file rename in the
+                                // iCloud-synced Scriptable directory transiently
+                                // removes the snapshot mid-sync, making the widget
+                                // lose its data file. The loader falls back to the
+                                // iCloud Drive copy on a partial read.
+                                try? scriptableData.write(to: scriptableURL, options: [])
                             }
                         }
                         let containerSnapshotURL = base.appendingPathComponent("api_bar_snapshot.json")
