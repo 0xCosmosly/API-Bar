@@ -494,8 +494,13 @@ final class ICloudSync: ObservableObject {
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let scriptPath = dir.appendingPathComponent("API Bar.js")
         let existing = try? String(contentsOf: scriptPath, encoding: .utf8)
-        if existing == nil || (existing != nil && !existing!.contains("codexbar")) {
-            try? ScriptableWidgetTemplate.scriptSource.write(to: scriptPath, atomically: true, encoding: .utf8)
+        let template = ScriptableWidgetTemplate.scriptSource
+        // Refresh whenever the installed copy diverges from the embedded
+        // template, so JS fixes reach devices that already have the script.
+        // User edits to the Scriptable copy are overwritten; the template is
+        // app-owned and regenerated on every install.
+        if existing != template {
+            try? template.write(to: scriptPath, atomically: true, encoding: .utf8)
         }
     }
 
@@ -544,21 +549,37 @@ final class ICloudSync: ObservableObject {
 
         let providerID = (snap["provider"] as? String ?? selectedProvider).lowercased()
         let usage = snap["usage"] as? [String: Any] ?? [:]
-        let primary = usage["primary"] as? [String: Any]
-        let usedPercent = primary?["usedPercent"] as? Double ?? 0.0
+        let extraWindows = usage["extraRateWindows"] as? [[String: Any]] ?? []
+
+        // Mirror the metric CodexBar's menu bar actually shows for this
+        // provider. CodexBar defaults store a per-provider preference
+        // (`menuBarMetricPreferences`, e.g. mistral = monthlyPlan); without it
+        // the provider's `primary` window is shown. For Mistral the primary
+        // window is the $15 usage limit, so a widget that ignores the
+        // preference would show an "empty" 0% gauge while the menu bar shows
+        // the Monthly Plan (Vibe) usage the user selected.
+        let metricPref = codexbarDefaults?
+            .dictionary(forKey: "menuBarMetricPreferences")?[providerID] as? String
+        var displayWindow = usage["primary"] as? [String: Any]
+        if metricPref == "monthlyPlan" {
+            if let monthly = extraWindows.first(where: { ($0["id"] as? String)?.contains("monthly-plan") == true }),
+               let win = monthly["window"] as? [String: Any] {
+                displayWindow = win
+            }
+        }
+
+        let usedPercent = displayWindow?["usedPercent"] as? Double ?? 0.0
         let remainingPercent = max(0.0, min(100.0, 100.0 - usedPercent))
         let displayPercent = Int(round(showUsed ? usedPercent : remainingPercent))
-        let resetDesc = primary?["resetDescription"] as? String
+        let resetDesc = displayWindow?["resetDescription"] as? String
 
         var subDetails = [String]()
-        if let extra = usage["extraRateWindows"] as? [[String: Any]] {
-            for w in extra {
-                let title = w["title"] as? String ?? ""
-                if let win = w["window"] as? [String: Any],
-                   let pct = win["usedPercent"] as? Double {
-                    let displayPct = Int(round(showUsed ? pct : max(0.0, 100.0 - pct)))
-                    subDetails.append("\(title): \(displayPct)%")
-                }
+        for w in extraWindows {
+            let title = w["title"] as? String ?? ""
+            if let win = w["window"] as? [String: Any],
+               let pct = win["usedPercent"] as? Double {
+                let displayPct = Int(round(showUsed ? pct : max(0.0, 100.0 - pct)))
+                subDetails.append("\(title): \(displayPct)%")
             }
         }
 
