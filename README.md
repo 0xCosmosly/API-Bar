@@ -16,7 +16,7 @@
 </p>
 
 <p align="center">
-  <strong>Never run out of AI credits mid-prompt or lose your coding agent configuration across Macs.</strong><br />
+  <strong>Never run out of AI credits mid-prompt or lose your coding agent configurations when switching Macs.</strong><br />
   <b>Harness Sync</b> (formerly <i>API Bar</i>) lives in your macOS menu bar, continuously displaying live credit balances, token burn velocity, and runway estimates for all your AI inference providers—while seamlessly synchronizing your AI coding agent harnesses (OpenCode, Pi, and OMP) across your machines via your private iCloud Drive.
 </p>
 
@@ -30,22 +30,24 @@
 
 ## 📑 Table of Contents
 
-- [Key Features](#-key-features)
-- [Coding Agent & Harness Sync](#-coding-agent--harness-sync)
-- [Screenshots & Visual Tour](#-screenshots--visual-tour)
-- [Supported Platforms](#-supported-platforms)
-- [How It Works](#-how-it-works)
-- [Download & Installation](#-download--installation)
-- [Privacy & Security](#-privacy--security)
-- [FAQ](#-faq)
-- [Developer & Architecture Guide](#-developer--architecture-guide)
-- [License](#-license)
+- [✨ Why You'll Love Harness Sync](#-why-youll-love-harness-sync)
+- [🚀 Quick Start: Installation & 30-Second Tour](#-quick-start-installation--30-second-tour)
+- [📊 User Guide: Menu Bar & Popover Dashboard](#-user-guide-menu-bar--popover-dashboard)
+- [☁️ User Guide: The Sync Tab & Coding Agent Harnesses](#-user-guide-the-sync-tab--coding-agent-harnesses)
+- [📱 User Guide: iPhone & iPad Scriptable Widget](#-user-guide-iphone--ipad-scriptable-widget)
+- [🔑 User Guide: Zero-API-Key Browser Session Import](#-user-guide-zero-api-key-browser-session-import)
+- [🪄 User Guide: Adding Custom Providers via cURL](#-user-guide-adding-custom-providers-via-curl)
+- [🗺️ Supported Platforms](#-supported-platforms)
+- [🔒 Privacy & Security](#-privacy--security)
+- [❓ Frequently Asked Questions (FAQ)](#-frequently-asked-questions-faq)
+- [🛠️ Developer & Agent Guide](#️-developer--agent-guide)
+- [📄 License & Attribution](#-license--attribution)
 
 ---
 
-## ✨ Key Features
+## ✨ Why You'll Love Harness Sync
 
-- ⚡️ **Live Menu Bar Status**: View live percentage rings, remaining USD amounts, or microdollar balances directly in your menu bar.
+- ⚡️ **Live Menu Bar Status**: View live percentage rings, remaining USD amounts, or microdollar balances at a glance.
 - ⏱️ **Runway & Burn Velocity**: Real-time pacing estimates calculated from your active usage (e.g. `1.9M tokens/day · Runs out in 3 days`) so you are never caught off guard.
 - ☁️ **Coding Agent Harness Sync**: Keep your model configs, credentials, and settings synchronized across all your Macs for **OpenCode**, **Pi**, and **OMP** (Oh My OpenCode / Oh My Prompt).
 - 🤖 **Smart Sync Summaries**: The dedicated Sync tab reports real-time changes across your machines (e.g. `Mistral added with 3 models (2 hours ago)`), enhanced with on-device Apple Foundation Models with instant deterministic fallback.
@@ -60,42 +62,182 @@
 
 ---
 
-## ☁️ Coding Agent & Harness Sync
+## 🚀 Quick Start: Installation & 30-Second Tour
 
-For engineers using modern AI coding agents across multiple machines (e.g. an M-series MacBook Pro and a desktop Mac Studio), keeping tools and model configurations in sync is traditionally painful. **Harness Sync** automates this via your encrypted, private iCloud Drive:
+### 1. Download & Install
 
-| Coding Harness | Synced Artifacts | Safety & Reliability |
-| :--- | :--- | :--- |
-| **OMP** *(Oh My OpenCode / Oh My Prompt)* | `models.yml`, `config.yml`, prompts | Atomic sync with automatic `.bak` safety rollbacks |
-| **Pi Coding Agent** | `models.json`, agent presets | Non-blocking background diffing & merge |
-| **OpenCode** | `opencode.json` configuration | Timestamped snapshots prior to applying remote state |
-| **Session Vault** | Provider session tokens (`.dat`) | Encrypted local storage with isolated machine fingerprints |
+1. Download the latest **`APIBar-app.zip`** from [GitHub Releases](https://github.com/0xCosmosly/Harness-Sync/releases/latest).
+2. Unzip and drag **`Harness Sync.app`** into your macOS **`/Applications`** folder.
+3. Open **Harness Sync** from Applications or Spotlight.
 
-> 💡 **Non-Blocking Guarantee**: Sync operations run in detached background tasks. Whether iCloud takes 100ms or 10 seconds to sync, your menu bar never freezes or drops frames.
-
----
-
-## 📸 Screenshots & Visual Tour
+> [!NOTE]
+> Harness Sync requires an **Apple Silicon Mac** (M1, M2, M3, M4, or later) running **macOS 13.0 (Ventura)**, **macOS 14.0 (Sonoma)**, **macOS 15.0 (Sequoia)**, or later.
 
 <p align="center">
   <img src="docs/images/windows_showcase.png" width="840" alt="30-Second Setup Tour & Built-in Changelog" />
   <br />
-  <em><b>Native macOS App Windows</b>: Guided 30-second setup tour (left) and built-in native markdown changelog with one-click updates (right).</em>
+  <em><b>Native Setup Tour</b>: Guided 30-second setup tour (left) and built-in native markdown changelog with one-click updates (right).</em>
 </p>
 
-<details>
-<summary><b>⚙️ View Settings & Browser Session Management</b></summary>
-<br />
-<p align="center">
-  <img src="docs/images/settings.png" width="560" alt="Settings & Session Management" />
-  <br />
-  <em><b>Settings Pane</b>: Manage browser connections, toggle iCloud sync, adjust provider sorting, and configure custom endpoints.</em>
-</p>
-</details>
+### 2. The 30-Second Setup Tour
+
+When you first launch the app, a 3-step setup tour guides you through:
+- **Step 1: Select Platforms**: Choose the AI providers you actively use (Google Cloud/Vertex, Fireworks, Cerebras, Google AI Studio, Refuseless, Lutheos, Venice, etc.).
+- **Step 2: Connect Browser**: Select your preferred browser profile (Brave, Chrome, Arc, Edge, Vivaldi) and choose either **Folder Access Only** or **Full Disk Access**.
+- **Step 3: Menu Bar Preferences**: Choose whether to display individual status gauges for each provider or merge them into a single smart icon.
 
 ---
 
-## 🚀 Supported Platforms
+## 📊 User Guide: Menu Bar & Popover Dashboard
+
+<p align="center">
+  <img src="docs/images/overview_card.png" width="420" alt="Overview Card" />
+  &nbsp;&nbsp;&nbsp;&nbsp;
+  <img src="docs/images/balance_card.png" width="420" alt="Detailed Balance Card" />
+</p>
+
+### Understanding Gauges & Metrics
+- **Overview Card**: Displays the aggregate total of all active providers, your top platforms by spend, and the latest iCloud sync status.
+- **Provider Cards**: Click any provider tab to view:
+  - **Remaining Balance**: Live balance formatted in USD or token credits.
+  - **Token Burn Rate**: Average daily consumption velocity calculated over active usage days (e.g. `24.1M tokens/day`).
+  - **Runway Estimator**: Exact projection of remaining runway (e.g. `Runs out in 2 days` or `· 2d runway`).
+  - **Percentage Gauge**: Visual ring showing remaining capacity against your active billing cycle.
+
+### Dynamic 100% Cycle Baselines
+Unlike static quota bars, Harness Sync continuously tracks top-up cycles:
+- When you receive a promotional grant or deposit new funds (e.g. topping up \$10 after spending down a \$25 balance), Harness Sync automatically recalculates your cycle capacity reference so 100% corresponds to actual new available funds rather than cumulative lifetime spend.
+
+### Presentation Modes: Merged vs. Discrete Gauges
+In **Settings → Menu Bar Presentation**:
+- **Merged Icon**: Shows a single, elegant icon with your aggregate balance percentage ring.
+- **Discrete Icons**: Pins individual branded icons side-by-side in your menu bar so you can monitor multiple providers simultaneously.
+- **Pause Providers**: Click the pause toggle on any provider to temporarily stop background polling without deleting your credentials or configuration.
+
+---
+
+## ☁️ User Guide: The Sync Tab & Coding Agent Harnesses
+
+<p align="center">
+  <img src="docs/images/settings.png" width="560" alt="Settings & Coding Agent Harness Sync" />
+  <br />
+  <em><b>Settings & Sync Management</b>: Toggle iCloud sync, enable OpenCode, Pi, and OMP, and view cross-machine sync status.</em>
+</p>
+
+If you use multiple Macs (such as a MacBook Pro for travel and a Mac Studio at your desk), Harness Sync keeps your AI coding agents perfectly synchronized over your private Apple iCloud Drive.
+
+### The Sync Tab Card
+When iCloud Sync is enabled, a dedicated **Sync** tab appears immediately to the right of Overview in your popover:
+1. **Status Badge**: Displays `Active` or `Synced` with green pulse indicators.
+2. **Enabled Harnesses**: Clean checklist showing active integrations:
+   - `Harness - OMP`
+   - `Harness - Pi`
+   - `Harness - OpenCode`
+   - `Providers & Models`
+   - `Scriptable Widget`
+3. **Last Synced Timestamp**: Shows the source machine name and timestamp:
+   ```
+   Last synced from MacBook Pro 11:42 AM (2 hours ago)
+   ```
+4. **Headline Change Summary**: A dedicated two-line box detailing the exact configuration change applied:
+   ```
+   Mistral added with 3 models
+   ```
+   *(Routine balance fluctuations and session heartbeats are silenced so you always see the last meaningful update).*
+
+### Supported Coding Agent Harnesses
+
+| Coding Harness | Local Configuration Path | What Syncs Across Macs |
+| :--- | :--- | :--- |
+| **OMP** *(Oh My OpenCode / Oh My Prompt)* | `~/.omp/models.yml`<br/>`~/.omp/config.yml` | Model definitions, custom providers, prompts, and settings |
+| **Pi Coding Agent** | `~/.pi/models.json` | Agent presets, provider endpoints, and model configurations |
+| **OpenCode** | `~/.config/opencode/opencode.json` | Global OpenCode configuration, defaults, and provider keys |
+| **Credential Vault** | Local encrypted Keychain | Optional: Session tokens (`.dat`) for headless agent auth |
+
+### How to Enable Coding Agent Sync
+1. Click the Harness Sync menu bar icon and open **Settings** (gear icon).
+2. Toggle **Sync with iCloud Drive**.
+3. Under **Sync Coding Agents (Optional)**, check the harnesses you use:
+   - ☑️ **OpenCode**
+   - ☑️ **Pi**
+   - ☑️ **OMP**
+4. *(Optional)* Check **Sync API keys & credentials** if you want your credential vault mirrored across machines.
+
+> [!TIP]
+> **Safety First**: Harness Sync creates an automatic `.bak` safety backup before writing any incoming changes from iCloud. Your original files are never overwritten without a recovery copy.
+
+---
+
+## 📱 User Guide: iPhone & iPad Scriptable Widget
+
+Mirror your live macOS menu bar gauges, remaining credits, and token runway pacing directly to your iPhone or iPad Home Screen via iCloud.
+
+<p align="center">
+  <b>Home Screen Format:</b> <code>AI Usage · $x / x% left</code> with automatic iOS Light/Dark mode.
+</p>
+
+### Step-by-Step iOS Widget Setup
+
+1. **Enable in Desktop App**:
+   - Open Harness Sync **Settings** on your Mac.
+   - Under iCloud, toggle **Sync with iPhone (Scriptable Widget)**.
+   - Harness Sync will automatically generate and maintain `API Bar.js` in your iCloud Drive Scriptable directory (`iCloud/Scriptable/API Bar.js`).
+2. **Install Scriptable on iPhone / iPad**:
+   - Download the free [Scriptable app](https://apps.apple.com/app/scriptable/id1405459188) from the App Store.
+3. **Open Scriptable**:
+   - Launch Scriptable once on your iPhone. Thanks to iCloud, **`API Bar`** will automatically appear in your scripts list.
+4. **Add the Home Screen Widget**:
+   - Go to your iPhone Home Screen, touch and hold an empty area until the apps jiggle.
+   - Tap the **`+`** button in the upper-left corner.
+   - Search for **Scriptable** and choose your preferred widget size (**Small**, **Medium**, or **Large**).
+   - Tap **Add Widget**.
+5. **Configure the Widget**:
+   - Tap the widget while apps are jiggling (or long-press it and choose **Edit Widget**).
+   - In the **Script** parameter, select **`API Bar`**.
+   - In **When Interacting**, choose **Run Script** or **Open App**.
+6. **Done!** Your Home Screen widget will now automatically update in the background with live credit balances and runway estimates from your Mac.
+
+---
+
+## 🔑 User Guide: Zero-API-Key Browser Session Import
+
+Generating, storing, and rotating administrative API keys is tedious and risky. Harness Sync bypasses manual keys by reading your existing signed-in browser sessions locally on your Mac.
+
+### How It Works
+1. You sign in to provider consoles (e.g. Vertex AI in Google Cloud Console, Fireworks AI, Cerebras, Google AI Studio) in your regular web browser.
+2. Harness Sync accesses your browser's local cookie database (`Cookies.binarycookies` or SQLite `Cookies`).
+3. It retrieves the browser master key from your encrypted **macOS Keychain** (`Brave Safe Storage`, `Chrome Safe Storage`, etc.) and decrypts the session token in memory via AES-128-CBC.
+4. It calls official usage endpoints directly via HTTPS.
+
+### Folder Access Only vs. Full Disk Access
+- **Folder Access Only (Recommended for Quick Setup)**:
+  - Prompts you once to select your browser's application support directory (e.g. `~/Library/Application Support/BraveSoftware/Brave-Browser`).
+  - Stores a secure macOS security-scoped bookmark. No system settings modification needed.
+- **Full Disk Access (Recommended for Seamless Updates)**:
+  - Grants read access via macOS **System Settings → Privacy & Security → Full Disk Access**.
+  - Prevents permission resets when browsers update or change internal paths.
+
+---
+
+## 🪄 User Guide: Adding Custom Providers via cURL
+
+Track any unlisted AI platform, private inference server, or local model runner (OpenRouter, Groq, Together, DeepSeek, local Ollama, vLLM) in seconds:
+
+1. Copy an example `curl` command from the provider's official documentation or usage API page.
+2. In Harness Sync, open **Settings → Add Custom Provider**.
+3. Paste the cURL snippet into the input box:
+   ```sh
+   curl https://openrouter.ai/api/v1/auth/key      -H "Authorization: Bearer sk-or-v1-..."
+   ```
+4. On-device heuristics automatically identify:
+   - Target API endpoint
+   - Authorization headers and bearer tokens
+   - JSON response paths for remaining balances and credit limits
+5. Give it a name and click **Add Provider**. A custom monogram icon will appear immediately in your menu bar.
+
+---
+
+## 🗺️ Supported Platforms
 
 | Platform | What Harness Sync Displays | Connection Source | Baseline Target |
 | :--- | :--- | :--- | :--- |
@@ -116,44 +258,9 @@ For engineers using modern AI coding agents across multiple machines (e.g. an M-
 
 ---
 
-## 🧠 How It Works
-
-```mermaid
-flowchart LR
-    A["🌐 1. Your AI Accounts<br/><i>(Signed in via Brave, Chrome, Arc...)</i>"] --> B["⚡️ 2. Harness Sync Menu Bar<br/><i>(Live balance rings & burn rate)</i>"]
-    B --> C["📊 3. Detailed Dashboard<br/><i>(Runway pacing, credits & cards)</i>"]
-    B <--> D["☁️ 4. Multi-Mac iCloud Sync<br/><i>(OpenCode, Pi, OMP & Vault)</i>"]
-    D --> E["📱 5. iOS Scriptable Widget<br/><i>(Home Screen credit glance)</i>"]
-```
-
-1. **Automatic Session Discovery**: Harness Sync discovers your active browser profile on-device and reads your authenticated session cookies locally using macOS Keychain encryption—no need to generate or rotate administrative API keys.
-2. **Real-Time Burn Rate & Runway**: Beyond raw balances, Harness Sync analyzes your recent token usage velocity and projects how many hours or days remain before your credits exhaust.
-3. **Coding Agent Harness Syncing**: Keep your AI coding agents configured identically across all your Macs. Changes to models or prompts are detected, diffed, summarized, and propagated seamlessly via iCloud Drive.
-4. **Completely Local & Private**: All balance checks happen directly between your Mac and official AI provider endpoints. No middleman servers, no proxy relays, and zero telemetry.
-
----
-
-## 📥 Download & Installation
-
-### Option 1: Direct Download (Recommended)
-
-1. Download the latest **`APIBar-app.zip`** from [GitHub Releases](https://github.com/0xCosmosly/Harness-Sync/releases/latest).
-2. Unzip and drag **`Harness Sync.app`** into your **`/Applications`** folder.
-3. Launch **Harness Sync** and follow the quick 3-step setup tour:
-   - **Step 1: Select Platforms**: Choose the AI providers you want to track.
-   - **Step 2: Connect Browser**: Select your browser profile and grant access (**Folder Access Only** or **Full Disk Access**).
-   - **Step 3: Menu Bar Preferences**: Choose whether to display individual status gauges or a single merged icon.
-
-### System Requirements
-
-- **Operating System**: macOS 13.0 (Ventura), macOS 14.0 (Sonoma), macOS 15.0 (Sequoia), or later.
-- **Hardware Architecture**: Native **Apple Silicon** (M1, M2, M3, M4, or later).
-
----
-
 ## 🔒 Privacy & Security
 
-Harness Sync is built from the ground up for security-conscious developers and teams:
+Harness Sync is built specifically for security-conscious developers and corporate environments:
 
 - **100% Local Execution**: No analytics, telemetry, tracking pixels, or remote logging.
 - **Direct HTTPS Networking**: Requests travel directly from your Mac to official AI platform endpoints. No proxy servers, relays, or intermediary cloud services.
@@ -163,7 +270,7 @@ Harness Sync is built from the ground up for security-conscious developers and t
 
 ---
 
-## ❓ FAQ
+## ❓ Frequently Asked Questions (FAQ)
 
 **Q: Do I need to generate API keys for every provider?**  
 No. For natively supported providers (Vertex AI, Fireworks, Cerebras, Google AI Studio, Refuseless, Lutheos, Unaligned, Yeta, Crowbot, Venice AI, Heimdallm, InferHub), Harness Sync reads your existing signed-in browser session. You can also provide manual Bearer tokens if preferred.
@@ -184,64 +291,34 @@ Yes. Open **Settings → Add Custom Provider**. Enter the provider's name or pas
 **Q: How does Coding Agent Harness Sync work?**  
 When enabled in the **Sync** tab or Settings, Harness Sync watches local config directories for OpenCode, Pi, and OMP. Changes made on one Mac are safely mirrored to your other Macs via your personal iCloud Drive, complete with pre-write `.bak` safety backups.
 
+**Q: How often do balances refresh?**  
+Balances refresh automatically in the background every 5 minutes. You can also click **Refresh** or **Refresh All** in the menu bar popover at any time to update immediately.
+
+**Q: What should I do if a provider says "Connect in Settings"?**  
+This means your browser session cookie has expired or was signed out. Simply visit the provider's console in your browser, log back in, and Harness Sync will automatically recover on the next refresh cycle.
+
 ---
 
-<details>
-<summary><b>🛠️ Developer & Architecture Guide (For Contributors & Agents)</b></summary>
+## 🛠️ Developer & Agent Guide
 
-> 🤖 **Working with an AI coding assistant?** See the full [Agent Guide & Architecture Specification (AGENTS.md)](AGENTS.md) for architectural invariants, zero-secret rules, and provider recipes.
+Are you contributing to Harness Sync or running an automated AI coding assistant (Gemini, Claude Code, Cursor, Codex, Antigravity, Aider)?
 
-### Repository Structure
+See the comprehensive **[Agent Guide & Architecture Specification (AGENTS.md)](AGENTS.md)** for:
+- Core architectural invariants and security protocols
+- Non-interactive Keychain execution rules
+- Sandboxed test suite runner (`./check.command`)
+- Apple Silicon build & packaging pipeline (`./build.command`)
+- 4-step recipe for adding new native AI providers
 
-```
-Harness-Sync/
-├── Package.swift                    # Swift Package Manager manifest (macOS 13+)
-├── build.command                    # Apple Silicon release build & packaging script
-├── check.command                    # Sandboxed test suite runner (zero side effects)
-├── Resources/
-│   ├── Info.plist                   # App metadata & bundle configuration
-│   ├── AppIcon.icns                 # High-resolution multi-size app icon
-│   └── *-mask.png                   # 1x/2x/3x vector template silhouettes
-├── Sources/
-│   ├── Main.swift                   # Entry point (NSApplication bootstrap)
-│   ├── App.swift                    # Coordinator, status items & state
-│   ├── Credentials.swift            # Browser detection, SQLite reader, AES decryptor
-│   ├── SessionHTTP.swift            # Cookie-authenticated networking & SAPISID hashing
-│   ├── GoogleProvider.swift         # Google Cloud & Vertex AI GraphQL credit client
-│   ├── CrowbotProvider.swift        # Crowbot microdollar credit extractor
-│   ├── AFMProviderExtractor.swift   # On-device heuristic balance parser
-│   ├── AFMSummarizer.swift          # On-device Foundation Model sync summarizer
-│   ├── Provider.swift               # BalanceProvider protocols & reading models
-│   ├── ProviderTabsView.swift       # Menu bar drop-down tab bar and popover views
-│   ├── MenuUI.swift                 # SwiftUI views (Settings, Onboarding, Paper badges)
-│   ├── BrandMark.swift              # Custom vector graphics & icon renderers
-│   ├── ICloudSync.swift             # CloudKit / NSUbiquitousKeyValueStore engine
-│   ├── SyncChangeLog.swift          # Precise YAML/JSON diffing & change summaries
-│   ├── Changelog.swift              # Full version history & offline markdown changelog
-│   └── AppUpdater.swift             # GitHub Releases in-app self-updater
-└── Tests/
-    ├── Checks.swift                 # Comprehensive unit & regression tests
-    ├── UIInteractionChecks.swift    # Headless AppKit/SwiftUI component tests
-    └── ConnectionDiagnostic.swift   # Live connection verification harness
-```
-
-### Running Tests
-
-To run the complete sandboxed verification suite without touching real user data or Keychain:
+### Quick Verification & Build
 
 ```sh
+# Run the complete sandboxed verification suite (18 check suites, zero side-effects):
 ./check.command
-```
 
-### Building & Packaging
-
-To compile the native Apple Silicon binary and package `APIBar-app.zip`:
-
-```sh
+# Compile native Apple Silicon release binary and package APIBar-app.zip:
 ./build.command
 ```
-
-</details>
 
 ---
 
