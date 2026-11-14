@@ -45,7 +45,7 @@ public final class AppUpdater: ObservableObject {
     public static let shared = AppUpdater()
 
     public static let repoOwner = "0xCosmosly"
-    public static let repoName = "API-Bar"
+    public static let repoName = "Harness-Sync"
     public static let latestReleaseEndpoint = "https://api.github.com/repos/\(repoOwner)/\(repoName)/releases/latest"
     public static let fallbackFeedEndpoint = "https://github.com/\(repoOwner)/\(repoName)/releases.atom"
     public static let latestHtmlEndpoint = "https://github.com/\(repoOwner)/\(repoName)/releases/latest"

@@ -20,6 +20,24 @@ struct ICloudSettings: Codable, Equatable {
     var lastModified: Date
     var deviceName: String
 
+    /// Config fields that represent real, cross-device settings. Volatile
+    /// view state (`mergedProvider`, `lastModified`, `deviceName`) is excluded
+    /// so switching tabs or the passage of time never counts as a change.
+    var configFingerprint: String {
+        [
+            sortMode.map { "sort=\($0)" },
+            mergeIcons.map { "merge=\($0)" },
+            removedProviders.map { "removed=\($0.sorted().joined(separator: ","))" },
+            openCodeSyncEnabled.map { "oc=\($0)" },
+            openCodeCredentialsEnabled.map { "occ=\($0)" },
+            piSyncEnabled.map { "pi=\($0)" },
+            piCredentialsEnabled.map { "pic=\($0)" },
+            ompSyncEnabled.map { "omp=\($0)" },
+            ompCredentialsEnabled.map { "ompc=\($0)" },
+            scriptableSyncEnabled.map { "script=\($0)" }
+        ].compactMap { $0 }.sorted().joined(separator: "|")
+    }
+
     init(
         sortMode: String? = nil,
         mergeIcons: Bool? = nil,
@@ -121,6 +139,10 @@ final class ICloudSync: ObservableObject {
     static let ompCredentialsEnabledKey = "ICloudSyncOmpCredentialsEnabled"
     static let scriptableEnabledKey = "ICloudSyncScriptableEnabled"
     static let lastSyncKey = "ICloudSyncLastDate"
+    static let lastChangeDateKey = "ICloudSyncLastChangeDate"
+    static let lastChangeSummaryKey = "ICloudSyncLastChangeSummary"
+    static let lastChangeNarrativeKey = "ICloudSyncLastChangeNarrative"
+    static let lastChangeNarrativeSourceKey = "ICloudSyncLastChangeNarrativeSource"
     static let deviceIdKey = "APIBarDeviceUUID"
 
     @Published public private(set) var state: CloudSyncState = .disabled
@@ -140,6 +162,14 @@ final class ICloudSync: ObservableObject {
     /// Human-readable summary of what the most recent sync moved, for the Sync
     /// card. Empty when the last cycle found nothing to transfer.
     @Published private(set) var lastChangeSummary: [String] = []
+    /// Optional on-device-model rephrasing of `lastChangeSummary`. Nil until
+    /// the model returns, and nil forever on machines without one — the card
+    /// always has the deterministic sentence to fall back on.
+    @Published private(set) var lastChangeNarrative: String? = nil
+    /// Timestamp of the last sync that carried a major, specific change.
+    /// Balance-only refreshes move data silently and do not advance this, so
+    /// the card's "Last Synced" section stays stable between real changes.
+    @Published private(set) var lastChangeDate: Date? = nil
 
     public func transition(to newState: CloudSyncState) {
         self.state = newState
@@ -364,6 +394,38 @@ final class ICloudSync: ObservableObject {
         }
         if let ts = UserDefaults.standard.object(forKey: Self.lastSyncKey) as? Date {
             self.lastSyncDate = ts
+        }
+        self.lastChangeDate = UserDefaults.standard.object(forKey: Self.lastChangeDateKey) as? Date
+        let savedSummary = (UserDefaults.standard.stringArray(forKey: Self.lastChangeSummaryKey) ?? [])
+            .filter { SyncChangeLog.isMajor($0) }
+        self.lastChangeSummary = savedSummary
+        if self.lastChangeSummary.isEmpty {
+            let localOmpModels = localOmpDirectoryURL.appendingPathComponent("models.yml")
+            let localOmpBak = localOmpDirectoryURL.appendingPathComponent("models.yml.bak")
+            if FileManager.default.fileExists(atPath: localOmpModels.path),
+               let currData = try? Data(contentsOf: localOmpModels) {
+                let bakData = try? Data(contentsOf: localOmpBak)
+                let diff = SyncChangeLog.modelConfigChanges(oldData: bakData, newData: currData, filename: "models.yml", fallback: "")
+                let majorDiff = diff.filter { SyncChangeLog.isMajor($0) && $0.contains("added with") }
+                if !majorDiff.isEmpty {
+                    self.lastChangeSummary = majorDiff
+                    if let attrs = try? FileManager.default.attributesOfItem(atPath: localOmpModels.path),
+                       let modDate = attrs[.modificationDate] as? Date {
+                        self.lastChangeDate = modDate
+                        UserDefaults.standard.set(modDate, forKey: Self.lastChangeDateKey)
+                        UserDefaults.standard.set(majorDiff, forKey: Self.lastChangeSummaryKey)
+                    }
+                }
+            }
+        }
+        if let narrative = UserDefaults.standard.string(forKey: Self.lastChangeNarrativeKey) {
+            let source = UserDefaults.standard.string(forKey: Self.lastChangeNarrativeSourceKey) ?? ""
+            if SyncChangeLog.isValidNarrative(narrative, source: source) && !savedSummary.isEmpty {
+                self.lastChangeNarrative = narrative
+            } else {
+                UserDefaults.standard.removeObject(forKey: Self.lastChangeNarrativeKey)
+                self.lastChangeNarrative = nil
+            }
         }
         _ = checkAvailability()
         updateStatusMessage()
@@ -941,9 +1003,8 @@ final class ICloudSync: ObservableObject {
 
         _ = await pullAndMerge()
         _ = await pushLocalState()
-        let now = Date()
-        lastSyncDate = now
-        UserDefaults.standard.set(now, forKey: Self.lastSyncKey)
+        // pushLocalState owns both timestamps now. A no-op cycle changes
+        // nothing; a routine balance tick advances only the status badge.
     }
 
     @discardableResult
@@ -1424,8 +1485,10 @@ final class ICloudSync: ObservableObject {
                         if existingContainer != scriptableData {
                             try? scriptableData.write(to: containerSnapshotURL, options: .atomic)
                             try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: containerSnapshotURL.path)
+                            // Widget housekeeping: the snapshot changes on
+                            // every balance tick. Propagate it silently; it is
+                            // not a config change worth describing or rephrasing.
                             didTransferAny = true
-                            changed.append("Updated Scriptable widget snapshot")
                         }
                     }
                 }
@@ -1451,10 +1514,13 @@ final class ICloudSync: ObservableObject {
                 )
                 let data = try JSONEncoder().encode(settings)
                 let existing = try? Data(contentsOf: settingsURL)
+                let remoteSettings = existing.flatMap { try? JSONDecoder().decode(ICloudSettings.self, from: $0) }
+                // Only config fields matter. A tab switch changes mergedProvider
+                // and lastModified, both of which are volatile view state and
+                // must NOT be treated as a sync event or re-trigger AFM.
+                let configChanged = remoteSettings.map { $0.configFingerprint != settings.configFingerprint } ?? true
                 let shouldWrite: Bool
-                if let existing = existing,
-                   let remoteSettings = try? JSONDecoder().decode(ICloudSettings.self, from: existing) {
-                    // Do not clobber remote settings if remote is strictly newer than our local modifications
+                if let remoteSettings {
                     shouldWrite = localSettingsTS >= remoteSettings.lastModified && existing != data
                 } else {
                     shouldWrite = existing != data
@@ -1463,7 +1529,21 @@ final class ICloudSync: ObservableObject {
                     try data.write(to: settingsURL, options: .atomic)
                     try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: settingsURL.path)
                     didTransferAny = true
-                    changed.append("Updated sync preferences")
+                    if configChanged {
+                        let new = settings, old = remoteSettings
+                        var specifics: [String] = []
+                        if old?.sortMode != new.sortMode { specifics.append("sort order") }
+                        if old?.mergeIcons != new.mergeIcons { specifics.append("menu bar icon merging") }
+                        if old?.removedProviders != new.removedProviders { specifics.append("provider selection") }
+                        if old?.ompSyncEnabled != new.ompSyncEnabled { specifics.append("OMP sync") }
+                        if old?.piSyncEnabled != new.piSyncEnabled { specifics.append("Pi sync") }
+                        if old?.openCodeSyncEnabled != new.openCodeSyncEnabled { specifics.append("OpenCode sync") }
+                        if old?.scriptableSyncEnabled != new.scriptableSyncEnabled { specifics.append("widget sync") }
+                        changed.append(specifics.isEmpty
+                            ? "Updated sync preferences"
+                            : "Updated \(specifics.joined(separator: ", "))")
+                    }
+                    // A mere tab switch: no `changed` entry, so it is routine.
                 }
             }
 
@@ -1483,7 +1563,7 @@ final class ICloudSync: ObservableObject {
                                 try? data.write(to: cloudFile, options: .atomic)
                                 try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: cloudFile.path)
                                 didTransferAny = true
-                                changed.append("Updated saved sessions")
+                                // Sessions sync quietly in the background; not worth mentioning in the change description.
                             }
                         }
                     }
@@ -1512,7 +1592,8 @@ final class ICloudSync: ObservableObject {
                         try data.write(to: cloudOpenCode, options: .atomic)
                         try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: cloudOpenCode.path)
                         didTransferAny = true
-                        changed.append("Updated OpenCode config")
+                        let phrases = SyncChangeLog.modelConfigChanges(oldData: cloudData, newData: data, filename: "opencode.json", fallback: "Updated OpenCode config")
+                        changed.append(contentsOf: phrases)
                     }
                 }
             }
@@ -1565,7 +1646,12 @@ final class ICloudSync: ObservableObject {
                             try? data.write(to: cloudFile, options: .atomic)
                             try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: cloudFile.path)
                             didTransferAny = true
-                            changed.append("Updated Pi \(file)")
+                            if file == "models.json" {
+                                let phrases = SyncChangeLog.modelConfigChanges(oldData: cloudData, newData: data, filename: file, fallback: "Updated Pi \(file)")
+                                changed.append(contentsOf: phrases)
+                            } else {
+                                changed.append("Updated Pi \(file)")
+                            }
                         }
                     }
                 }
@@ -1621,7 +1707,12 @@ final class ICloudSync: ObservableObject {
                             try? data.write(to: cloudFile, options: .atomic)
                             try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: cloudFile.path)
                             didTransferAny = true
-                            changed.append("Updated OMP \(file)")
+                            if file == "models.yml" || file == "models.json" {
+                                let phrases = SyncChangeLog.modelConfigChanges(oldData: cloudData, newData: data, filename: file, fallback: "Updated OMP \(file)")
+                                changed.append(contentsOf: phrases)
+                            } else {
+                                changed.append("Updated OMP \(file)")
+                            }
                         }
                     }
                 }
@@ -1641,7 +1732,10 @@ final class ICloudSync: ObservableObject {
                 }
             }
 
-            // 7. Write manifest.json
+            // 7. Write manifest.json. Only rewrite it when its content actually
+            // changed: an unconditional write on every balance tick wakes the
+            // other Mac's monitor, which pulls, pushes, and wakes us back —
+            // an endless low-value sync loop between devices.
             let pushTime = Date()
             lastPushedDate = pushTime
             if let manifestURL = manifestURL {
@@ -1664,14 +1758,59 @@ final class ICloudSync: ObservableObject {
                     appBuildTimestamp: AppUpdater.localBuildDate.timeIntervalSince1970
                 )
                 let data = try JSONEncoder().encode(manifest)
-                try data.write(to: manifestURL, options: .atomic)
-                try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: manifestURL.path)
+                // Comparing to the on-disk manifest: lastModified is set to
+                // pushTime, so it always differs. Compare the stable fields
+                // instead, and only write when one of them changed.
+                let existing = try? Data(contentsOf: manifestURL)
+                var stableFieldsMatch = false
+                if let existing,
+                   let previous = try? JSONDecoder().decode(ICloudManifest.self, from: existing) {
+                    stableFieldsMatch = previous.deviceId == manifest.deviceId
+                        && previous.deviceName == manifest.deviceName
+                        && previous.providerCount == manifest.providerCount
+                        && previous.hasOpenCode == manifest.hasOpenCode
+                        && previous.hasPi == manifest.hasPi
+                        && previous.hasOmp == manifest.hasOmp
+                        && previous.appBuildTimestamp == manifest.appBuildTimestamp
+                }
+                if !stableFieldsMatch {
+                    try data.write(to: manifestURL, options: .atomic)
+                    try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: manifestURL.path)
+                }
             }
 
             if didTransferAny {
+                // Any transfer refreshes the status badge, but only a major,
+                // specific change counts as a sync "event" for the card.
                 lastSyncDate = pushTime
                 UserDefaults.standard.set(lastSyncDate, forKey: Self.lastSyncKey)
-                lastChangeSummary = changed
+            }
+            if didTransferAny && SyncChangeLog.containsMajor(changed) {
+                let deterministic = SyncChangeLog.sentence(changed)
+                // Only treat this as a NEW event when the change set actually
+                // differs from the last one described. Re-pushing the same
+                // config must not regenerate the description or bump the date.
+                let cachedSource = UserDefaults.standard.string(forKey: Self.lastChangeNarrativeSourceKey)
+                let isNewChange = cachedSource != deterministic
+                if isNewChange {
+                    lastChangeDate = pushTime
+                    lastChangeSummary = changed
+                    UserDefaults.standard.set(pushTime, forKey: Self.lastChangeDateKey)
+                    UserDefaults.standard.set(changed, forKey: Self.lastChangeSummaryKey)
+                    UserDefaults.standard.set(deterministic, forKey: Self.lastChangeNarrativeSourceKey)
+                    // Clear the old narrative; the deterministic sentence shows
+                    // immediately and the model's rephrase may replace it once.
+                    lastChangeNarrative = nil
+                    UserDefaults.standard.removeObject(forKey: Self.lastChangeNarrativeKey)
+                    Task { @MainActor [weak self] in
+                        let narrative = await AFMSummarizer.rephrase(deterministic)
+                        if narrative != deterministic,
+                           SyncChangeLog.isValidNarrative(narrative, source: deterministic) {
+                            self?.lastChangeNarrative = narrative
+                            UserDefaults.standard.set(narrative, forKey: Self.lastChangeNarrativeKey)
+                        }
+                    }
+                }
             }
             updateStatusMessage()
             lastError = nil

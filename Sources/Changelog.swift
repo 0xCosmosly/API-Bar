@@ -30,7 +30,7 @@ public struct ChangelogEntry: Identifiable, Equatable {
         self.summary = summary
         self.highlights = highlights
         self.notes = notes
-        self.releaseURL = releaseURL ?? URL(string: "https://github.com/0xCosmosly/API-Bar/releases/tag/v\(version)")
+        self.releaseURL = releaseURL ?? URL(string: "https://github.com/0xCosmosly/Harness-Sync/releases/tag/v\(version)")
     }
 
     public func isCurrent(currentVersion: String) -> Bool {
@@ -86,7 +86,7 @@ public final class ChangelogManager: ObservableObject {
         remoteError = nil
         defer { isFetchingRemote = false }
 
-        guard let apiURL = URL(string: "https://api.github.com/repos/0xCosmosly/API-Bar/releases?per_page=20") else { return }
+        guard let apiURL = URL(string: "https://api.github.com/repos/0xCosmosly/Harness-Sync/releases?per_page=20") else { return }
         var req = URLRequest(url: apiURL)
         req.setValue("application/vnd.github.v3+json", forHTTPHeaderField: "Accept")
         req.setValue("APIBar-Changelog/\(AppUpdater.shared.currentVersion)", forHTTPHeaderField: "User-Agent")

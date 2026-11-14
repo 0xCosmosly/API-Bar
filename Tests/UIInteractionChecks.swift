@@ -778,6 +778,21 @@ import SwiftUI
         precondition(ICloudSync.shared.isOmpSyncEnabled == true, "A remote OMP toggle must enable OMP sync locally")
         precondition(UserDefaults.standard.bool(forKey: ICloudSync.ompEnabledKey), "Adopted toggle must persist")
 
+        // Volatile view state must not change the config fingerprint: switching
+        // tabs or the passage of time must never count as a sync event.
+        let base = ICloudSettings(sortMode: "balance", mergeIcons: true, ompSyncEnabled: true)
+        let later = ICloudSettings(sortMode: "balance", mergeIcons: true,
+                                    mergedProvider: "sync", ompSyncEnabled: true,
+                                    lastModified: Date().addingTimeInterval(999),
+                                    deviceName: "Another Mac")
+        precondition(base.configFingerprint == later.configFingerprint,
+                     "mergedProvider/lastModified/deviceName are view state, not config")
+        let changed = ICloudSettings(sortMode: "manual", mergeIcons: true, ompSyncEnabled: true)
+        precondition(base.configFingerprint != changed.configFingerprint,
+                     "A real sort-mode change must alter the fingerprint")
+        let ompOff = ICloudSettings(sortMode: "balance", mergeIcons: true, ompSyncEnabled: false)
+        precondition(base.configFingerprint != ompOff.configFingerprint,
+                     "A harness toggle change must alter the fingerprint")
         precondition(ICloudSync.shared.statusBadge == "Active" || ICloudSync.shared.statusBadge == "Synced")
         precondition(app.iCloudStatusMessage.contains("Synced") || app.iCloudStatusMessage.contains("ago") || app.iCloudStatusMessage.contains("just now"))
 

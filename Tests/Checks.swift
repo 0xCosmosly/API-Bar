@@ -73,6 +73,8 @@ import AppKit
         try await inferhubChecks()
         try codexbarPacingChecks()
         try syncChangeLogChecks()
+        try syncChangeClassificationChecks()
+        await afmSummarizerChecks()
         try secretAuditChecks()
         try await updaterChecks()
         try await redirectChecks()
@@ -1023,6 +1025,68 @@ func inferhubChecks() async throws {
     print("Passed: InferHub USDC balance parsing, token burn rate, runway pacing, error rejection, account pinning, and initial registration.")
 }
 
+func afmSummarizerChecks() async {
+    // The fallback contract is the important invariant: on machines without
+    // FoundationModels (or when it is unavailable) rephrase() must return the
+    // deterministic sentence unchanged, and never throw or hang.
+    let fallback = "Added Mistral provider and Updated OMP config.yml."
+    let start = Date()
+    let result = await AFMSummarizer.rephrase(fallback)
+    let elapsed = Date().timeIntervalSince(start)
+
+    precondition(!result.isEmpty, "AFMSummarizer must never return an empty string")
+    precondition(elapsed < 3.0, "AFMSummarizer exceeded its timeout ceiling: \(elapsed)s")
+
+    // When the model is unavailable the deterministic text is returned as-is.
+    if !AFMSummarizer.isAvailable {
+        precondition(result == fallback, "Without a model the fallback must be returned verbatim, got \(result)")
+    }
+
+    // isAvailable itself must be cheap and safe on every supported macOS.
+    _ = AFMSummarizer.isAvailable
+
+    print("Passed: AFM summarizer fallback contract, timeout ceiling, and availability probe.")
+}
+
+func syncChangeClassificationChecks() throws {
+    // Routine churn must not be classified as a major change.
+    precondition(!SyncChangeLog.isMajor("Updated Scriptable widget snapshot"),
+                 "Widget snapshot regeneration is routine")
+    precondition(!SyncChangeLog.isMajor("Updated Providers & Models"),
+                 "Balance refresh propagation is routine")
+    precondition(!SyncChangeLog.isMajor("Updated InferHub session"),
+                 "Session tokens are routine credentials and not worth mentioning")
+    precondition(!SyncChangeLog.containsMajor(["Updated Scriptable widget snapshot", "Updated InferHub session"]),
+                 "A purely routine cycle must not count as a sync event")
+
+    // Real config changes are major and must be reported.
+    let major = ["Added Mistral provider", "Updated OMP config.yml", "Paused Pi"]
+    precondition(SyncChangeLog.containsMajor(major), "Named config changes must be major")
+    precondition(SyncChangeLog.isMajor("Added Mistral provider"))
+    precondition(SyncChangeLog.isMajor("Updated OMP config.yml"))
+
+    // A narrative that drops a specific name is rejected.
+    let original = "Added Mistral provider and Updated OMP config.yml."
+    precondition(SyncChangeLog.preservesSpecifics(original, in: "Added Mistral, updated OMP config.yml."),
+                 "Rephrase keeping all names must pass")
+    precondition(!SyncChangeLog.preservesSpecifics(original, in: "Synced some provider settings."),
+                 "Rephrase dropping names must be rejected")
+    precondition(SyncChangeLog.specificTokens(original).contains("Mistral"),
+                 "Provider names must be extracted as specific tokens")
+    precondition(SyncChangeLog.specificTokens(original).contains("config.yml"),
+                 "Config filenames must be extracted as specific tokens")
+    precondition(SyncChangeLog.isMajor("Mistral added with 3 models"))
+    precondition(SyncChangeLog.isMajor("Heimdallm updated with 2 models"))
+
+    let modelSentence = "Mistral added with 3 models."
+    precondition(SyncChangeLog.specificTokens(modelSentence).contains("Mistral"))
+    precondition(SyncChangeLog.specificTokens(modelSentence).contains("3"))
+    precondition(SyncChangeLog.isValidNarrative("Mistral added with 3 models.", source: modelSentence))
+    precondition(!SyncChangeLog.isValidNarrative("The provider updated saved sessions using the harness and the file names.", source: "Updated saved sessions."))
+
+    print("Passed: sync change classification (major vs routine) and AFM specificity preservation.")
+}
+
 func syncChangeLogChecks() throws {
     func bal(_ id: String, _ name: String, baseline: Double = 10, remaining: Double = 5, disabled: Bool? = nil, account: String = "a@b.c") -> Balance {
         Balance(id: id, name: name, baseline: baseline, remaining: remaining, updated: Date(), account: account, disabled: disabled)
@@ -1076,6 +1140,38 @@ func syncChangeLogChecks() throws {
     precondition(SyncChangeLog.sentence(["A", "B"]) == "A and B.")
     precondition(SyncChangeLog.sentence(["A", "B", "C"]) == "A, B, and C.")
     precondition(SyncChangeLog.sentence(["A", "B", "C", "D"]) == "A, B, and C (+1 more).")
+
+    // Vault session naming from .dat files
+    precondition(SyncChangeLog.vaultSessionName(for: "inferhub.dat") == "InferHub")
+    precondition(SyncChangeLog.vaultSessionName(for: "heimdallm.dat") == "Heimdallm")
+    precondition(SyncChangeLog.vaultSessionName(for: "togetherai.dat") == "Together AI")
+
+    // Model config YAML diffing
+    let yamlOld = "providers:\n  heimdallm:\n    models:\n      - id: m1\n"
+    let yamlNew = "providers:\n  heimdallm:\n    models:\n      - id: m1\n      - id: m2\n  mistral-vibe:\n    models:\n      - id: m3\n      - id: m4\n      - id: m5\n"
+    let yamlDiff = SyncChangeLog.modelConfigChanges(
+        oldData: yamlOld.data(using: .utf8),
+        newData: yamlNew.data(using: .utf8)!,
+        filename: "models.yml",
+        fallback: "Updated OMP models.yml"
+    )
+    precondition(yamlDiff == ["Mistral added with 3 models", "Heimdallm updated with 1 model"], "Got \(yamlDiff)")
+
+    // Model config JSON diffing
+    let jsonOld = "{\"providers\": {\"mistral\": {\"models\": [\"m1\"]}}}"
+    let jsonNew = "{\"providers\": {\"mistral\": {\"models\": [\"m1\", \"m2\", \"m3\"]}}}"
+    let jsonDiff = SyncChangeLog.modelConfigChanges(
+        oldData: jsonOld.data(using: .utf8),
+        newData: jsonNew.data(using: .utf8)!,
+        filename: "models.json",
+        fallback: "Updated Pi models.json"
+    )
+    precondition(jsonDiff == ["Mistral updated with 2 models"], "Got \(jsonDiff)")
+
+    // Relative time string formatting
+    let testNow = Date()
+    precondition(SyncChangeLog.relativeTimeString(from: testNow, relativeTo: testNow) == "just now")
+    precondition(SyncChangeLog.relativeTimeString(from: testNow.addingTimeInterval(-7200), relativeTo: testNow) == "2 hours ago")
 
     print("Passed: sync change descriptions name specific providers, baselines, harness files, and sentence assembly.")
 }
@@ -1238,8 +1334,8 @@ func updaterChecks() async throws {
 
     func releaseJSON(tag: String, name: String, zipSize: Int, updated: String = "2026-11-05T12:00:00Z") -> String {
         """
-        {"tag_name":"\(tag)","name":"\(name)","body":"notes for \(tag)","html_url":"https://github.com/0xCosmosly/API-Bar/releases/tag/\(tag)",
-         "assets":[{"name":"APIBar-app.zip","size":\(zipSize),"browser_download_url":"https://github.com/0xCosmosly/API-Bar/releases/download/\(tag)/APIBar-app.zip","updated_at":"\(updated)"}]}
+        {"tag_name":"\(tag)","name":"\(name)","body":"notes for \(tag)","html_url":"https://github.com/0xCosmosly/Harness-Sync/releases/tag/\(tag)",
+         "assets":[{"name":"APIBar-app.zip","size":\(zipSize),"browser_download_url":"https://github.com/0xCosmosly/Harness-Sync/releases/download/\(tag)/APIBar-app.zip","updated_at":"\(updated)"}]}
         """
     }
 
@@ -1285,11 +1381,11 @@ func updaterChecks() async throws {
 
     // A release without a zip asset still yields a deterministic download URL.
     let noAsset = """
-    {"tag_name":"v0.6.0","name":"API Bar 0.6.0","body":"x","html_url":"https://github.com/0xCosmosly/API-Bar/releases/tag/v0.6.0","assets":[]}
+    {"tag_name":"v0.6.0","name":"API Bar 0.6.0","body":"x","html_url":"https://github.com/0xCosmosly/Harness-Sync/releases/tag/v0.6.0","assets":[]}
     """
     setenv("APIBAR_UPDATER_ENDPOINT", try serve(noAsset, at: "noasset"), 1)
     let fallback = try await updater.fetchReleaseInfo()
-    precondition(fallback.downloadURL?.absoluteString == "https://github.com/0xCosmosly/API-Bar/releases/download/v0.6.0/APIBar-app.zip",
+    precondition(fallback.downloadURL?.absoluteString == "https://github.com/0xCosmosly/Harness-Sync/releases/download/v0.6.0/APIBar-app.zip",
                  "Missing asset must fall back to the conventional zip URL, got \(fallback.downloadURL?.absoluteString ?? "nil")")
 
     // A broken fixture must fail loudly rather than reporting an update.

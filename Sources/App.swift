@@ -486,10 +486,11 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         guard isSync || provider == "overview" || activeBalances.contains(where: { $0.id == provider }) else { return }
         mergedProvider = provider
         UserDefaults.standard.set(provider, forKey: "MergedProvider")
-        UserDefaults.standard.set(Date(), forKey: "APIBarSettingsModified")
+        // Tab selection is local view state. Do NOT bump APIBarSettingsModified
+        // or schedule a push here: doing so rewrites settings.json on every tab
+        // open, which was re-triggering the AFM description each time.
         updateTitles()
         writeDiagnostics()
-        ICloudSync.shared.schedulePush()
     }
     var browserName: String { BraveSessionImporter.currentBrowser.name }
     @Published var providerStatus: [String:String] = [:]
@@ -848,9 +849,10 @@ final class APIBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindow
         }
         updateTitles()
         writeDiagnostics()
-        if ICloudSync.shared.isEnabled {
-            Task { await ICloudSync.shared.syncNow() }
-        }
+        // No unconditional sync here. apply() already calls save(), which
+        // debounces a push only when a balance actually changed. A periodic
+        // full pull+push on every 5-minute refresh would run two cycles and
+        // bump "Last Synced" even when nothing moved.
     }
     func refreshBraveProfiles() {
         isBraveInstalled = BraveSessionImporter.isBraveInstalled()

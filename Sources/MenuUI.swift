@@ -584,25 +584,32 @@ struct SyncCardContent: View {
         return rows
     }
 
-    /// Absolute timestamp, e.g. "Nov 13, 2026 at 10:52 AM".
+    /// Absolute timestamp of the last sync that carried a real config change,
+    /// followed by relative time elapsed, e.g. "Nov 13, 2026 at 10:52 AM (2 hours ago)".
     private var lastSyncAbsolute: String {
-        guard let date = icloud.lastSyncDate else { return "Not yet synced" }
+        guard let date = icloud.lastChangeDate ?? icloud.lastSyncDate else { return "Not yet synced" }
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
         formatter.timeStyle = .short
-        return formatter.string(from: date)
+        let absString = formatter.string(from: date)
+        let relative = SyncChangeLog.relativeTimeString(from: date)
+        return "\(absString) (\(relative))"
     }
 
-    /// What the most recent cycle actually moved. Each phrase is produced by
-    /// diffing the previous cloud state against the new one, so it names the
-    /// real change rather than a category.
+    /// What the most recent major change actually moved. Each phrase names a
+    /// real difference; AFM may rephrase but cannot drop the specifics.
     private var changeDescription: String {
         if case .syncing = status { return "Sync in progress…" }
         guard status.isLive else { return "Nothing is syncing while this is off." }
         if let error = icloud.lastError { return error }
-        // No timestamp yet means no cycle has run, so there is nothing to
-        // report — claiming "no changes" would imply a completed sync.
-        guard icloud.lastSyncDate != nil else { return "Waiting for the first sync cycle." }
+        guard icloud.lastChangeDate != nil, !icloud.lastChangeSummary.isEmpty else {
+            return "No configuration changes yet."
+        }
+        // Prefer the on-device model's rephrasing when it has landed; the
+        // deterministic sentence is always there as the immediate fallback.
+        if let narrative = icloud.lastChangeNarrative, !narrative.isEmpty {
+            return narrative
+        }
         return SyncChangeLog.sentence(icloud.lastChangeSummary)
     }
 
@@ -662,9 +669,11 @@ struct SyncCardContent: View {
 
             Divider()
 
-            // Last sync: one header line naming the source machine, then what
-            // actually changed. Folding the device into the header keeps the
-            // section to two lines instead of three.
+            // Last sync: header + absolute time + a description pinned to a
+            // static two-line box. A fixed height (instead of .fixedSize with
+            // unbounded vertical growth) keeps the card the same size whether
+            // the text is one short sentence or a long change list, so the
+            // menu never bounces when the description or AFM narrative changes.
             VStack(alignment: .leading, spacing: 3) {
                 Text(sourceDevice.map { "Last Synced - \($0)" } ?? "Last Synced")
                     .font(.system(size: 10, weight: .bold))
@@ -677,7 +686,9 @@ struct SyncCardContent: View {
                 Text(changeDescription)
                     .font(.system(size: 11.5))
                     .foregroundStyle(Color.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                    .lineLimit(2)
+                    .truncationMode(.tail)
+                    .frame(height: 32, alignment: .topLeading)
             }
             .padding(.horizontal, 16)
             .padding(.bottom, 10)
