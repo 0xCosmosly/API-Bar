@@ -225,6 +225,8 @@ final class ICloudSync: ObservableObject {
     private var piMonitorFD: Int32 = -1
     private var ompMonitorSource: DispatchSourceFileSystemObject?
     private var ompMonitorFD: Int32 = -1
+    private var codexBarMonitorSource: DispatchSourceFileSystemObject?
+    private var codexBarMonitorFD: Int32 = -1
     private var isPerformingSync: Bool = false
     private var lastPushedDate: Date = .distantPast
 
@@ -615,9 +617,10 @@ final class ICloudSync: ObservableObject {
             return nil
         }
 
-        let codexbarDefaults = UserDefaults(suiteName: "com.steipete.codexbar")
-        let selectedProvider = codexbarDefaults?.string(forKey: "selectedMenuProvider") ?? "antigravity"
-        let showUsed = codexbarDefaults?.bool(forKey: "usageBarsShowUsed") ?? false
+        CFPreferencesAppSynchronize("com.steipete.codexbar" as CFString)
+        let selectedProvider = (CFPreferencesCopyAppValue("selectedMenuProvider" as CFString, "com.steipete.codexbar" as CFString) as? String) ?? "antigravity"
+        let showUsed = (CFPreferencesCopyAppValue("usageBarsShowUsed" as CFString, "com.steipete.codexbar" as CFString) as? Bool) ?? false
+        let metricPrefs = CFPreferencesCopyAppValue("menuBarMetricPreferences" as CFString, "com.steipete.codexbar" as CFString) as? [String: Any]
 
         var candidate: [String: Any]? = nil
         var candidateFetched: Double = 0
@@ -656,8 +659,7 @@ final class ICloudSync: ObservableObject {
         // window is the $15 usage limit, so a widget that ignores the
         // preference would show an "empty" 0% gauge while the menu bar shows
         // the Monthly Plan (Vibe) usage the user selected.
-        let metricPref = codexbarDefaults?
-            .dictionary(forKey: "menuBarMetricPreferences")?[providerID] as? String
+        let metricPref = metricPrefs?[providerID] as? String
         var displayWindow = usage["primary"] as? [String: Any]
         if metricPref == "monthlyPlan" {
             if let monthly = extraWindows.first(where: { ($0["id"] as? String)?.contains("monthly-plan") == true }),
@@ -1823,6 +1825,7 @@ final class ICloudSync: ObservableObject {
 
     func startMonitoring() {
         stopMonitoring()
+        startCodexBarMonitoring()
         guard let base = baseDirectoryURL else { return }
         try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
 
@@ -1868,6 +1871,7 @@ final class ICloudSync: ObservableObject {
     }
 
     func stopMonitoring() {
+        stopCodexBarMonitoring()
         if let source = monitorSource {
             source.cancel()
             monitorSource = nil
@@ -2002,6 +2006,49 @@ final class ICloudSync: ObservableObject {
         if ompMonitorFD >= 0 {
             close(ompMonitorFD)
             ompMonitorFD = -1
+        }
+    }
+
+    func startCodexBarMonitoring() {
+        stopCodexBarMonitoring()
+        guard isEnabled else { return }
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let syncDir = home.appendingPathComponent("Library/Application Support/com.steipete.codexbar/sync")
+        guard FileManager.default.fileExists(atPath: syncDir.path) else { return }
+
+        let fd = open(syncDir.path, O_EVTONLY)
+        guard fd >= 0 else { return }
+        codexBarMonitorFD = fd
+
+        let source = DispatchSource.makeFileSystemObjectSource(
+            fileDescriptor: fd,
+            eventMask: [.write, .extend, .attrib, .rename, .delete],
+            queue: DispatchQueue.global(qos: .utility)
+        )
+
+        source.setEventHandler { [weak self] in
+            Task { @MainActor [weak self] in
+                guard let self = self, self.isEnabled, !self.isPerformingSync else { return }
+                self.schedulePush()
+            }
+        }
+
+        source.setCancelHandler {
+            close(fd)
+        }
+
+        codexBarMonitorSource = source
+        source.resume()
+    }
+
+    func stopCodexBarMonitoring() {
+        if let source = codexBarMonitorSource {
+            source.cancel()
+            codexBarMonitorSource = nil
+        }
+        if codexBarMonitorFD >= 0 {
+            close(codexBarMonitorFD)
+            codexBarMonitorFD = -1
         }
     }
 }
